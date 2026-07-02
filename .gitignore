@@ -1,3 +1,7 @@
 model/
+updates/
+archive_backups/
 settings.json
 *cpython*
+*.csv
+

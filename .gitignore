@@ -1,5 +1,6 @@
 model/
 updates/
+metadata/
 archive_backups/
 settings.json
 *cpython*

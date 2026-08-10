@@ -60,13 +60,25 @@ def fetch_data(
         ./model/{model}/{element}/{YYYY}_{MM}_archive.parquet
 
     Notes:
-        aws_key and aws_secret are retained for compatibility with the previous
-        S3-based version, but they are no longer used.
+        This loader should only load/filter archive data.
+        pairing.py is responsible for choosing model_value and obs_value.
     """
+
+    ACCUM_ELEMENTS = [
+        "precip6hr",
+        "precip24hr",
+        "snow6hr",
+        "snow24hr",
+        "snow48hr",
+        "snow72hr",
+    ]
 
     query_start = start_date
     query_end = end_date
     query_stations = station_list
+
+    if not query_stations:
+        return pd.DataFrame(), pd.DataFrame(), "No stations were provided."
 
     con = duckdb.connect()
 
@@ -88,16 +100,20 @@ def fetch_data(
 
     station_placeholders = ", ".join(["?"] * len(query_stations))
 
-    # 1. Dynamic SQL for model data
+    # ------------------------------------------------------------------
+    # 1. Query model data
+    # ------------------------------------------------------------------
+
     if analysis_mode == "Storm Specific Zoom":
         if model == "ndfd":
-            # NDFD does not have init_time natively
+            # NDFD does not have init_time natively.
             modelquery = f"""
             SELECT * FROM read_parquet({modelfiles})
             WHERE station_id IN ({station_placeholders})
               AND valid_time BETWEEN ? AND ?
             """
             model_params = query_stations + [query_start, query_end]
+
         else:
             modelquery = f"""
             SELECT * FROM read_parquet({modelfiles})
@@ -114,8 +130,8 @@ def fetch_data(
             modelquery = f"""
             SELECT * FROM read_parquet({modelfiles})
             WHERE station_id IN ({station_placeholders})
-            AND forecast_hour IN ({hour_str})
-            AND valid_time BETWEEN ? AND ?
+              AND forecast_hour IN ({hour_str})
+              AND valid_time BETWEEN ? AND ?
             """
             model_params = query_stations + [query_start, query_end]
 
@@ -123,9 +139,10 @@ def fetch_data(
             modelquery = f"""
             SELECT * FROM read_parquet({modelfiles})
             WHERE station_id IN ({station_placeholders})
-            AND valid_time BETWEEN ? AND ?
+              AND valid_time BETWEEN ? AND ?
             """
             model_params = query_stations + [query_start, query_end]
+
     try:
         modeldf = con.execute(modelquery, model_params).df()
 
@@ -146,38 +163,47 @@ def fetch_data(
     if modeldf.empty:
         return pd.DataFrame(), pd.DataFrame(), "No model data found for these parameters."
 
+    # ------------------------------------------------------------------
     # 2. Reconstruct init_time for NDFD
+    # ------------------------------------------------------------------
+
     if model == "ndfd":
-        modeldf["init_time"] = (
-            pd.to_datetime(modeldf["valid_time"])
-            - pd.to_timedelta(modeldf["forecast_hour"], unit="h")
-        )
+        if "forecast_hour" in modeldf.columns:
+            modeldf["init_time"] = (
+                pd.to_datetime(modeldf["valid_time"], errors="coerce", utc=True)
+                - pd.to_timedelta(modeldf["forecast_hour"], unit="h")
+            )
 
-        if analysis_mode == "Storm Specific Zoom":
-            modeldf = modeldf[
-                modeldf["init_time"] == pd.to_datetime(storm_init_time)
-            ]
+            if analysis_mode == "Storm Specific Zoom":
+                target_init = pd.to_datetime(storm_init_time, errors="coerce", utc=True)
 
-            if modeldf.empty:
-                return (
-                    pd.DataFrame(),
-                    pd.DataFrame(),
-                    f"No NDFD data matched the init time: {storm_init_time}.",
-                )
+                modeldf = modeldf[
+                    pd.to_datetime(modeldf["init_time"], errors="coerce", utc=True)
+                    == target_init
+                ]
 
-    # 3. Rename percentile column for aggregate NBM QMD verification
-    if model in ["nbmqmd_exp", "nbmqmd"] and analysis_mode == "Aggregate Verification":
-        modeldf = modeldf.rename(
-            columns={percentile_col_dict[model][percentile]: "wind_speed_kt"}
-        )
+                if modeldf.empty:
+                    return (
+                        pd.DataFrame(),
+                        pd.DataFrame(),
+                        f"No NDFD data matched the init time: {storm_init_time}.",
+                    )
 
-    # 4. Query observations
+    # ------------------------------------------------------------------
+    # 3. Query observations
+    # ------------------------------------------------------------------
+
     station_select = "station_id" if obs == "urma" else "stid"
+
+    # Accumulation obs archives use end_time as the valid time.
+    # Example precip6hr columns:
+    #     start_time, end_time, precip_total
+    obs_time_col = "end_time" if element in ACCUM_ELEMENTS else "valid_time"
 
     obquery = f"""
     SELECT * FROM read_parquet({obfiles})
-    WHERE ({station_select}) IN ({station_placeholders})
-      AND valid_time BETWEEN ? AND ?
+    WHERE {station_select} IN ({station_placeholders})
+      AND {obs_time_col} BETWEEN ? AND ?
     """
     ob_params = query_stations + [query_start, query_end]
 
@@ -185,14 +211,48 @@ def fetch_data(
         obdf = con.execute(obquery, ob_params).df()
 
     except Exception as e:
+        error_msg = str(e)
+
+        if "Referenced column" in error_msg and obs_time_col in error_msg:
+            return (
+                modeldf,
+                pd.DataFrame(),
+                f"Observation Database error: Expected time column '{obs_time_col}' "
+                f"for {obs} {element}, but it was not found. Original error: {e}",
+            )
+
         return modeldf, pd.DataFrame(), f"Observation Database error: {e}"
 
-    # 5. Standardize datetimes to be tz-naive
+    if obdf.empty:
+        return modeldf, pd.DataFrame(), "No observation data found for these parameters."
+
+    # ------------------------------------------------------------------
+    # 4. Standardize obs schema for pairing.py
+    # ------------------------------------------------------------------
+
+    # Accumulation obs use end_time as the verification valid_time.
+    if element in ACCUM_ELEMENTS:
+        if "end_time" in obdf.columns and "valid_time" not in obdf.columns:
+            obdf = obdf.rename(columns={"end_time": "valid_time"})
+
+    # ------------------------------------------------------------------
+    # 5. Standardize datetimes to tz-naive datetime64[ns]
+    # ------------------------------------------------------------------
+
     for col in ["valid_time", "init_time"]:
         if col in modeldf.columns:
-            modeldf[col] = pd.to_datetime(modeldf[col]).dt.tz_localize(None)
+            modeldf[col] = (
+                pd.to_datetime(modeldf[col], errors="coerce", utc=True)
+                .dt.tz_convert(None)
+                .astype("datetime64[ns]")
+            )
 
-    if "valid_time" in obdf.columns:
-        obdf["valid_time"] = pd.to_datetime(obdf["valid_time"]).dt.tz_localize(None)
+    for col in ["valid_time", "init_time", "start_time", "end_time"]:
+        if col in obdf.columns:
+            obdf[col] = (
+                pd.to_datetime(obdf[col], errors="coerce", utc=True)
+                .dt.tz_convert(None)
+                .astype("datetime64[ns]")
+            )
 
     return modeldf, obdf, None

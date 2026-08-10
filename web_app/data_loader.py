@@ -108,16 +108,24 @@ def fetch_data(
             model_params = query_stations + [storm_init_time, query_start, query_end]
 
     else:
-        hour_str = ", ".join(str(h) for h in forecast_hours)
+        if forecast_hours:
+            hour_str = ", ".join(str(h) for h in forecast_hours)
 
-        modelquery = f"""
-        SELECT * FROM read_parquet({modelfiles})
-        WHERE station_id IN ({station_placeholders})
-          AND forecast_hour IN ({hour_str})
-          AND valid_time BETWEEN ? AND ?
-        """
-        model_params = query_stations + [query_start, query_end]
+            modelquery = f"""
+            SELECT * FROM read_parquet({modelfiles})
+            WHERE station_id IN ({station_placeholders})
+            AND forecast_hour IN ({hour_str})
+            AND valid_time BETWEEN ? AND ?
+            """
+            model_params = query_stations + [query_start, query_end]
 
+        else:
+            modelquery = f"""
+            SELECT * FROM read_parquet({modelfiles})
+            WHERE station_id IN ({station_placeholders})
+            AND valid_time BETWEEN ? AND ?
+            """
+            model_params = query_stations + [query_start, query_end]
     try:
         modeldf = con.execute(modelquery, model_params).df()
 

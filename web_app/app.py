@@ -17,7 +17,47 @@ st.set_page_config(page_title="Weather Verification", layout="wide")
 
 # --- Configuration Dictionaries ---
 fcst_hrs_dict = {
-    'nbmqmd_exp': {"Day1": [6,12,18,24], "Day2": [30,36,42,48], "Day3": [52,58,66,72], "Day4": [84,96,108,120]}
+    'nbmqmd_exp': {
+        "Day1": [6,12,18,24],
+        "Day2": [30,36,42,48],
+        "Day3": [52,58,66,72],
+        "Day4": [84,96,108,120],
+        "Day5": [126,132,138,144],
+        "Day6": [150,156,162,168],
+        "Day7": [174,180,186,192]
+    },
+    'nbmqmd': {
+        "Day1": [6,12,18,24],
+        "Day2": [30,36,42,48],
+        "Day3": [52,58,66,72],
+        "Day4": [84,96,108,120],
+        "Day5": [126,132,138,144],
+        "Day6": [150,156,162,168],
+        "Day7": [174,180,186,192]
+    },
+    'nbm': {
+        "Day1": [6,12,18,24],
+        "Day2": [30,36,42,48],
+        "Day3": [52,58,66,72],
+        "Day4": [84,96,108,120],
+        "Day5": [126,132,138,144],
+        "Day6": [150,156,162,168],
+        "Day7": [174,180,186,192]
+    },
+    'hrrr': {
+        "Day1": [6,12,18,24],
+        "Day2": [30,36,42,48],
+    },
+    'ndfd': {
+        "Day1": [6,12,18,24],
+        "Day2": [30,36,42,48],
+        "Day3": [52,58,66,72],
+        "Day4": [84,96,108,120],
+        "Day5": [126,132,138,144],
+        "Day6": [150,156,162,168],
+        "Day7": [174,180,186,192]
+    },
+
 }
 percentile_col_dict = {
     "nbmqmd_exp": {
@@ -635,7 +675,11 @@ with tab_map:
     if st.button("Build Station Metric Map", type="primary"):
         with st.spinner("Fetching data and computing station-level verification metrics..."):
             forecast_hours = fcst_hrs_dict.get(model, {}).get(forecast_projection, [])
-
+            if not forecast_hours:
+                st.warning(
+                    f"No forecast-hour list is configured for {model.upper()} {forecast_projection}. "
+                    "Using all forecast hours available in the selected date range."
+                )
             modeldf, obdf, error_msg = fetch_data(
                 analysis_mode="Aggregate Verification",
                 model=model,

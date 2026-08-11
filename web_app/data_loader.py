@@ -1,8 +1,7 @@
 import duckdb
 import pandas as pd
 from pathlib import Path
-
-from pathlib import Path
+from config import get_obs_time_column
 
 WEB_APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WEB_APP_DIR.parent
@@ -198,7 +197,8 @@ def fetch_data(
     # Accumulation obs archives use end_time as the valid time.
     # Example precip6hr columns:
     #     start_time, end_time, precip_total
-    obs_time_col = "end_time" if element in ACCUM_ELEMENTS else "valid_time"
+    #obs_time_col = "end_time" if element in ACCUM_ELEMENTS else "valid_time"
+    obs_time_col = get_obs_time_column(element)
 
     obquery = f"""
     SELECT * FROM read_parquet({obfiles})
@@ -229,7 +229,10 @@ def fetch_data(
     # ------------------------------------------------------------------
     # 4. Standardize obs schema for pairing.py
     # ------------------------------------------------------------------
-
+    # Standardize observation time column for pairing.py.
+    # Pairing expects valid_time.
+    if obs_time_col in obdf.columns and obs_time_col != "valid_time":
+        obdf["valid_time"] = obdf[obs_time_col]
     # Accumulation obs use end_time as the verification valid_time.
     if element in ACCUM_ELEMENTS:
         if "end_time" in obdf.columns and "valid_time" not in obdf.columns:

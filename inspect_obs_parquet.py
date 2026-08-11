@@ -8,7 +8,7 @@ import pandas as pd
 
 OBS_ROOT = Path(r"C:\Users\David.Levin\verification_app\model\obs")
 
-ELEMENT = "precip6hr"     # examples: wind, precip6hr, precip24hr, maxt, mint, rh
+ELEMENT = "maxt"     # examples: wind, precip6hr, precip24hr, maxt, mint, rh
 YEAR_MONTH = "2025_10"    # YYYY_MM
 
 

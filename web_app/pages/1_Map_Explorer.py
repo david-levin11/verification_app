@@ -184,12 +184,28 @@ if st.button("Build Station Metric Map", type="primary"):
             percentile=percentile,
         )
 
+        st.write("Model rows:", len(modeldf))
+        st.write("Obs rows:", len(obdf))
+        st.write("Merged pair rows:", len(merged))
+
+        if merged.empty:
+            st.warning("No model/obs pairs were created.")
+            st.write("Model columns:", modeldf.columns.tolist())
+            st.write("Obs columns:", obdf.columns.tolist())
+            st.stop()
+        
         station_metrics = compute_station_metrics(
             merged=merged,
             station_meta=station_meta,
             threshold=threshold,
         )
+        st.write("Station metrics rows:", len(station_metrics))
 
+        if station_metrics.empty:
+            st.warning("Pairs were created, but no station metrics were produced.")
+            st.write("Merged columns:", merged.columns.tolist())
+            st.write(merged.head(20))
+            st.stop()
         st.session_state["station_metrics"] = station_metrics
         st.session_state["selected_station_list"] = candidate_stations[:5]
 
@@ -201,6 +217,18 @@ if "station_metrics" in st.session_state:
     plot_station_metric_map(station_metrics, selected_metric)
 
     st.subheader("Station Metrics Table")
+    if station_metrics.empty:
+        st.warning("No station metrics were produced. Check whether model/obs pairs were created.")
+        st.stop()
+
+    if selected_metric not in station_metrics.columns:
+        st.warning(
+            f"Selected metric '{selected_metric}' is not available. "
+            f"Available columns: {station_metrics.columns.tolist()}"
+        )
+        st.dataframe(station_metrics, use_container_width=True, hide_index=True)
+        st.stop()
+
     st.dataframe(
         station_metrics.sort_values(selected_metric, ascending=False),
         use_container_width=True,

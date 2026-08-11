@@ -268,6 +268,7 @@ ELEMENT_CONFIG = {
     "wind": {
         "label": "Wind Speed",
         "units": "kt",
+        "obs_time_column": "valid_time",
         "model_value_candidates": ["wind_speed_kt", "si10"],
         "obs_value_candidates": ["obs_wind_speed_kts", "wind_speed_kt"],
         "direction_candidates": ["obs_wind_dir_deg", "wind_dir_deg", "wind_direction"],
@@ -278,9 +279,11 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": True,
         "category_sets": ["marine", "beaufort"],
     },
+
     "gust": {
         "label": "Wind Gust",
         "units": "kt",
+        "obs_time_column": "valid_time",
         "model_value_candidates": ["wind_gust_kt", "i10fg"],
         "obs_value_candidates": ["obs_wind_gust_kts", "wind_gust_kt"],
         "direction_candidates": ["obs_wind_dir_deg", "wind_dir_deg", "wind_direction"],
@@ -291,11 +294,19 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": True,
         "category_sets": ["marine"],
     },
+
     "precip6hr": {
         "label": "6-hour Precipitation",
         "units": "in",
+        "obs_time_column": "end_time",
         "model_value_candidates": ["precip_accum_6hr", "precip_accum", "precip6hr"],
-        "obs_value_candidates": ["precip_6h", "obs_precip_6h", "precip_accum_6hr", "precip_accum", "precip_total"],
+        "obs_value_candidates": [
+            "precip_total",
+            "precip_6h",
+            "obs_precip_6h",
+            "precip_accum_6hr",
+            "precip_accum",
+        ],
         "percentile_prefix": "qpf_p",
         "default_percentile": "75",
         "default_threshold": 0.25,
@@ -303,11 +314,19 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": False,
         "category_sets": ["precip"],
     },
+
     "precip24hr": {
         "label": "24-hour Precipitation",
         "units": "in",
+        "obs_time_column": "end_time",
         "model_value_candidates": ["precip_accum_24hr", "precip24hr"],
-        "obs_value_candidates": ["precip_24h", "obs_precip_24h", "precip_accum_24hr", "precip_accum", "precip_total"],
+        "obs_value_candidates": [
+            "precip_total",
+            "precip_24h",
+            "obs_precip_24h",
+            "precip_accum_24hr",
+            "precip_accum",
+        ],
         "percentile_prefix": "qpf_p",
         "default_percentile": "75",
         "default_threshold": 1.00,
@@ -315,9 +334,11 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": False,
         "category_sets": ["precip"],
     },
+
     "snow6hr": {
         "label": "6-hour Snowfall",
         "units": "in",
+        "obs_time_column": "end_time",
         "model_value_candidates": ["snow_accum_6hr", "snow_accum", "snow6hr"],
         "obs_value_candidates": ["snow_6h", "obs_snow_6h", "snow_accum_6hr", "snow_accum"],
         "percentile_prefix": "snow_p",
@@ -327,9 +348,11 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": False,
         "category_sets": ["snow"],
     },
+
     "snow24hr": {
         "label": "24-hour Snowfall",
         "units": "in",
+        "obs_time_column": "end_time",
         "model_value_candidates": ["snow_accum_24hr", "snow24hr"],
         "obs_value_candidates": ["snow_24h", "obs_snow_24h", "snow_accum_24hr", "snow_accum"],
         "percentile_prefix": "snow_p",
@@ -339,9 +362,11 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": False,
         "category_sets": ["snow"],
     },
+
     "snow48hr": {
         "label": "48-hour Snowfall",
         "units": "in",
+        "obs_time_column": "end_time",
         "model_value_candidates": ["snow_accum_48hr", "snow48hr"],
         "obs_value_candidates": ["snow_48h", "obs_snow_48h", "snow_accum_48hr", "snow_accum"],
         "percentile_prefix": "snow_p",
@@ -351,9 +376,11 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": False,
         "category_sets": ["snow"],
     },
+
     "snow72hr": {
         "label": "72-hour Snowfall",
         "units": "in",
+        "obs_time_column": "end_time",
         "model_value_candidates": ["snow_accum_72hr", "snow72hr"],
         "obs_value_candidates": ["snow_72h", "obs_snow_72h", "snow_accum_72hr", "snow_accum"],
         "percentile_prefix": "snow_p",
@@ -363,9 +390,11 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": False,
         "category_sets": ["snow"],
     },
+
     "rh": {
         "label": "Relative Humidity",
         "units": "%",
+        "obs_time_column": "valid_time",
         "model_value_candidates": ["rh"],
         "obs_value_candidates": ["rh", "relative_humidity"],
         "percentile_prefix": "rh_p",
@@ -375,11 +404,19 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": False,
         "category_sets": ["rh"],
     },
+
     "maxt": {
         "label": "Maximum Temperature",
         "units": "F",
-        "model_value_candidates": ["max_temp", "maxt", "temperature"],
-        "obs_value_candidates": ["max_t", "obs_max_temp", "max_temp", "maxt"],
+        "obs_time_column": "window_end",
+        "model_value_candidates": ["tmax", "max_temp", "maxt", "temperature"],
+        "obs_value_candidates": [
+            "tmax",
+            "max_t",
+            "obs_max_temp",
+            "max_temp",
+            "maxt",
+        ],
         "percentile_prefix": "maxt_p",
         "default_percentile": "50",
         "default_threshold": 32,
@@ -387,11 +424,19 @@ ELEMENT_CONFIG = {
         "supports_direction_filter": False,
         "category_sets": ["temperature"],
     },
+
     "mint": {
         "label": "Minimum Temperature",
         "units": "F",
-        "model_value_candidates": ["min_temp", "mint", "temperature"],
-        "obs_value_candidates": ["min_t", "obs_min_temp", "min_temp", "mint"],
+        "obs_time_column": "window_end",
+        "model_value_candidates": ["tmin", "min_temp", "mint", "temperature"],
+        "obs_value_candidates": [
+            "tmin",
+            "min_t",
+            "obs_min_temp",
+            "min_temp",
+            "mint",
+        ],
         "percentile_prefix": "mint_p",
         "default_percentile": "50",
         "default_threshold": 32,
@@ -401,6 +446,13 @@ ELEMENT_CONFIG = {
     },
 }
 
+def get_obs_time_column(element: str) -> str:
+    """
+    Return the observation archive time column used for filtering.
+
+    The selected column is standardized to valid_time in data_loader.py.
+    """
+    return ELEMENT_CONFIG[element].get("obs_time_column", "valid_time")
 
 def get_element_config(element: str) -> dict:
     """

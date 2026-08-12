@@ -2,17 +2,12 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
+from sidebar_controls import shared_sidebar_controls
+
 from config import (
-    MODELS,
-    PERCENTILES,
-    FORECAST_PROJECTION_GROUPS,
-    get_available_elements,
-    get_available_obs_sources,
-    get_element_config,
-    get_forecast_hours,
     get_map_metrics,
-    is_probabilistic,
 )
+
 from data_loader import fetch_data
 from pairing import build_verification_pairs
 from metrics import compute_station_metrics
@@ -39,54 +34,39 @@ def load_station_metadata(metadata_path):
 
 st.title("Map Explorer")
 
-archive_root = st.sidebar.text_input("Local Archive Root", "../model")
+# ---------------------------------------------------------------------
+# Shared sidebar controls
+# ---------------------------------------------------------------------
+
+controls = shared_sidebar_controls(show_category_set=False)
+
+archive_root = controls["archive_root"]
+model = controls["model"]
+element = controls["element"]
+obs = controls["obs"]
+element_cfg = controls["element_cfg"]
+model_is_probabilistic = controls["model_is_probabilistic"]
+percentile = controls["percentile"]
+forecast_projection = controls["forecast_projection"]
+forecast_hours = controls["forecast_hours"]
+start_date = controls["start_date"]
+end_date = controls["end_date"]
+threshold = controls["threshold"]
+
+# ---------------------------------------------------------------------
+# Map-specific sidebar controls
+# ---------------------------------------------------------------------
+
 metadata_path = st.sidebar.text_input(
     "Station Metadata Path",
-    "../metadata/ak_station_metadata.parquet",
+    value=st.session_state.get(
+        "metadata_path",
+        "../metadata/ak_station_metadata.parquet",
+    ),
+    key="metadata_path",
 )
 
 station_meta = load_station_metadata(metadata_path)
-
-model = st.sidebar.selectbox("Model", MODELS)
-
-available_elements = get_available_elements(model)
-element = st.sidebar.selectbox("Element", available_elements)
-
-available_obs_sources = get_available_obs_sources(element)
-
-obs = st.sidebar.selectbox(
-    "Verification Source",
-    available_obs_sources,
-)
-element_cfg = get_element_config(element)
-model_is_probabilistic = is_probabilistic(model, element)
-
-if model_is_probabilistic:
-    percentile = st.sidebar.selectbox(
-        "Verification Percentile",
-        PERCENTILES,
-        index=PERCENTILES.index(element_cfg["default_percentile"]),
-    )
-else:
-    percentile = None
-    st.sidebar.caption("Deterministic model/element: percentile verification disabled.")
-
-forecast_projection = st.sidebar.selectbox(
-    "Forecast Projection",
-    list(FORECAST_PROJECTION_GROUPS.keys()),
-)
-
-forecast_hours = get_forecast_hours(model, element, forecast_projection)
-
-date_col1, date_col2 = st.sidebar.columns(2)
-start_date = date_col1.date_input("Start Date", pd.to_datetime("2025-10-01"))
-end_date = date_col2.date_input("End Date", pd.to_datetime("2026-03-17"))
-
-threshold = st.sidebar.selectbox(
-    f"Threshold ({element_cfg['units']})",
-    element_cfg["thresholds"],
-    index=element_cfg["thresholds"].index(element_cfg["default_threshold"]),
-)
 
 if station_meta.empty:
     st.error("Station metadata file not found or empty.")
@@ -96,23 +76,36 @@ st.markdown(
     "Use metadata filters to choose candidate stations, then compute site-level verification metrics."
 )
 
+# ---------------------------------------------------------------------
+# Metadata filters
+# ---------------------------------------------------------------------
+
 f1, f2, f3 = st.columns(3)
 
 context_options = ["All"]
 if "station_context" in station_meta.columns:
     context_options += sorted(station_meta["station_context"].dropna().unique().tolist())
 
-selected_context = f1.selectbox("Station Context", context_options)
+selected_context = f1.selectbox(
+    "Station Context",
+    context_options,
+    key="map_station_context",
+)
 
 wfo_options = ["All"]
 if "wfo_best" in station_meta.columns:
     wfo_options += sorted(station_meta["wfo_best"].dropna().unique().tolist())
 
-selected_wfo = f2.selectbox("WFO", wfo_options)
+selected_wfo = f2.selectbox(
+    "WFO",
+    wfo_options,
+    key="map_wfo",
+)
 
 zone_type = f3.selectbox(
     "Zone Filter Type",
     ["None", "Public Zone", "Coastal Marine Zone", "Offshore Zone"],
+    key="map_zone_type",
 )
 
 filtered_meta = station_meta.copy()
@@ -124,22 +117,44 @@ if selected_wfo != "All" and "wfo_best" in filtered_meta.columns:
     filtered_meta = filtered_meta[filtered_meta["wfo_best"] == selected_wfo]
 
 if zone_type == "Public Zone" and "public_zone_id" in filtered_meta.columns:
-    zone_options = ["All"] + sorted(filtered_meta["public_zone_id"].dropna().unique().tolist())
-    selected_zone = st.selectbox("Public Zone", zone_options)
+    zone_options = ["All"] + sorted(
+        filtered_meta["public_zone_id"].dropna().unique().tolist()
+    )
+    selected_zone = st.selectbox(
+        "Public Zone",
+        zone_options,
+        key="map_public_zone",
+    )
     if selected_zone != "All":
         filtered_meta = filtered_meta[filtered_meta["public_zone_id"] == selected_zone]
 
 elif zone_type == "Coastal Marine Zone" and "coastal_marine_zone_id" in filtered_meta.columns:
-    zone_options = ["All"] + sorted(filtered_meta["coastal_marine_zone_id"].dropna().unique().tolist())
-    selected_zone = st.selectbox("Coastal Marine Zone", zone_options)
+    zone_options = ["All"] + sorted(
+        filtered_meta["coastal_marine_zone_id"].dropna().unique().tolist()
+    )
+    selected_zone = st.selectbox(
+        "Coastal Marine Zone",
+        zone_options,
+        key="map_coastal_marine_zone",
+    )
     if selected_zone != "All":
-        filtered_meta = filtered_meta[filtered_meta["coastal_marine_zone_id"] == selected_zone]
+        filtered_meta = filtered_meta[
+            filtered_meta["coastal_marine_zone_id"] == selected_zone
+        ]
 
 elif zone_type == "Offshore Zone" and "offshore_zone_id" in filtered_meta.columns:
-    zone_options = ["All"] + sorted(filtered_meta["offshore_zone_id"].dropna().unique().tolist())
-    selected_zone = st.selectbox("Offshore Zone", zone_options)
+    zone_options = ["All"] + sorted(
+        filtered_meta["offshore_zone_id"].dropna().unique().tolist()
+    )
+    selected_zone = st.selectbox(
+        "Offshore Zone",
+        zone_options,
+        key="map_offshore_zone",
+    )
     if selected_zone != "All":
-        filtered_meta = filtered_meta[filtered_meta["offshore_zone_id"] == selected_zone]
+        filtered_meta = filtered_meta[
+            filtered_meta["offshore_zone_id"] == selected_zone
+        ]
 
 candidate_stations = sorted(filtered_meta["station_id"].dropna().unique().tolist())
 
@@ -151,12 +166,29 @@ max_stations = st.number_input(
     max_value=300,
     value=min(300, max(1, len(candidate_stations))),
     step=25,
+    key="map_max_stations",
 )
 
-candidate_stations = candidate_stations[:int(max_stations)]
+candidate_stations = candidate_stations[: int(max_stations)]
 
 metric_options = get_map_metrics(model, element)
-selected_metric = st.selectbox("Map Metric", metric_options, index=0)
+
+# If model/element changes and previous metric is invalid, reset safely.
+current_metric = st.session_state.get("map_selected_metric", metric_options[0])
+if current_metric not in metric_options:
+    current_metric = metric_options[0]
+    st.session_state["map_selected_metric"] = current_metric
+
+selected_metric = st.selectbox(
+    "Map Metric",
+    metric_options,
+    index=metric_options.index(current_metric),
+    key="map_selected_metric",
+)
+
+# ---------------------------------------------------------------------
+# Fetch and compute
+# ---------------------------------------------------------------------
 
 if st.button("Build Station Metric Map", type="primary"):
     with st.spinner("Fetching data and computing station-level verification metrics..."):
@@ -201,7 +233,6 @@ if st.button("Build Station Metric Map", type="primary"):
             st.error("No observation data returned.")
             st.stop()
 
-
         merged = build_verification_pairs(
             modeldf=modeldf,
             obdf=obdf,
@@ -220,12 +251,13 @@ if st.button("Build Station Metric Map", type="primary"):
             st.write("Model columns:", modeldf.columns.tolist())
             st.write("Obs columns:", obdf.columns.tolist())
             st.stop()
-        
+
         station_metrics = compute_station_metrics(
             merged=merged,
             station_meta=station_meta,
             threshold=threshold,
         )
+
         st.write("Station metrics rows:", len(station_metrics))
 
         if station_metrics.empty:
@@ -233,19 +265,61 @@ if st.button("Build Station Metric Map", type="primary"):
             st.write("Merged columns:", merged.columns.tolist())
             st.write(merged.head(20))
             st.stop()
+
         st.session_state["station_metrics"] = station_metrics
-        st.session_state["selected_station_list"] = candidate_stations[:5]
+        st.session_state["station_metrics_context"] = {
+            "model": model,
+            "element": element,
+            "obs": obs,
+            "percentile": percentile,
+            "forecast_projection": forecast_projection,
+            "start_date": start_date,
+            "end_date": end_date,
+            "threshold": threshold,
+        }
+
+        st.session_state["selected_station_list"] = sorted(
+            station_metrics["station_id"].head(5).tolist()
+        )
+
+
+# ---------------------------------------------------------------------
+# Display previous/current results
+# ---------------------------------------------------------------------
 
 if "station_metrics" in st.session_state:
     station_metrics = st.session_state["station_metrics"]
 
     st.subheader("Station Metric Map")
+
+    # Warn if the displayed map was computed with different settings.
+    result_context = st.session_state.get("station_metrics_context", {})
+    current_context = {
+        "model": model,
+        "element": element,
+        "obs": obs,
+        "percentile": percentile,
+        "forecast_projection": forecast_projection,
+        "start_date": start_date,
+        "end_date": end_date,
+        "threshold": threshold,
+    }
+
+    if result_context and result_context != current_context:
+        st.info(
+            "The displayed station metrics were computed with previous settings. "
+            "Click **Build Station Metric Map** to refresh with the current sidebar selections."
+        )
+
     show_map_legend(station_metrics, selected_metric)
     plot_station_metric_map(station_metrics, selected_metric)
 
     st.subheader("Station Metrics Table")
+
     if station_metrics.empty:
-        st.warning("No station metrics were produced. Check whether model/obs pairs were created.")
+        st.warning(
+            "No station metrics were produced. Check whether model/obs pairs were created."
+        )
         st.stop()
 
     if selected_metric not in station_metrics.columns:
@@ -265,7 +339,11 @@ if "station_metrics" in st.session_state:
     selected_stations = st.multiselect(
         "Stations to use in Aggregate Verification",
         options=sorted(station_metrics["station_id"].unique().tolist()),
-        default=sorted(station_metrics["station_id"].head(5).tolist()),
+        default=st.session_state.get(
+            "selected_station_list",
+            sorted(station_metrics["station_id"].head(5).tolist()),
+        ),
+        key="map_selected_station_multiselect",
     )
 
     st.session_state["selected_station_list"] = selected_stations

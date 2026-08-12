@@ -4,10 +4,10 @@ from pathlib import Path
 
 from config import (
     MODELS,
-    OBS_SOURCES,
     PERCENTILES,
     FORECAST_PROJECTION_GROUPS,
     get_available_elements,
+    get_available_obs_sources,
     get_element_config,
     get_forecast_hours,
     get_map_metrics,
@@ -52,8 +52,12 @@ model = st.sidebar.selectbox("Model", MODELS)
 available_elements = get_available_elements(model)
 element = st.sidebar.selectbox("Element", available_elements)
 
-obs = st.sidebar.selectbox("Verification Source", OBS_SOURCES)
+available_obs_sources = get_available_obs_sources(element)
 
+obs = st.sidebar.selectbox(
+    "Verification Source",
+    available_obs_sources,
+)
 element_cfg = get_element_config(element)
 model_is_probabilistic = is_probabilistic(model, element)
 
@@ -156,7 +160,7 @@ selected_metric = st.selectbox("Map Metric", metric_options, index=0)
 
 if st.button("Build Station Metric Map", type="primary"):
     with st.spinner("Fetching data and computing station-level verification metrics..."):
-        modeldf, obdf, error_msg = fetch_data(
+        modeldf, obdf, message = fetch_data(
             analysis_mode="Aggregate Verification",
             model=model,
             obs=obs,
@@ -171,9 +175,32 @@ if st.button("Build Station Metric Map", type="primary"):
             archive_root=archive_root,
         )
 
-        if error_msg:
-            st.error(error_msg)
+        if message:
+            fatal_markers = [
+                "Data Missing",
+                "Database error",
+                "Observation Database error",
+                "Observation schema error",
+                "No model data",
+                "No observation data",
+                "No NDFD data",
+                "No stations",
+            ]
+
+            if any(message.startswith(marker) for marker in fatal_markers):
+                st.error(message)
+                st.stop()
+            else:
+                st.warning(message)
+
+        if modeldf.empty:
+            st.error("No model data returned.")
             st.stop()
+
+        if obdf.empty:
+            st.error("No observation data returned.")
+            st.stop()
+
 
         merged = build_verification_pairs(
             modeldf=modeldf,

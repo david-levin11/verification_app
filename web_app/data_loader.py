@@ -1,7 +1,7 @@
 import duckdb
 import pandas as pd
 from pathlib import Path
-from config import get_obs_time_column
+from config import get_obs_time_column, get_obs_filter_time_column
 
 WEB_APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WEB_APP_DIR.parent
@@ -9,33 +9,28 @@ LOCAL_ARCHIVE_ROOT = PROJECT_ROOT / "model"
 
 
 def generate_monthly_paths(root, model, element, start_date, end_date):
-    """
-    Generates a list of local parquet paths based on the date range.
-
-    Expected structure:
-        ./model/{model}/{element}/{YYYY}_{MM}_archive.parquet
-    """
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
 
-    paths = []
+    months = pd.period_range(start=start, end=end, freq="M")
 
-    current = start.replace(day=1)
+    existing_files = []
+    missing_files = []
 
-    while current <= end:
-        year_month = current.strftime("%Y_%m")
+    for month in months:
+        path = (
+            Path(root)
+            / model
+            / element
+            / f"{month.year}_{month.month:02d}_archive.parquet"
+        )
 
-        path = Path(root) / model / element / f"{year_month}_archive.parquet"
-        paths.append(str(path))
-
-        # Move to first of next month
-        if current.month == 12:
-            current = current.replace(year=current.year + 1, month=1)
+        if path.exists():
+            existing_files.append(str(path))
         else:
-            current = current.replace(month=current.month + 1)
+            missing_files.append(str(path))
 
-    return paths
-
+    return existing_files, missing_files
 
 def fetch_data(
     analysis_mode,
@@ -61,16 +56,16 @@ def fetch_data(
     Notes:
         This loader should only load/filter archive data.
         pairing.py is responsible for choosing model_value and obs_value.
-    """
 
-    ACCUM_ELEMENTS = [
-        "precip6hr",
-        "precip24hr",
-        "snow6hr",
-        "snow24hr",
-        "snow48hr",
-        "snow72hr",
-    ]
+    Returns
+    -------
+    modeldf : pd.DataFrame
+    obdf : pd.DataFrame
+    message : str | None
+        Fatal errors and partial-missing-file warnings are returned here.
+        The Streamlit page should treat messages beginning with "Data Missing",
+        "Database error", or "Observation Database error" as fatal.
+    """
 
     query_start = start_date
     query_end = end_date
@@ -81,7 +76,13 @@ def fetch_data(
 
     con = duckdb.connect()
 
-    modelfiles = generate_monthly_paths(
+    warnings = []
+
+    # ------------------------------------------------------------------
+    # 0. Resolve available monthly files
+    # ------------------------------------------------------------------
+
+    modelfiles, missing_modelfiles = generate_monthly_paths(
         root=archive_root,
         model=model,
         element=element,
@@ -89,13 +90,43 @@ def fetch_data(
         end_date=query_end,
     )
 
-    obfiles = generate_monthly_paths(
+    if not modelfiles:
+        return (
+            pd.DataFrame(),
+            pd.DataFrame(),
+            f"Data Missing: Could not find any local {model.upper()} {element} data "
+            f"for the selected dates. Missing files included: {missing_modelfiles[:5]}",
+        )
+
+    if missing_modelfiles:
+        warnings.append(
+            f"Some {model.upper()} {element} monthly archive files were missing. "
+            f"Proceeding with {len(modelfiles)} available file(s). "
+            f"Missing: {missing_modelfiles[:5]}"
+        )
+
+    obfiles, missing_obfiles = generate_monthly_paths(
         root=archive_root,
         model=obs,
         element=element,
         start_date=query_start,
         end_date=query_end,
     )
+
+    if not obfiles:
+        return (
+            pd.DataFrame(),
+            pd.DataFrame(),
+            f"Data Missing: Could not find any local {obs.upper()} {element} observation data "
+            f"for the selected dates. Missing files included: {missing_obfiles[:5]}",
+        )
+
+    if missing_obfiles:
+        warnings.append(
+            f"Some {obs.upper()} {element} observation monthly archive files were missing. "
+            f"Proceeding with {len(obfiles)} available file(s). "
+            f"Missing: {missing_obfiles[:5]}"
+        )
 
     station_placeholders = ", ".join(["?"] * len(query_stations))
 
@@ -194,16 +225,20 @@ def fetch_data(
 
     station_select = "station_id" if obs == "urma" else "stid"
 
-    # Accumulation obs archives use end_time as the valid time.
-    # Example precip6hr columns:
-    #     start_time, end_time, precip_total
-    #obs_time_col = "end_time" if element in ACCUM_ELEMENTS else "valid_time"
+    # Column used to create standardized obdf["valid_time"].
     obs_time_col = get_obs_time_column(element)
+
+    # Optional: if you add get_obs_filter_time_column() to config.py,
+    # use it here. Otherwise default to obs_time_col.
+    try:
+        obs_filter_time_col = get_obs_filter_time_column(element)
+    except NameError:
+        obs_filter_time_col = obs_time_col
 
     obquery = f"""
     SELECT * FROM read_parquet({obfiles})
     WHERE {station_select} IN ({station_placeholders})
-      AND {obs_time_col} BETWEEN ? AND ?
+      AND {obs_filter_time_col} BETWEEN ? AND ?
     """
     ob_params = query_stations + [query_start, query_end]
 
@@ -213,12 +248,13 @@ def fetch_data(
     except Exception as e:
         error_msg = str(e)
 
-        if "Referenced column" in error_msg and obs_time_col in error_msg:
+        if "Referenced column" in error_msg and obs_filter_time_col in error_msg:
             return (
                 modeldf,
                 pd.DataFrame(),
-                f"Observation Database error: Expected time column '{obs_time_col}' "
-                f"for {obs} {element}, but it was not found. Original error: {e}",
+                f"Observation Database error: Expected filter time column "
+                f"'{obs_filter_time_col}' for {obs} {element}, but it was not found. "
+                f"Original error: {e}",
             )
 
         return modeldf, pd.DataFrame(), f"Observation Database error: {e}"
@@ -229,14 +265,20 @@ def fetch_data(
     # ------------------------------------------------------------------
     # 4. Standardize obs schema for pairing.py
     # ------------------------------------------------------------------
-    # Standardize observation time column for pairing.py.
-    # Pairing expects valid_time.
-    if obs_time_col in obdf.columns and obs_time_col != "valid_time":
-        obdf["valid_time"] = obdf[obs_time_col]
-    # Accumulation obs use end_time as the verification valid_time.
-    if element in ACCUM_ELEMENTS:
-        if "end_time" in obdf.columns and "valid_time" not in obdf.columns:
-            obdf = obdf.rename(columns={"end_time": "valid_time"})
+
+    # Pairing expects a common valid_time column. Preserve the original
+    # time column too, e.g. end_time/window_end/date, for diagnostics and
+    # date-based pairing.
+    if obs_time_col in obdf.columns:
+        if obs_time_col != "valid_time":
+            obdf["valid_time"] = obdf[obs_time_col]
+    else:
+        return (
+            modeldf,
+            pd.DataFrame(),
+            f"Observation schema error: Expected obs time column '{obs_time_col}' "
+            f"for {obs} {element}, but available columns are: {obdf.columns.tolist()}",
+        )
 
     # ------------------------------------------------------------------
     # 5. Standardize datetimes to tz-naive datetime64[ns]
@@ -250,7 +292,15 @@ def fetch_data(
                 .astype("datetime64[ns]")
             )
 
-    for col in ["valid_time", "init_time", "start_time", "end_time"]:
+    for col in [
+        "valid_time",
+        "init_time",
+        "start_time",
+        "end_time",
+        "window_start",
+        "window_end",
+        "date",
+    ]:
         if col in obdf.columns:
             obdf[col] = (
                 pd.to_datetime(obdf[col], errors="coerce", utc=True)
@@ -258,4 +308,10 @@ def fetch_data(
                 .astype("datetime64[ns]")
             )
 
-    return modeldf, obdf, None
+    # ------------------------------------------------------------------
+    # 6. Return data and any non-fatal warnings
+    # ------------------------------------------------------------------
+
+    message = "\n\n".join(warnings) if warnings else None
+
+    return modeldf, obdf, message

@@ -3,10 +3,13 @@ import pandas as pd
 
 from config import (
     MODELS,
-    OBS_SOURCES,
     PERCENTILES,
+    FORECAST_PROJECTION_GROUPS,
     get_available_elements,
+    get_available_obs_sources,
     get_element_config,
+    get_forecast_hours,
+    get_map_metrics,
     is_probabilistic,
 )
 from data_loader import fetch_data
@@ -22,7 +25,12 @@ model = st.sidebar.selectbox("Model", MODELS)
 available_elements = get_available_elements(model)
 element = st.sidebar.selectbox("Element", available_elements)
 
-obs = st.sidebar.selectbox("Verification Source", OBS_SOURCES)
+available_obs_sources = get_available_obs_sources(element)
+
+obs = st.sidebar.selectbox(
+    "Verification Source",
+    available_obs_sources,
+)
 
 element_cfg = get_element_config(element)
 model_is_probabilistic = is_probabilistic(model, element)
@@ -55,7 +63,7 @@ storm_end = s4.date_input("Plot End Date", pd.to_datetime("2026-02-24"))
 
 if st.button("Generate Storm Timeseries", type="primary"):
     with st.spinner(f"Fetching data for {storm_station}..."):
-        modeldf, obdf, error_msg = fetch_data(
+        modeldf, obdf, message = fetch_data(
             analysis_mode="Storm Specific Zoom",
             model=model,
             obs=obs,
@@ -70,8 +78,32 @@ if st.button("Generate Storm Timeseries", type="primary"):
             archive_root=archive_root,
         )
 
-    if error_msg:
-        st.error(error_msg)
+    if message:
+        fatal_markers = [
+            "Data Missing",
+            "Database error",
+            "Observation Database error",
+            "Observation schema error",
+            "No model data",
+            "No observation data",
+            "No NDFD data",
+            "No stations",
+        ]
+
+        if any(message.startswith(marker) for marker in fatal_markers):
+            st.error(message)
+            st.stop()
+        else:
+            st.warning(message)
+
+        if modeldf.empty:
+            st.error("No model data returned.")
+            st.stop()
+
+        if obdf.empty:
+            st.error("No observation data returned.")
+            st.stop()
+
     else:
         fig = plot_storm_timeseries(
             model_df=modeldf,

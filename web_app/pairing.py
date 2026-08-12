@@ -23,6 +23,9 @@ from config import (
     get_element_config,
     get_percentile_columns,
     is_probabilistic,
+    get_pairing_method,
+    get_model_pair_date_column,
+    get_obs_pair_date_column,
 )
 
 
@@ -249,6 +252,8 @@ def build_verification_pairs(
     modeldf["model_value"] = pd.to_numeric(modeldf[model_col], errors="coerce")
     obdf["obs_value"] = pd.to_numeric(obdf[obs_col], errors="coerce")
 
+    pairing_method = get_pairing_method(element)
+
     required_model_cols = [
         "station_id",
         "valid_time",
@@ -271,6 +276,21 @@ def build_verification_pairs(
         obs_col,
     ]
 
+    # Preserve extra columns needed for date-based pairing.
+    if pairing_method == "date":
+        model_pair_col = get_model_pair_date_column(element)
+        obs_pair_col = get_obs_pair_date_column(element)
+
+        if model_pair_col not in required_model_cols and model_pair_col not in optional_model_cols:
+            optional_model_cols.append(model_pair_col)
+
+        if obs_pair_col not in required_obs_cols and obs_pair_col not in optional_obs_cols:
+            optional_obs_cols.append(obs_pair_col)
+
+        # Useful for diagnostics and for understanding extrema/accumulation windows.
+        for extra_col in ["date", "window_start", "window_end"]:
+            if extra_col not in required_obs_cols and extra_col not in optional_obs_cols:
+                optional_obs_cols.append(extra_col)
     # Keep percentile columns if available. This allows reliability/rank
     # histogram functions to continue using the probabilistic information.
     if is_probabilistic(model, element):
@@ -301,9 +321,55 @@ def build_verification_pairs(
     if modeldf.empty or obdf.empty:
         return pd.DataFrame()
 
-    if obs == "obs":
-        # Nearest-time point observation matching.
+    if pairing_method == "date":
+        model_pair_col = get_model_pair_date_column(element)
+        obs_pair_col = get_obs_pair_date_column(element)
 
+        if model_pair_col not in modeldf.columns:
+            raise ValueError(
+                f"Model pair date column '{model_pair_col}' not found for element={element}. "
+                f"Available model columns: {modeldf.columns.tolist()}"
+            )
+
+        if obs_pair_col not in obdf.columns:
+            raise ValueError(
+                f"Obs pair date column '{obs_pair_col}' not found for element={element}. "
+                f"Available obs columns: {obdf.columns.tolist()}"
+            )
+
+        modeldf["pair_date"] = (
+            pd.to_datetime(modeldf[model_pair_col], errors="coerce", utc=True)
+            .dt.tz_convert(None)
+            .dt.date
+        )
+
+        obdf["pair_date"] = (
+            pd.to_datetime(obdf[obs_pair_col], errors="coerce", utc=True)
+            .dt.tz_convert(None)
+            .dt.date
+        )
+
+        modeldf = modeldf.dropna(subset=["station_id", "pair_date", "model_value"])
+        obdf = obdf.dropna(subset=["station_id", "pair_date", "obs_value"])
+
+        merged = pd.merge(
+            modeldf,
+            obdf,
+            on=["station_id", "pair_date"],
+            how="inner",
+            suffixes=("_model", "_obs"),
+        )
+
+        # For date-based daily extrema, keep the model valid_time as the
+        # standardized valid_time used by downstream metrics/plots.
+        if "valid_time_model" in merged.columns:
+            merged["valid_time"] = merged["valid_time_model"]
+        elif "valid_time" not in merged.columns and model_pair_col in merged.columns:
+            merged["valid_time"] = merged[model_pair_col]
+
+    elif obs == "obs":
+         # Nearest-time point observation matching.
+        
         # Force merge key dtypes to match exactly before merge_asof.
         modeldf["station_id"] = modeldf["station_id"].astype(str)
         obdf["station_id"] = obdf["station_id"].astype(str)
@@ -336,6 +402,7 @@ def build_verification_pairs(
             suffixes=("_model", "_obs"),
         )
     else:
+        # your existing URMA/exact merge logic
         # Analysis-style verification source, usually exact valid_time match.
         if "station_id" in obdf.columns and "station_id" in modeldf.columns:
             merged = pd.merge(

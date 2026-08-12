@@ -268,6 +268,7 @@ ELEMENT_CONFIG = {
     "wind": {
         "label": "Wind Speed",
         "units": "kt",
+        "available_obs_sources": ["obs", "urma"],
         "obs_time_column": "valid_time",
         "model_value_candidates": ["wind_speed_kt", "si10"],
         "obs_value_candidates": ["obs_wind_speed_kts", "wind_speed_kt"],
@@ -283,6 +284,7 @@ ELEMENT_CONFIG = {
     "gust": {
         "label": "Wind Gust",
         "units": "kt",
+        "available_obs_sources": ["obs", "urma"],
         "obs_time_column": "valid_time",
         "model_value_candidates": ["wind_gust_kt", "i10fg"],
         "obs_value_candidates": ["obs_wind_gust_kts", "wind_gust_kt"],
@@ -298,6 +300,7 @@ ELEMENT_CONFIG = {
     "precip6hr": {
         "label": "6-hour Precipitation",
         "units": "in",
+        "available_obs_sources": ["obs"],
         "obs_time_column": "end_time",
         "model_value_candidates": ["precip_accum_6hr", "precip_accum", "precip6hr"],
         "obs_value_candidates": [
@@ -318,6 +321,7 @@ ELEMENT_CONFIG = {
     "precip24hr": {
         "label": "24-hour Precipitation",
         "units": "in",
+        "available_obs_sources": ["obs"],
         "obs_time_column": "end_time",
         "model_value_candidates": ["precip_accum_24hr", "precip24hr"],
         "obs_value_candidates": [
@@ -338,6 +342,7 @@ ELEMENT_CONFIG = {
     "snow6hr": {
         "label": "6-hour Snowfall",
         "units": "in",
+        "available_obs_sources": ["obs"],
         "obs_time_column": "end_time",
         "model_value_candidates": ["snow_accum_6hr", "snow_accum", "snow6hr"],
         "obs_value_candidates": ["snow_6h", "obs_snow_6h", "snow_accum_6hr", "snow_accum"],
@@ -352,6 +357,7 @@ ELEMENT_CONFIG = {
     "snow24hr": {
         "label": "24-hour Snowfall",
         "units": "in",
+        "available_obs_sources": ["obs"],
         "obs_time_column": "end_time",
         "model_value_candidates": ["snow_accum_24hr", "snow24hr"],
         "obs_value_candidates": ["snow_24h", "obs_snow_24h", "snow_accum_24hr", "snow_accum"],
@@ -366,6 +372,7 @@ ELEMENT_CONFIG = {
     "snow48hr": {
         "label": "48-hour Snowfall",
         "units": "in",
+        "available_obs_sources": ["obs"],
         "obs_time_column": "end_time",
         "model_value_candidates": ["snow_accum_48hr", "snow48hr"],
         "obs_value_candidates": ["snow_48h", "obs_snow_48h", "snow_accum_48hr", "snow_accum"],
@@ -380,6 +387,7 @@ ELEMENT_CONFIG = {
     "snow72hr": {
         "label": "72-hour Snowfall",
         "units": "in",
+        "available_obs_sources": ["obs"],
         "obs_time_column": "end_time",
         "model_value_candidates": ["snow_accum_72hr", "snow72hr"],
         "obs_value_candidates": ["snow_72h", "obs_snow_72h", "snow_accum_72hr", "snow_accum"],
@@ -394,6 +402,7 @@ ELEMENT_CONFIG = {
     "rh": {
         "label": "Relative Humidity",
         "units": "%",
+        "available_obs_sources": ["obs"],
         "obs_time_column": "valid_time",
         "model_value_candidates": ["rh"],
         "obs_value_candidates": ["rh", "relative_humidity"],
@@ -408,8 +417,13 @@ ELEMENT_CONFIG = {
     "maxt": {
         "label": "Maximum Temperature",
         "units": "F",
+        "available_obs_sources": ["obs"],
         "obs_time_column": "window_end",
-        "model_value_candidates": ["tmax", "max_temp", "maxt", "temperature"],
+        "obs_filter_time_column": "date",
+        "pairing_method": "date",
+        "model_pair_date_column": "valid_time",
+        "obs_pair_date_column": "date",
+        "model_value_candidates": ["max_temp", "maxt", "temperature", "tmax"],
         "obs_value_candidates": [
             "tmax",
             "max_t",
@@ -428,8 +442,13 @@ ELEMENT_CONFIG = {
     "mint": {
         "label": "Minimum Temperature",
         "units": "F",
+        "available_obs_sources": ["obs"],
         "obs_time_column": "window_end",
-        "model_value_candidates": ["tmin", "min_temp", "mint", "temperature"],
+        "obs_filter_time_column": "date",
+        "pairing_method": "date",
+        "model_pair_date_column": "valid_time",
+        "obs_pair_date_column": "date",
+        "model_value_candidates": ["min_temp", "mint", "temperature", "tmin"],
         "obs_value_candidates": [
             "tmin",
             "min_t",
@@ -446,6 +465,20 @@ ELEMENT_CONFIG = {
     },
 }
 
+def get_available_obs_sources(element: str) -> list[str]:
+    return ELEMENT_CONFIG[element].get("available_obs_sources", ["obs"])
+
+def get_pairing_method(element: str) -> str:
+    return ELEMENT_CONFIG[element].get("pairing_method", "time")
+
+
+def get_model_pair_date_column(element: str) -> str:
+    return ELEMENT_CONFIG[element].get("model_pair_date_column", "valid_time")
+
+
+def get_obs_pair_date_column(element: str) -> str:
+    return ELEMENT_CONFIG[element].get("obs_pair_date_column", "valid_time")
+
 def get_obs_time_column(element: str) -> str:
     """
     Return the observation archive time column used for filtering.
@@ -453,6 +486,16 @@ def get_obs_time_column(element: str) -> str:
     The selected column is standardized to valid_time in data_loader.py.
     """
     return ELEMENT_CONFIG[element].get("obs_time_column", "valid_time")
+
+def get_obs_filter_time_column(element: str) -> str:
+    """
+    Return the observation archive time column used in the DuckDB WHERE clause.
+
+    Defaults to obs_time_column. This allows daily extrema to filter by date
+    while still using window_end as the standardized valid_time.
+    """
+    cfg = ELEMENT_CONFIG[element]
+    return cfg.get("obs_filter_time_column", cfg.get("obs_time_column", "valid_time"))
 
 def get_element_config(element: str) -> dict:
     """

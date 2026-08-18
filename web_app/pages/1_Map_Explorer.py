@@ -34,6 +34,252 @@ def load_station_metadata(metadata_path):
 
 st.title("Map Explorer")
 
+def show_coverage_diagnostics(
+    candidate_stations,
+    modeldf,
+    obdf,
+    merged,
+    station_metrics,
+):
+    """
+    Show station/data coverage diagnostics for the current request.
+    """
+
+    candidate_set = set(str(s).strip() for s in candidate_stations)
+
+    model_stations = (
+        set(modeldf["station_id"].astype(str).str.strip())
+        if "station_id" in modeldf.columns
+        else set()
+    )
+
+    if "station_id" in obdf.columns:
+        obs_stations = set(obdf["station_id"].astype(str).str.strip())
+    elif "stid" in obdf.columns:
+        obs_stations = set(obdf["stid"].astype(str).str.strip())
+    else:
+        obs_stations = set()
+
+    paired_stations = (
+        set(merged["station_id"].astype(str).str.strip())
+        if "station_id" in merged.columns
+        else set()
+    )
+
+    metric_stations = (
+        set(station_metrics["station_id"].astype(str).str.strip())
+        if "station_id" in station_metrics.columns
+        else set()
+    )
+
+    model_only = sorted(model_stations - obs_stations)
+    obs_only = sorted(obs_stations - model_stations)
+    candidate_without_model = sorted(candidate_set - model_stations)
+    candidate_without_obs = sorted(candidate_set - obs_stations)
+    model_obs_overlap = sorted(model_stations & obs_stations)
+    paired_missing_metrics = sorted(paired_stations - metric_stations)
+
+    with st.expander("Coverage diagnostics", expanded=True):
+        c1, c2, c3, c4, c5 = st.columns(5)
+
+        c1.metric("Candidate stations", f"{len(candidate_set):,}")
+        c2.metric("Model stations", f"{len(model_stations):,}")
+        c3.metric("Obs stations", f"{len(obs_stations):,}")
+        c4.metric("Paired stations", f"{len(paired_stations):,}")
+        c5.metric("Metric stations", f"{len(metric_stations):,}")
+
+        st.write("Rows")
+        st.dataframe(
+            {
+                "dataset": [
+                    "modeldf",
+                    "obdf",
+                    "merged",
+                    "station_metrics",
+                ],
+                "rows": [
+                    len(modeldf),
+                    len(obdf),
+                    len(merged),
+                    len(station_metrics),
+                ],
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.write("Station coverage checks")
+        st.dataframe(
+            {
+                "check": [
+                    "Candidate stations without model data",
+                    "Candidate stations without obs data",
+                    "Model/obs station overlap",
+                    "Paired stations missing station metrics",
+                    "Model stations not in obs",
+                    "Obs stations not in model",
+                ],
+                "count": [
+                    len(candidate_without_model),
+                    len(candidate_without_obs),
+                    len(model_obs_overlap),
+                    len(paired_missing_metrics),
+                    len(model_only),
+                    len(obs_only),
+                ],
+                "examples": [
+                    ", ".join(candidate_without_model[:20]),
+                    ", ".join(candidate_without_obs[:20]),
+                    ", ".join(model_obs_overlap[:20]),
+                    ", ".join(paired_missing_metrics[:20]),
+                    ", ".join(model_only[:20]),
+                    ", ".join(obs_only[:20]),
+                ],
+            },
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        if "valid_time" in modeldf.columns:
+            st.write(
+                "Model valid time range:",
+                modeldf["valid_time"].min(),
+                "to",
+                modeldf["valid_time"].max(),
+            )
+
+        if "valid_time" in obdf.columns:
+            st.write(
+                "Obs valid time range:",
+                obdf["valid_time"].min(),
+                "to",
+                obdf["valid_time"].max(),
+            )
+
+        if "forecast_hour" in modeldf.columns:
+            st.write(
+                "Model forecast hours:",
+                sorted(modeldf["forecast_hour"].dropna().unique().tolist())[:200],
+            )
+        station_coverage = pd.DataFrame(
+            {
+                "station_id": sorted(candidate_set),
+            }
+        )
+
+        station_coverage["in_model"] = station_coverage["station_id"].isin(model_stations)
+        station_coverage["in_obs"] = station_coverage["station_id"].isin(obs_stations)
+        station_coverage["paired"] = station_coverage["station_id"].isin(paired_stations)
+        station_coverage["has_metrics"] = station_coverage["station_id"].isin(metric_stations)
+
+        station_coverage["coverage_status"] = "missing both"
+        station_coverage.loc[
+            station_coverage["in_model"] & ~station_coverage["in_obs"],
+            "coverage_status",
+        ] = "model only"
+        station_coverage.loc[
+            ~station_coverage["in_model"] & station_coverage["in_obs"],
+            "coverage_status",
+        ] = "obs only"
+        station_coverage.loc[
+            station_coverage["in_model"] & station_coverage["in_obs"] & ~station_coverage["paired"],
+            "coverage_status",
+        ] = "model + obs, not paired"
+        station_coverage.loc[
+            station_coverage["paired"],
+            "coverage_status",
+        ] = "paired"
+
+        st.write("Station-level coverage")
+        st.dataframe(
+            station_coverage,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.download_button(
+            "Download station coverage CSV",
+            data=station_coverage.to_csv(index=False),
+            file_name="station_coverage_diagnostics.csv",
+            mime="text/csv",
+        )
+        coverage_summary = (
+            station_coverage["coverage_status"]
+            .value_counts()
+            .rename_axis("coverage_status")
+            .reset_index(name="station_count")
+        )
+
+        st.write("Coverage status summary")
+        st.dataframe(
+            coverage_summary,
+            use_container_width=True,
+            hide_index=True,
+        )
+        if "valid_time" in modeldf.columns and "valid_time" in obdf.columns:
+            model_times = pd.to_datetime(modeldf["valid_time"], errors="coerce")
+            obs_times = pd.to_datetime(obdf["valid_time"], errors="coerce")
+
+            model_hours = sorted(model_times.dt.hour.dropna().unique().tolist())
+            obs_hours = sorted(obs_times.dt.hour.dropna().unique().tolist())
+
+            st.write("Valid-time hour coverage")
+            st.dataframe(
+                {
+                    "dataset": ["model", "obs"],
+                    "valid_time_hours_utc": [model_hours, obs_hours],
+                },
+                use_container_width=True,
+                hide_index=True,
+            )
+                # --------------------------------------------------------------
+        # Possible station ID alias / prefix mismatches
+        # --------------------------------------------------------------
+
+        def strip_known_prefixes(station_id):
+            station_id = str(station_id).strip()
+
+            for prefix in ["NDBC", "COOP"]:
+                if station_id.startswith(prefix):
+                    return station_id[len(prefix):]
+
+            return station_id
+
+        model_alias = pd.DataFrame(
+            {
+                "model_station_id": sorted(model_stations),
+            }
+        )
+        model_alias["canonical_station_id"] = model_alias["model_station_id"].apply(
+            strip_known_prefixes
+        )
+
+        obs_alias = pd.DataFrame(
+            {
+                "obs_station_id": sorted(obs_stations),
+            }
+        )
+        obs_alias["canonical_station_id"] = obs_alias["obs_station_id"].apply(
+            strip_known_prefixes
+        )
+
+        alias_matches = pd.merge(
+            model_alias,
+            obs_alias,
+            on="canonical_station_id",
+            how="inner",
+        )
+
+        alias_matches = alias_matches[
+            alias_matches["model_station_id"] != alias_matches["obs_station_id"]
+        ]
+
+        st.write("Possible station ID alias matches")
+        st.dataframe(
+            alias_matches,
+            use_container_width=True,
+            hide_index=True,
+        )
 # ---------------------------------------------------------------------
 # Shared sidebar controls
 # ---------------------------------------------------------------------
@@ -266,6 +512,14 @@ if st.button("Build Station Metric Map", type="primary"):
             st.write(merged.head(20))
             st.stop()
 
+        # show_coverage_diagnostics(
+        #     candidate_stations=candidate_stations,
+        #     modeldf=modeldf,
+        #     obdf=obdf,
+        #     merged=merged,
+        #     station_metrics=station_metrics,
+        # )
+
         st.session_state["station_metrics"] = station_metrics
         st.session_state["station_metrics_context"] = {
             "model": model,
@@ -273,6 +527,7 @@ if st.button("Build Station Metric Map", type="primary"):
             "obs": obs,
             "percentile": percentile,
             "forecast_projection": forecast_projection,
+            "forecast_hours": forecast_hours,
             "start_date": start_date,
             "end_date": end_date,
             "threshold": threshold,
@@ -295,15 +550,16 @@ if "station_metrics" in st.session_state:
     # Warn if the displayed map was computed with different settings.
     result_context = st.session_state.get("station_metrics_context", {})
     current_context = {
-        "model": model,
-        "element": element,
-        "obs": obs,
-        "percentile": percentile,
-        "forecast_projection": forecast_projection,
-        "start_date": start_date,
-        "end_date": end_date,
-        "threshold": threshold,
-    }
+            "model": model,
+            "element": element,
+            "obs": obs,
+            "percentile": percentile,
+            "forecast_projection": forecast_projection,
+            "forecast_hours": forecast_hours,
+            "start_date": start_date,
+            "end_date": end_date,
+            "threshold": threshold,
+        }
 
     if result_context and result_context != current_context:
         st.info(

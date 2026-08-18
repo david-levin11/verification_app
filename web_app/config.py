@@ -259,6 +259,50 @@ def get_forecast_hours(model: str, element: str, projection: str = "All") -> lis
 
     return [h for h in all_hours if h in hour_range]
 
+def get_forecast_hours_for_projection_range(
+    model: str,
+    element: str,
+    start_projection: str,
+    end_projection: str,
+) -> list[int]:
+    """
+    Return forecast hours for a contiguous range of forecast projection groups.
+
+    Example:
+        Day 1 through Day 3 -> all configured forecast hours from Day 1, Day 2, Day 3.
+    """
+
+    projection_names = [
+        name for name in FORECAST_PROJECTION_GROUPS.keys()
+        if name != "All"
+    ]
+
+    if start_projection not in projection_names:
+        raise ValueError(f"Unknown start projection: {start_projection}")
+
+    if end_projection not in projection_names:
+        raise ValueError(f"Unknown end projection: {end_projection}")
+
+    start_idx = projection_names.index(start_projection)
+    end_idx = projection_names.index(end_projection)
+
+    if end_idx < start_idx:
+        start_idx, end_idx = end_idx, start_idx
+
+    selected_projection_names = projection_names[start_idx:end_idx + 1]
+
+    selected_hours = []
+
+    for projection_name in selected_projection_names:
+        selected_hours.extend(
+            get_forecast_hours(
+                model=model,
+                element=element,
+                projection=projection_name,
+            )
+        )
+
+    return sorted(set(selected_hours))
 
 # =============================================================================
 # Element display and standardized value columns

@@ -301,6 +301,63 @@ def plot_forecast_bias_bar_chart(
     fig = plt.gcf()
     return fig
 
+def _get_percentile_columns_for_element(element):
+    """
+    Return expected percentile columns for each probabilistic element.
+    """
+
+    percentile_levels = [5, 10, 25, 50, 75, 90, 95]
+
+    prefix_map = {
+        "precip24hr": "qpf_p",
+        "precip6hr": "qpf_p",
+        "maxt": "maxt_p",
+        "mint": "mint_p",
+        "rh": "rh_p",
+        "Wind": "wind_p",
+        "wind": "wind_p",
+        "Gust": "gust_p",
+        "gust": "gust_p",
+        "snow6hr": "snow_p",
+        "snow24hr": "snow_p",
+        "snow48hr": "snow_p",
+        "snow72hr": "snow_p",
+    }
+
+    if element not in prefix_map:
+        raise ValueError(f"No percentile column prefix configured for element: {element}")
+
+    prefix = prefix_map[element]
+
+    return [f"{prefix}{p}" for p in percentile_levels], percentile_levels
+
+
+def _get_available_percentile_columns(merged_df, element):
+    """
+    Return available percentile columns and their percentile levels.
+
+    Raises a helpful error if required columns are missing.
+    """
+
+    pct_cols, pct_levels = _get_percentile_columns_for_element(element)
+
+    missing_cols = [c for c in pct_cols if c not in merged_df.columns]
+
+    if missing_cols:
+        available_prob_cols = [
+            c for c in merged_df.columns
+            if c.endswith(("_p5", "_p10", "_p25", "_p50", "_p75", "_p90", "_p95"))
+            or "_p" in c
+        ]
+
+        raise ValueError(
+            f"Missing percentile columns for {element}: {missing_cols}. "
+            f"Available probabilistic-looking columns: {available_prob_cols}"
+        )
+
+    return pct_cols, pct_levels
+
+
 def plot_threshold_reliability(
     merged_df,
     threshold,
@@ -309,99 +366,163 @@ def plot_threshold_reliability(
     station_id,
     start_date,
     end_date,
-    savepath=None
+    element,
+    obs_col="obs_value",
+    savepath=None,
 ):
     """
-    Creates a reliability plot for the probability of exceeding a specific threshold.
-    Converts percentiles to probabilities using linear interpolation.
+    Reliability plot for probability of exceeding a threshold.
+
+    Uses element-specific percentile columns, such as:
+        precip24hr -> qpf_p5 ... qpf_p95
+        maxt       -> maxt_p5 ... maxt_p95
+        Wind       -> wind_p5 ... wind_p95
     """
-    # 1. Determine the correct observation column
-    if "obs_wind_speed_kts" in merged_df.columns:
-        obs_col = "obs_wind_speed_kts"
-    elif "wind_speed_kt_obs" in merged_df.columns:
-        obs_col = "wind_speed_kt_obs"
-    else:
-        print("Observation column not found. Cannot generate reliability plot.")
-        return
 
-    # 2. Extract percentiles to calculate probability
-    pct_cols = ['wind_p5', 'wind_p10', 'wind_p25', 'wind_p50', 'wind_p75', 'wind_p90', 'wind_p95']
-    fp = [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
+    if obs_col not in merged_df.columns:
+        raise ValueError(
+            f"Observation column '{obs_col}' not found. "
+            f"Available columns: {merged_df.columns.tolist()}"
+        )
 
-    # Drop missing data
+    pct_cols, pct_levels = _get_available_percentile_columns(merged_df, element)
+    fp = np.array(pct_levels, dtype=float) / 100.0
+
     cleaned = merged_df.dropna(subset=[obs_col] + pct_cols).copy()
 
     if cleaned.empty:
-        print("No valid data available to generate the reliability plot.")
-        return
+        raise ValueError(
+            f"No valid rows available for reliability plot after dropping missing "
+            f"{obs_col} and percentile columns."
+        )
 
-    # Function to interpolate the probability of exceedance for a single row
     def get_poe(row):
+        """
+        Estimate probability of exceedance from the forecast quantiles.
+
+        The percentile columns define an approximate CDF. We interpolate the
+        CDF value at the chosen threshold, then convert to exceedance
+        probability.
+        """
+
         xp = row[pct_cols].values.astype(float)
 
-        # Sort values to ensure np.interp works correctly, even if wind values are tied (e.g., 0.0)
+        valid = np.isfinite(xp)
+
+        if valid.sum() < 2:
+            return np.nan
+
+        xp = xp[valid]
+        fp_valid = fp[valid]
+
         sort_idx = np.argsort(xp)
         xp_sorted = xp[sort_idx]
-        fp_sorted = np.array(fp)[sort_idx]
+        fp_sorted = fp_valid[sort_idx]
 
-        # Interpolate the CDF (Cumulative Distribution Function)
-        # left=0.0 means if threshold is below p5, chance of being <= threshold is 0
-        # right=1.0 means if threshold is above p95, chance of being <= threshold is 1.0
-        cdf_val = np.interp(threshold, xp_sorted, fp_sorted, left=0.0, right=1.0)
+        # Remove duplicate x values because np.interp expects increasing x.
+        xp_unique, unique_idx = np.unique(xp_sorted, return_index=True)
+        fp_unique = fp_sorted[unique_idx]
 
-        # Probability of Exceedance is 1.0 minus the CDF
+        if len(xp_unique) < 2:
+            return np.nan
+
+        cdf_val = np.interp(
+            threshold,
+            xp_unique,
+            fp_unique,
+            left=0.0,
+            right=1.0,
+        )
+
         return 1.0 - cdf_val
 
-    # Apply the function to get forecast probabilities and observed outcomes
-    cleaned['forecast_prob'] = cleaned.apply(get_poe, axis=1)
-    cleaned['observed_event'] = (cleaned[obs_col] > threshold).astype(int)
+    cleaned["forecast_prob"] = cleaned.apply(get_poe, axis=1)
+    cleaned["observed_event"] = (cleaned[obs_col] >= threshold).astype(int)
 
-    # 3. Bin the probabilities into 10% increments
-    bins = np.arange(0, 1.1, 0.1)
-    cleaned['prob_bin'] = pd.cut(cleaned['forecast_prob'], bins=bins, include_lowest=True)
+    cleaned = cleaned.dropna(subset=["forecast_prob", "observed_event"])
 
-    # Calculate mean forecast prob and mean observed freq per bin
-    reliability_data = cleaned.groupby('prob_bin', observed=False).agg(
-        mean_forecast=('forecast_prob', 'mean'),
-        observed_freq=('observed_event', 'mean'),
-        count=('observed_event', 'count')
-    ).reset_index()
+    if cleaned.empty:
+        raise ValueError("No valid forecast probabilities could be computed.")
 
-    # Filter out empty bins
-    reliability_data = reliability_data[reliability_data['count'] > 0]
+    bins = np.arange(0.0, 1.1, 0.1)
 
-    # 4. Plotting
+    cleaned["prob_bin"] = pd.cut(
+        cleaned["forecast_prob"],
+        bins=bins,
+        include_lowest=True,
+    )
+
+    reliability_data = (
+        cleaned.groupby("prob_bin", observed=False)
+        .agg(
+            mean_forecast=("forecast_prob", "mean"),
+            observed_freq=("observed_event", "mean"),
+            count=("observed_event", "count"),
+        )
+        .reset_index()
+    )
+
+    reliability_data = reliability_data[reliability_data["count"] > 0]
+
+    if reliability_data.empty:
+        raise ValueError("No non-empty probability bins available for reliability plot.")
+
     fig, ax1 = plt.subplots(figsize=(9, 8))
 
-    # Plot the reliability curve
-    ax1.plot(reliability_data['mean_forecast'], reliability_data['observed_freq'],
-             marker='o', color='#CC0000', linewidth=2, markersize=8, label='Model Reliability')
+    ax1.plot(
+        reliability_data["mean_forecast"],
+        reliability_data["observed_freq"],
+        marker="o",
+        linewidth=2,
+        markersize=8,
+        label="Model reliability",
+    )
 
-    # Plot the perfect calibration reference line
-    ax1.plot([0, 1], [0, 1], linestyle='--', color='black', linewidth=1.5, label='Perfect Calibration')
+    ax1.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--",
+        linewidth=1.5,
+        label="Perfect reliability",
+    )
 
-    # Formatting primary axis
     ax1.set_xlim([0, 1])
     ax1.set_ylim([0, 1])
-    ax1.set_xlabel('Forecast Probability', fontsize=12)
-    ax1.set_ylabel('Observed Relative Frequency', fontsize=12)
-    ax1.set_title(f"{model.upper()} Reliability: Wind > {threshold} kts at {station_id.upper()}\nFrom {start_date} to {end_date}", fontsize=14)
-    ax1.grid(True, linestyle=':', alpha=0.7)
+    ax1.set_xlabel("Forecast probability")
+    ax1.set_ylabel("Observed relative frequency")
+    ax1.set_title(
+        f"{model.upper()} Reliability: {element} >= {threshold}\n"
+        f"{station_id} from {start_date} to {end_date}"
+    )
+    ax1.grid(True, linestyle=":", alpha=0.7)
 
-    # 5. Add a secondary axis for the sharpness histogram (forecast counts)
     ax2 = ax1.twinx()
-    bin_centers = [interval.mid for interval in reliability_data['prob_bin']]
-    ax2.bar(bin_centers, reliability_data['count'], width=0.08, alpha=0.2, color='gray', label='Forecast Count (Sharpness)')
-    ax2.set_ylabel('Number of Forecasts', fontsize=12)
+    bin_centers = [interval.mid for interval in reliability_data["prob_bin"]]
 
-    # Combine legends from both axes
+    ax2.bar(
+        bin_centers,
+        reliability_data["count"],
+        width=0.08,
+        alpha=0.2,
+        label="Forecast count",
+    )
+
+    ax2.set_ylabel("Number of forecasts")
+
     lines_1, labels_1 = ax1.get_legend_handles_labels()
     lines_2, labels_2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left', framealpha=0.9)
+
+    ax1.legend(
+        lines_1 + lines_2,
+        labels_1 + labels_2,
+        loc="upper left",
+        framealpha=0.9,
+    )
 
     plt.tight_layout()
 
     return fig
+
 
 def plot_quantile_rank_histogram(
     merged_df,
@@ -409,61 +530,108 @@ def plot_quantile_rank_histogram(
     station_id,
     start_date,
     end_date,
-    savepath=None
+    element,
+    obs_col="obs_value",
+    savepath=None,
 ):
     """
-    Creates a Quantile Rank Histogram to evaluate model spread.
-    Compares the observed frequency in each percentile bin to the expected frequency.
+    Quantile rank histogram for element-specific percentile columns.
     """
-    if "obs_wind_speed_kts" in merged_df.columns:
-        obs_col = "obs_wind_speed_kts"
-    elif "wind_speed_kt_obs" in merged_df.columns:
-        obs_col = "wind_speed_kt_obs"
-    else:
-        print("Observation column not found. Cannot generate rank histogram.")
-        return
 
-    pct_cols = ['wind_p5', 'wind_p10', 'wind_p25', 'wind_p50', 'wind_p75', 'wind_p90', 'wind_p95']
+    if obs_col not in merged_df.columns:
+        raise ValueError(
+            f"Observation column '{obs_col}' not found. "
+            f"Available columns: {merged_df.columns.tolist()}"
+        )
+
+    pct_cols, pct_levels = _get_available_percentile_columns(merged_df, element)
+
     cleaned = merged_df.dropna(subset=[obs_col] + pct_cols).copy()
 
     if cleaned.empty:
-        print("No valid data available for rank histogram.")
-        return
+        raise ValueError(
+            f"No valid rows available for rank histogram after dropping missing "
+            f"{obs_col} and percentile columns."
+        )
 
-    # Count how many observations fall into each interval
-    counts = [
-        (cleaned[obs_col] < cleaned['wind_p5']).sum(),
-        ((cleaned[obs_col] >= cleaned['wind_p5']) & (cleaned[obs_col] < cleaned['wind_p10'])).sum(),
-        ((cleaned[obs_col] >= cleaned['wind_p10']) & (cleaned[obs_col] < cleaned['wind_p25'])).sum(),
-        ((cleaned[obs_col] >= cleaned['wind_p25']) & (cleaned[obs_col] < cleaned['wind_p50'])).sum(),
-        ((cleaned[obs_col] >= cleaned['wind_p50']) & (cleaned[obs_col] < cleaned['wind_p75'])).sum(),
-        ((cleaned[obs_col] >= cleaned['wind_p75']) & (cleaned[obs_col] < cleaned['wind_p90'])).sum(),
-        ((cleaned[obs_col] >= cleaned['wind_p90']) & (cleaned[obs_col] < cleaned['wind_p95'])).sum(),
-        (cleaned[obs_col] >= cleaned['wind_p95']).sum()
-    ]
-    
-    # Calculate observed percentage vs expected percentage
+    # Sort percentile columns by percentile level just to be safe.
+    pct_pairs = sorted(zip(pct_levels, pct_cols), key=lambda x: x[0])
+    pct_levels = [p for p, c in pct_pairs]
+    pct_cols = [c for p, c in pct_pairs]
+
+    counts = []
+
+    first_col = pct_cols[0]
+    last_col = pct_cols[-1]
+
+    counts.append((cleaned[obs_col] < cleaned[first_col]).sum())
+
+    for lower_col, upper_col in zip(pct_cols[:-1], pct_cols[1:]):
+        counts.append(
+            (
+                (cleaned[obs_col] >= cleaned[lower_col])
+                & (cleaned[obs_col] < cleaned[upper_col])
+            ).sum()
+        )
+
+    counts.append((cleaned[obs_col] >= cleaned[last_col]).sum())
+
     total = len(cleaned)
-    obs_pcts = [c / total * 100 for c in counts]
-    exp_pcts = [5, 5, 15, 25, 25, 15, 5, 5] # The nominal width of each bin
-    labels = ['< p5', 'p5-p10', 'p10-p25', 'p25-p50', 'p50-p75', 'p75-p90', 'p90-p95', '> p95']
 
-    # Plotting
+    if total == 0:
+        raise ValueError("No valid observations available for rank histogram.")
+
+    obs_pcts = [c / total * 100.0 for c in counts]
+
+    # Expected bin widths:
+    # <p5, p5-p10, p10-p25, p25-p50, p50-p75, p75-p90, p90-p95, >p95
+    expected_widths = [pct_levels[0]]
+
+    for lower, upper in zip(pct_levels[:-1], pct_levels[1:]):
+        expected_widths.append(upper - lower)
+
+    expected_widths.append(100 - pct_levels[-1])
+
+    labels = [f"< p{pct_levels[0]}"]
+
+    for lower, upper in zip(pct_levels[:-1], pct_levels[1:]):
+        labels.append(f"p{lower}-p{upper}")
+
+    labels.append(f">= p{pct_levels[-1]}")
+
     x = np.arange(len(labels))
     width = 0.35
-    
-    plt.figure(figsize=(10, 6))
-    plt.bar(x - width/2, obs_pcts, width, label='Observed Frequency', color='#003399', edgecolor='black')
-    plt.bar(x + width/2, exp_pcts, width, label='Expected Frequency', color='#A9A9A9', alpha=0.7, edgecolor='black')
-    
-    plt.ylabel('Percentage of Observations (%)', fontsize=12)
-    plt.xlabel('Forecast Percentile Intervals', fontsize=12)
-    plt.title(f"{model.upper()} Quantile Rank Histogram at {station_id.upper()}\nFrom {start_date} to {end_date}")
-    plt.xticks(x, labels, rotation=45)
-    plt.legend()
-    plt.grid(axis='y', linestyle=':', alpha=0.7)
-    plt.tight_layout()
-    fig = plt.gcf()
-    return fig
 
-# ---> You will paste andy other plotting functions here too <---
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    ax.bar(
+        x - width / 2,
+        obs_pcts,
+        width,
+        label="Observed frequency",
+        edgecolor="black",
+    )
+
+    ax.bar(
+        x + width / 2,
+        expected_widths,
+        width,
+        label="Expected frequency",
+        alpha=0.7,
+        edgecolor="black",
+    )
+
+    ax.set_ylabel("Percentage of observations")
+    ax.set_xlabel("Forecast percentile interval")
+    ax.set_title(
+        f"{model.upper()} Quantile Rank Histogram: {element}\n"
+        f"{station_id} from {start_date} to {end_date}"
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.legend()
+    ax.grid(axis="y", linestyle=":", alpha=0.7)
+
+    plt.tight_layout()
+
+    return fig

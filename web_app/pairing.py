@@ -32,6 +32,20 @@ from config import (
 # ---------------------------------------------------------------------
 # General helpers
 # ---------------------------------------------------------------------
+def _unique_preserve_order(cols: list[str]) -> list[str]:
+    """
+    Return unique column names while preserving original order.
+    """
+    seen = set()
+    out = []
+
+    for col in cols:
+        if col not in seen:
+            out.append(col)
+            seen.add(col)
+
+    return out
+
 
 def _first_existing_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
     """
@@ -305,15 +319,19 @@ def build_verification_pairs(
         if direction_col in modeldf.columns:
             optional_model_cols.append(direction_col)
 
-    model_keep_cols = [
-        c for c in required_model_cols + optional_model_cols
-        if c in modeldf.columns
-    ]
+    model_keep_cols = _unique_preserve_order(
+        [
+            c for c in required_model_cols + optional_model_cols
+            if c in modeldf.columns
+        ]
+    )
 
-    obs_keep_cols = [
-        c for c in required_obs_cols + optional_obs_cols
-        if c in obdf.columns
-    ]
+    obs_keep_cols = _unique_preserve_order(
+        [
+            c for c in required_obs_cols + optional_obs_cols
+            if c in obdf.columns
+        ]
+    )
 
     modeldf = modeldf[model_keep_cols].dropna(subset=["station_id", "valid_time", "model_value"])
     obdf = obdf[obs_keep_cols].dropna(subset=["station_id", "valid_time", "obs_value"])
@@ -443,6 +461,9 @@ def build_verification_pairs(
             merged[col] = pd.NA
 
     merged = merged.dropna(subset=["station_id", "valid_time", "model_value", "obs_value"])
+
+    # Remove any duplicate columns that may have been introduced by merge logic.
+    merged = merged.loc[:, ~merged.columns.duplicated()].copy()
 
     # Put standard columns first, keep everything else after.
     remaining_cols = [c for c in merged.columns if c not in standard_cols]

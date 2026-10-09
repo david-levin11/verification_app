@@ -268,23 +268,34 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         st.markdown("---")
         st.subheader("Probabilistic Verification")
 
-        st.info(
-            "The probabilistic plots may need a small update so they use "
-            "the element-specific percentile columns from config.py."
+        st.caption(
+            "Reliability and rank histograms use the full set of available forecast "
+            "percentile columns for the selected element."
         )
 
         col3, col4 = st.columns(2)
+        with st.expander("Probabilistic plot diagnostics", expanded=False):
+            prob_cols = [
+                c for c in merged.columns
+                if "_p" in c or c.endswith(("_p5", "_p10", "_p25", "_p50", "_p75", "_p90", "_p95"))
+            ]
 
+            st.write("Element:", element)
+            st.write("Available probabilistic columns:", prob_cols)
+            st.write("Merged columns:", merged.columns.tolist())
+            
         with col3:
             try:
                 fig_rel = plot_threshold_reliability(
-                    merged,
-                    threshold,
-                    model,
-                    obs,
-                    group_name,
-                    start_date,
-                    end_date,
+                    merged_df=merged,
+                    threshold=threshold,
+                    model=model,
+                    obs=obs,
+                    station_id=group_name,
+                    start_date=start_date,
+                    end_date=end_date,
+                    element=element,
+                    obs_col="obs_value",
                 )
                 st.pyplot(fig_rel)
             except Exception as e:
@@ -293,11 +304,13 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         with col4:
             try:
                 fig_rank = plot_quantile_rank_histogram(
-                    merged,
-                    model,
-                    group_name,
-                    start_date,
-                    end_date,
+                    merged_df=merged,
+                    model=model,
+                    station_id=group_name,
+                    start_date=start_date,
+                    end_date=end_date,
+                    element=element,
+                    obs_col="obs_value",
                 )
                 st.pyplot(fig_rank)
             except Exception as e:

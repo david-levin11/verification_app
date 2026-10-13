@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from probability import threshold_event, probability_scores
 
 
 def compute_station_metrics(
@@ -8,6 +9,9 @@ def compute_station_metrics(
     threshold,
     model_value_col="model_value",
     obs_value_col="obs_value",
+    threshold_operator=">=",
+    element=None,
+    probabilistic=False,
 ):
     """
     Compute station-level deterministic and threshold verification metrics.
@@ -34,8 +38,8 @@ def compute_station_metrics(
     df["abs_error"] = df["error"].abs()
     df["sq_error"] = df["error"] ** 2
 
-    df["obs_event"] = df[obs_value_col] >= threshold
-    df["fcst_event"] = df[model_value_col] >= threshold
+    df["obs_event"] = threshold_event(df[obs_value_col], threshold, threshold_operator)
+    df["fcst_event"] = threshold_event(df[model_value_col], threshold, threshold_operator)
 
     grouped = df.groupby("station_id").agg(
         n=("error", "count"),
@@ -86,6 +90,14 @@ def compute_station_metrics(
         how="left",
     )
 
+    if probabilistic:
+        if element is None:
+            raise ValueError("element is required for probability scores")
+        prob_rows = [dict(station_id=station_id, **probability_scores(
+            sdf, element, threshold, threshold_operator, obs_value_col))
+            for station_id, sdf in df.groupby("station_id")]
+        metrics = metrics.merge(pd.DataFrame(prob_rows), on="station_id", how="left")
+
     if not station_meta.empty:
         meta_cols = [
             c for c in [
@@ -112,7 +124,7 @@ def compute_station_metrics(
             how="left",
         )
 
-    metrics = metrics.dropna(subset=["latitude", "longitude"], how="any")
+    # Coordinate availability should affect map rendering, not verification scores.
 
     return metrics
 
@@ -122,6 +134,9 @@ def compute_summary_metrics(
     threshold,
     model_value_col="model_value",
     obs_value_col="obs_value",
+    threshold_operator=">=",
+    element=None,
+    probabilistic=False,
 ):
     """
     Compute aggregate summary verification metrics.
@@ -133,15 +148,15 @@ def compute_summary_metrics(
 
     error = df[model_value_col] - df[obs_value_col]
 
-    obs_event = df[obs_value_col] >= threshold
-    fcst_event = df[model_value_col] >= threshold
+    obs_event = threshold_event(df[obs_value_col], threshold, threshold_operator)
+    fcst_event = threshold_event(df[model_value_col], threshold, threshold_operator)
 
     hits = ((fcst_event) & (obs_event)).sum()
     misses = ((~fcst_event) & (obs_event)).sum()
     false_alarms = ((fcst_event) & (~obs_event)).sum()
     correct_negatives = ((~fcst_event) & (~obs_event)).sum()
 
-    return {
+    result = {
         "n": len(df),
         "bias": error.mean(),
         "mae": error.abs().mean(),
@@ -156,3 +171,10 @@ def compute_summary_metrics(
         "far": false_alarms / (hits + false_alarms) if (hits + false_alarms) > 0 else np.nan,
         "csi": hits / (hits + misses + false_alarms) if (hits + misses + false_alarms) > 0 else np.nan,
     }
+
+    if probabilistic:
+        if element is None:
+            raise ValueError("element is required for probability scores")
+        result.update(probability_scores(df, element, threshold,
+                                         threshold_operator, obs_value_col))
+    return result

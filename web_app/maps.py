@@ -5,6 +5,10 @@ import streamlit as st
 
 
 METRIC_COLOR_CONFIG = {
+    "brier_score": {"scale": "sequential", "label": "Brier score (lower is better)",
+                    "low_label": "Lower", "high_label": "Higher"},
+    "reliability_error": {"scale": "sequential", "label": "Reliability error (lower is better)",
+                          "low_label": "Lower", "high_label": "Higher"},
     # Error / continuous metrics
     "bias": {
         "scale": "diverging_zero",

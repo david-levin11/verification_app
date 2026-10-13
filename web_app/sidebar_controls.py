@@ -361,6 +361,30 @@ def shared_sidebar_controls(show_category_set=False):
 
     st.session_state["threshold"] = threshold
 
+    operator_options = [">=", ">", "<=", "<"]
+    operator_key = f"threshold_operator_{element}"
+    default_operator = element_cfg.get("threshold_operator", ">=")
+    threshold_operator = st.sidebar.selectbox(
+        "Event definition",
+        operator_options,
+        index=_safe_index(operator_options, st.session_state.get(operator_key), default_operator),
+        key=f"ui_{operator_key}",
+        on_change=_sync_from_widget,
+        args=(f"ui_{operator_key}", operator_key),
+        help="Applied consistently to forecast values, observations, and probabilities.",
+    )
+    st.session_state[operator_key] = threshold_operator
+    tolerance_minutes = st.sidebar.number_input(
+        "Observation time tolerance (minutes)", min_value=0, max_value=180,
+        value=int(st.session_state.get("obs_tolerance_minutes", 60)), step=5,
+        key="ui_obs_tolerance_minutes", on_change=_sync_from_widget,
+        args=("ui_obs_tolerance_minutes", "obs_tolerance_minutes"),
+        help="Nearest report to the forecast valid time or accumulation endpoint; 0 requires exact matching.",
+    )
+    st.session_state["obs_tolerance_minutes"] = tolerance_minutes
+    obs_time_tolerance = f"{tolerance_minutes}min"
+    st.sidebar.caption("Daily temperatures use their configured date; accumulation durations must agree.")
+
     # ------------------------------------------------------------------
     # Category set
     # ------------------------------------------------------------------
@@ -409,5 +433,7 @@ def shared_sidebar_controls(show_category_set=False):
         "start_date": start_date,
         "end_date": end_date,
         "threshold": threshold,
+        "threshold_operator": threshold_operator,
+        "obs_time_tolerance": obs_time_tolerance,
         "category_set": category_set,
     }

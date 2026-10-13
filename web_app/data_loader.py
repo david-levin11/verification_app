@@ -1,7 +1,8 @@
 import duckdb
 import pandas as pd
 from pathlib import Path
-from config import get_obs_time_column, get_obs_filter_time_column
+from config import get_obs_time_column, get_obs_filter_time_column, get_pairing_method
+from datetime import date, datetime
 
 WEB_APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WEB_APP_DIR.parent
@@ -45,6 +46,7 @@ def fetch_data(
     percentile,
     element="wind",
     archive_root=LOCAL_ARCHIVE_ROOT,
+    obs_time_tolerance="1h",
 ):
     """
     Connects to DuckDB, queries local parquet archives, and returns the raw
@@ -67,8 +69,17 @@ def fetch_data(
         "Database error", or "Observation Database error" as fatal.
     """
 
-    query_start = start_date
-    query_end = end_date
+    query_start = pd.Timestamp(start_date)
+    query_end = pd.Timestamp(end_date)
+    # Sidebar date selections include the entire end date.
+    if isinstance(end_date, date) and not isinstance(end_date, datetime):
+        query_end += pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
+    tolerance = pd.Timedelta(obs_time_tolerance)
+    if tolerance < pd.Timedelta(0):
+        raise ValueError("Observation time tolerance must be non-negative")
+    padding = tolerance if get_pairing_method(element) == "time" else pd.Timedelta(0)
+    obs_query_start = query_start - padding
+    obs_query_end = query_end + padding
     query_stations = station_list
 
     if not query_stations:
@@ -109,8 +120,8 @@ def fetch_data(
         root=archive_root,
         model=obs,
         element=element,
-        start_date=query_start,
-        end_date=query_end,
+        start_date=obs_query_start,
+        end_date=obs_query_end,
     )
 
     if not obfiles:
@@ -240,7 +251,7 @@ def fetch_data(
     WHERE {station_select} IN ({station_placeholders})
       AND {obs_filter_time_col} BETWEEN ? AND ?
     """
-    ob_params = query_stations + [query_start, query_end]
+    ob_params = query_stations + [obs_query_start, obs_query_end]
 
     try:
         obdf = con.execute(obquery, ob_params).df()

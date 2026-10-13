@@ -342,6 +342,7 @@ ELEMENT_CONFIG = {
     },
 
     "precip6hr": {
+        "accum_hours": 6,
         "label": "6-hour Precipitation",
         "units": "in",
         "available_obs_sources": ["obs"],
@@ -363,6 +364,7 @@ ELEMENT_CONFIG = {
     },
 
     "precip24hr": {
+        "accum_hours": 24,
         "label": "24-hour Precipitation",
         "units": "in",
         "available_obs_sources": ["obs"],
@@ -384,6 +386,7 @@ ELEMENT_CONFIG = {
     },
 
     "snow6hr": {
+        "accum_hours": 6,
         "label": "6-hour Snowfall",
         "units": "in",
         "available_obs_sources": ["obs"],
@@ -399,6 +402,7 @@ ELEMENT_CONFIG = {
     },
 
     "snow24hr": {
+        "accum_hours": 24,
         "label": "24-hour Snowfall",
         "units": "in",
         "available_obs_sources": ["obs"],
@@ -414,6 +418,7 @@ ELEMENT_CONFIG = {
     },
 
     "snow48hr": {
+        "accum_hours": 48,
         "label": "48-hour Snowfall",
         "units": "in",
         "available_obs_sources": ["obs"],
@@ -429,6 +434,7 @@ ELEMENT_CONFIG = {
     },
 
     "snow72hr": {
+        "accum_hours": 72,
         "label": "72-hour Snowfall",
         "units": "in",
         "available_obs_sources": ["obs"],
@@ -453,6 +459,7 @@ ELEMENT_CONFIG = {
         "percentile_prefix": "rh_p",
         "default_percentile": "50",
         "default_threshold": 30,
+        "threshold_operator": "<=",
         "thresholds": [15, 20, 25, 30, 40, 50, 70, 80, 90],
         "supports_direction_filter": False,
         "category_sets": ["rh"],
@@ -485,6 +492,7 @@ ELEMENT_CONFIG = {
 
     "mint": {
         "label": "Minimum Temperature",
+        "threshold_operator": "<=",
         "units": "F",
         "available_obs_sources": ["obs"],
         "obs_time_column": "window_end",
@@ -654,6 +662,7 @@ CATEGORY_CONFIG = {
             3: "Moderate",
             4: "Humid",
             5: "Very Humid",
+            6: "Near Saturation",
         },
     },
 }
@@ -696,6 +705,7 @@ PROBABILISTIC_MAP_METRICS = [
     "event_freq_fcst",
     "max_obs",
     "max_fcst",
+    "n_prob",
     "brier_score",
     "reliability_error",
 ]

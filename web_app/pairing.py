@@ -84,7 +84,7 @@ def _standardize_datetime(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    for col in ["valid_time", "init_time"]:
+    for col in ["valid_time", "init_time", "start_time", "end_time", "window_start", "window_end"]:
         if col in df.columns:
             df[col] = (
                 pd.to_datetime(df[col], errors="coerce", utc=True)
@@ -254,6 +254,10 @@ def build_verification_pairs(
         percentile=percentile,
     )
 
+    tolerance = pd.Timedelta(obs_time_tolerance)
+    if tolerance < pd.Timedelta(0):
+        raise ValueError("Observation time tolerance must be non-negative")
+
     obs_col = get_obs_value_column(
         obdf=obdf,
         element=element,
@@ -286,9 +290,26 @@ def build_verification_pairs(
         "obs_value",
     ]
 
-    optional_obs_cols = [
-        obs_col,
-    ]
+    # Preserve the actual reporting time, rather than losing it in merge_asof.
+    obdf["obs_valid_time"] = obdf["valid_time"]
+    optional_obs_cols = [obs_col, "obs_valid_time"]
+    accum_hours = get_element_config(element).get("accum_hours")
+    if accum_hours is not None:
+        start_col = _first_existing_column(obdf, ["start_time", "window_start"])
+        end_col = _first_existing_column(obdf, ["end_time", "window_end"])
+        if start_col is None or end_col is None:
+            raise ValueError("Accumulation observations require start and end window columns")
+        obdf["obs_window_start"] = pd.to_datetime(obdf[start_col], utc=True).dt.tz_convert(None)
+        obdf["obs_window_end"] = pd.to_datetime(obdf[end_col], utc=True).dt.tz_convert(None)
+        duration = obdf["obs_window_end"] - obdf["obs_window_start"]
+        obdf = obdf.loc[duration.eq(pd.Timedelta(hours=accum_hours))].copy()
+        obdf["valid_time"] = obdf["obs_window_end"]
+        obdf["obs_valid_time"] = obdf["obs_window_end"]
+        modeldf["model_window_end"] = modeldf["valid_time"]
+        modeldf["model_window_start"] = modeldf["valid_time"] - pd.Timedelta(hours=accum_hours)
+        optional_model_cols.extend(["model_window_start", "model_window_end"])
+        optional_obs_cols.extend(["obs_window_start", "obs_window_end"])
+
 
     # Preserve extra columns needed for date-based pairing.
     if pairing_method == "date":
@@ -370,6 +391,7 @@ def build_verification_pairs(
         modeldf = modeldf.dropna(subset=["station_id", "pair_date", "model_value"])
         obdf = obdf.dropna(subset=["station_id", "pair_date", "obs_value"])
 
+        obdf = obdf.drop_duplicates(["station_id", "pair_date"], keep="last")
         merged = pd.merge(
             modeldf,
             obdf,
@@ -408,6 +430,7 @@ def build_verification_pairs(
         obdf = obdf.dropna(subset=["station_id", "valid_time"])
 
         modeldf = modeldf.sort_values(["valid_time", "station_id"])
+        obdf = obdf.drop_duplicates(["station_id", "valid_time"], keep="last")
         obdf = obdf.sort_values(["valid_time", "station_id"])
 
         merged = pd.merge_asof(
@@ -416,7 +439,7 @@ def build_verification_pairs(
             on="valid_time",
             by="station_id",
             direction="nearest",
-            tolerance=pd.Timedelta(obs_time_tolerance),
+            tolerance=tolerance,
             suffixes=("_model", "_obs"),
         )
     else:
@@ -441,6 +464,16 @@ def build_verification_pairs(
 
     if merged.empty:
         return merged
+
+    if "obs_valid_time" in merged:
+        merged["obs_time_offset_minutes"] = (
+            merged["obs_valid_time"] - merged["valid_time"]
+        ).dt.total_seconds() / 60
+    if accum_hours is not None:
+        # Matching endpoints within tolerance also matches starts because
+        # the durations were checked before choosing a nearest observation.
+        start_offset = (merged["obs_window_start"] - merged["model_window_start"]).abs()
+        merged = merged.loc[start_offset.le(tolerance)].copy()
 
     # After merge, ensure standard columns exist and are numeric.
     merged["model_value"] = pd.to_numeric(merged["model_value"], errors="coerce")

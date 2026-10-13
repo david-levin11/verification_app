@@ -298,6 +298,8 @@ forecast_hours = controls["forecast_hours"]
 start_date = controls["start_date"]
 end_date = controls["end_date"]
 threshold = controls["threshold"]
+threshold_operator = controls["threshold_operator"]
+obs_time_tolerance = controls["obs_time_tolerance"]
 
 # ---------------------------------------------------------------------
 # Map-specific sidebar controls
@@ -451,6 +453,7 @@ if st.button("Build Station Metric Map", type="primary"):
             percentile=percentile,
             element=element,
             archive_root=archive_root,
+            obs_time_tolerance=obs_time_tolerance,
         )
 
         if message:
@@ -486,6 +489,7 @@ if st.button("Build Station Metric Map", type="primary"):
             obs=obs,
             element=element,
             percentile=percentile,
+            obs_time_tolerance=obs_time_tolerance,
         )
 
         st.write("Model rows:", len(modeldf))
@@ -502,6 +506,9 @@ if st.button("Build Station Metric Map", type="primary"):
             merged=merged,
             station_meta=station_meta,
             threshold=threshold,
+            threshold_operator=threshold_operator,
+            element=element,
+            probabilistic=model_is_probabilistic,
         )
 
         st.write("Station metrics rows:", len(station_metrics))
@@ -531,6 +538,8 @@ if st.button("Build Station Metric Map", type="primary"):
             "start_date": start_date,
             "end_date": end_date,
             "threshold": threshold,
+            "threshold_operator": threshold_operator,
+            "obs_time_tolerance": obs_time_tolerance,
         }
 
         st.session_state["selected_station_list"] = sorted(
@@ -559,6 +568,8 @@ if "station_metrics" in st.session_state:
             "start_date": start_date,
             "end_date": end_date,
             "threshold": threshold,
+            "threshold_operator": threshold_operator,
+            "obs_time_tolerance": obs_time_tolerance,
         }
 
     if result_context and result_context != current_context:

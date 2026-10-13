@@ -2,7 +2,7 @@ import streamlit as st
 
 from sidebar_controls import shared_sidebar_controls
 
-from config import CATEGORY_CONFIG
+from config import CATEGORY_CONFIG, get_element_config, is_probabilistic
 
 from data_loader import fetch_data
 from pairing import build_verification_pairs, add_category_columns
@@ -35,6 +35,8 @@ forecast_hours = controls["forecast_hours"]
 start_date = controls["start_date"]
 end_date = controls["end_date"]
 threshold = controls["threshold"]
+threshold_operator = controls["threshold_operator"]
+obs_time_tolerance = controls["obs_time_tolerance"]
 category_set = controls["category_set"]
 
 # ---------------------------------------------------------------------
@@ -86,6 +88,7 @@ if st.button("Run Aggregate Verification", type="primary"):
             percentile=percentile,
             element=element,
             archive_root=archive_root,
+            obs_time_tolerance=obs_time_tolerance,
         )
 
         if message:
@@ -121,6 +124,7 @@ if st.button("Run Aggregate Verification", type="primary"):
             obs=obs,
             element=element,
             percentile=percentile,
+            obs_time_tolerance=obs_time_tolerance,
         )
 
         if merged.empty:
@@ -130,6 +134,9 @@ if st.button("Run Aggregate Verification", type="primary"):
         summary = compute_summary_metrics(
             merged=merged,
             threshold=threshold,
+            threshold_operator=threshold_operator,
+            element=element,
+            probabilistic=model_is_probabilistic,
         )
 
         st.session_state["aggregate_merged"] = merged
@@ -143,6 +150,8 @@ if st.button("Run Aggregate Verification", type="primary"):
             "start_date": start_date,
             "end_date": end_date,
             "threshold": threshold,
+            "threshold_operator": threshold_operator,
+            "obs_time_tolerance": obs_time_tolerance,
             "category_set": category_set,
             "group_name": group_name,
             "station_list": station_list,
@@ -166,6 +175,8 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         "start_date": start_date,
         "end_date": end_date,
         "threshold": threshold,
+            "threshold_operator": threshold_operator,
+            "obs_time_tolerance": obs_time_tolerance,
         "category_set": category_set,
         "group_name": group_name,
         "station_list": station_list,
@@ -176,6 +187,19 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
             "The displayed aggregate verification was computed with previous settings. "
             "Click **Run Aggregate Verification** to refresh with the current sidebar selections."
         )
+
+    # Render saved results using the settings that produced them.
+    model = result_context.get("model", model)
+    element = result_context.get("element", element)
+    obs = result_context.get("obs", obs)
+    percentile = result_context.get("percentile", percentile)
+    category_set = result_context.get("category_set", category_set)
+    group_name = result_context.get("group_name", group_name)
+    start_date = result_context.get("start_date", start_date)
+    end_date = result_context.get("end_date", end_date)
+    forecast_projection = result_context.get("forecast_projection", forecast_projection)
+    element_cfg = get_element_config(element)
+    model_is_probabilistic = is_probabilistic(model, element)
 
     st.subheader("Summary Metrics")
 
@@ -190,6 +214,18 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
     c6.metric("FAR", f"{summary.get('far', float('nan')):.2f}")
     c7.metric("CSI", f"{summary.get('csi', float('nan')):.2f}")
 
+    st.caption(f"Event: {element} {result_context.get('threshold_operator', '>=')} "
+               f"{result_context.get('threshold', threshold)} {element_cfg['units']}")
+    if "brier_score" in summary:
+        p1, p2, p3 = st.columns(3)
+        p1.metric("Probability cases", f"{summary.get('n_prob', 0):,}")
+        p2.metric("Brier score", f"{summary['brier_score']:.4f}")
+        p3.metric("Reliability error", f"{summary['reliability_error']:.4f}")
+        st.caption("Lower is better for both scores. Reliability error is the weighted "
+                   "squared calibration error in 10% probability bins. "
+                   "Sparse quantile tails use the nearest available percentile; "
+                   "all-equal quantiles are approximated as a point mass.")
+
     st.subheader("Paired Data Preview")
 
     preview_cols = [
@@ -199,6 +235,10 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         "forecast_hour",
         "model_value",
         "obs_value",
+        "obs_valid_time",
+        "obs_time_offset_minutes",
+        "obs_window_start",
+        "obs_window_end",
     ]
 
     available_preview_cols = [c for c in preview_cols if c in merged.columns]
@@ -288,7 +328,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
             try:
                 fig_rel = plot_threshold_reliability(
                     merged_df=merged,
-                    threshold=threshold,
+                    threshold=result_context.get("threshold", threshold),
                     model=model,
                     obs=obs,
                     station_id=group_name,
@@ -296,6 +336,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
                     end_date=end_date,
                     element=element,
                     obs_col="obs_value",
+                    threshold_operator=result_context.get("threshold_operator", threshold_operator),
                 )
                 st.pyplot(fig_rel)
             except Exception as e:

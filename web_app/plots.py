@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.patches as patches
+from probability import probability_cases, reliability_table
+from config import get_percentile_columns
 
 def plot_storm_timeseries(
     model_df,
@@ -302,34 +304,9 @@ def plot_forecast_bias_bar_chart(
     return fig
 
 def _get_percentile_columns_for_element(element):
-    """
-    Return expected percentile columns for each probabilistic element.
-    """
-
-    percentile_levels = [5, 10, 25, 50, 75, 90, 95]
-
-    prefix_map = {
-        "precip24hr": "qpf_p",
-        "precip6hr": "qpf_p",
-        "maxt": "maxt_p",
-        "mint": "mint_p",
-        "rh": "rh_p",
-        "Wind": "wind_p",
-        "wind": "wind_p",
-        "Gust": "gust_p",
-        "gust": "gust_p",
-        "snow6hr": "snow_p",
-        "snow24hr": "snow_p",
-        "snow48hr": "snow_p",
-        "snow72hr": "snow_p",
-    }
-
-    if element not in prefix_map:
-        raise ValueError(f"No percentile column prefix configured for element: {element}")
-
-    prefix = prefix_map[element]
-
-    return [f"{prefix}{p}" for p in percentile_levels], percentile_levels
+    """Use the same element/percentile definitions as pairing and scores."""
+    columns = get_percentile_columns(element.lower())
+    return list(columns.values()), [int(level) for level in columns]
 
 
 def _get_available_percentile_columns(merged_df, element):
@@ -369,6 +346,7 @@ def plot_threshold_reliability(
     element,
     obs_col="obs_value",
     savepath=None,
+    threshold_operator=">=",
 ):
     """
     Reliability plot for probability of exceeding a threshold.
@@ -385,84 +363,10 @@ def plot_threshold_reliability(
             f"Available columns: {merged_df.columns.tolist()}"
         )
 
-    pct_cols, pct_levels = _get_available_percentile_columns(merged_df, element)
-    fp = np.array(pct_levels, dtype=float) / 100.0
-
-    cleaned = merged_df.dropna(subset=[obs_col] + pct_cols).copy()
-
-    if cleaned.empty:
-        raise ValueError(
-            f"No valid rows available for reliability plot after dropping missing "
-            f"{obs_col} and percentile columns."
-        )
-
-    def get_poe(row):
-        """
-        Estimate probability of exceedance from the forecast quantiles.
-
-        The percentile columns define an approximate CDF. We interpolate the
-        CDF value at the chosen threshold, then convert to exceedance
-        probability.
-        """
-
-        xp = row[pct_cols].values.astype(float)
-
-        valid = np.isfinite(xp)
-
-        if valid.sum() < 2:
-            return np.nan
-
-        xp = xp[valid]
-        fp_valid = fp[valid]
-
-        sort_idx = np.argsort(xp)
-        xp_sorted = xp[sort_idx]
-        fp_sorted = fp_valid[sort_idx]
-
-        # Remove duplicate x values because np.interp expects increasing x.
-        xp_unique, unique_idx = np.unique(xp_sorted, return_index=True)
-        fp_unique = fp_sorted[unique_idx]
-
-        if len(xp_unique) < 2:
-            return np.nan
-
-        cdf_val = np.interp(
-            threshold,
-            xp_unique,
-            fp_unique,
-            left=0.0,
-            right=1.0,
-        )
-
-        return 1.0 - cdf_val
-
-    cleaned["forecast_prob"] = cleaned.apply(get_poe, axis=1)
-    cleaned["observed_event"] = (cleaned[obs_col] >= threshold).astype(int)
-
-    cleaned = cleaned.dropna(subset=["forecast_prob", "observed_event"])
-
-    if cleaned.empty:
+    cases = probability_cases(merged_df, element, threshold, threshold_operator, obs_col)
+    if cases.empty:
         raise ValueError("No valid forecast probabilities could be computed.")
-
-    bins = np.arange(0.0, 1.1, 0.1)
-
-    cleaned["prob_bin"] = pd.cut(
-        cleaned["forecast_prob"],
-        bins=bins,
-        include_lowest=True,
-    )
-
-    reliability_data = (
-        cleaned.groupby("prob_bin", observed=False)
-        .agg(
-            mean_forecast=("forecast_prob", "mean"),
-            observed_freq=("observed_event", "mean"),
-            count=("observed_event", "count"),
-        )
-        .reset_index()
-    )
-
-    reliability_data = reliability_data[reliability_data["count"] > 0]
+    reliability_data = reliability_table(cases)
 
     if reliability_data.empty:
         raise ValueError("No non-empty probability bins available for reliability plot.")
@@ -491,7 +395,7 @@ def plot_threshold_reliability(
     ax1.set_xlabel("Forecast probability")
     ax1.set_ylabel("Observed relative frequency")
     ax1.set_title(
-        f"{model.upper()} Reliability: {element} >= {threshold}\n"
+        f"{model.upper()} Reliability: {element} {threshold_operator} {threshold}\n"
         f"{station_id} from {start_date} to {end_date}"
     )
     ax1.grid(True, linestyle=":", alpha=0.7)

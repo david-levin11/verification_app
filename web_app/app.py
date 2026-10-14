@@ -20,6 +20,7 @@ st.markdown(
     - explore station-level verification metrics on a map
     - run aggregate verification for selected stations
     - generate storm-specific time series plots
+    - compare two models on common forecast/observation cases
     """
 )
 
@@ -48,6 +49,11 @@ st.markdown(
     3. **Storm Specific Zoom**
        - Generate station-specific time series or plume-style plots.
        - Currently optimized for wind and gust workflows.
+
+    4. **Model Comparison**
+       - Choose two models, their shared element, and a forecast reference offset.
+       - Score both against the same observation with configurable timing tolerance.
+       - Explore lead times, station differences, conditions, and probability diagnostics.
     """
 )
 
@@ -75,7 +81,8 @@ verification_app/
     └── pages/
         ├── 1_Map_Explorer.py
         ├── 2_Aggregate_Verification.py
-        └── 3_Storm_Zoom.py
+        ├── 3_Storm_Zoom.py
+        └── 4_Model_Comparison.py
     """,
     language="text",
 )

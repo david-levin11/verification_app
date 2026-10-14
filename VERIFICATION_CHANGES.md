@@ -53,5 +53,6 @@ Run `python -m pytest tests/test_verification.py -q` with the app dependencies
 and pytest installed. Tests cover scores, equality, tails, ties, time/window
 matching, month boundaries, and Streamlit controls.
 
-These changes prepare shared verification utilities for a future two-model
-comparison page; they do not yet add that page.
+The Model Comparison page now uses these shared utilities. See
+MODEL_COMPARISON.md for reference matching, offsets, observation pairing,
+probabilistic sample selection, and archive limitations.

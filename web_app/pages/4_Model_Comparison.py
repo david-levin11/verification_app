@@ -50,20 +50,10 @@ obs_minutes=st.sidebar.number_input('Observation time tolerance (minutes)',0,180
 st.sidebar.caption('Accumulation durations must agree; the tolerance applies to window endpoints. Daily temperatures use their configured anchor date.')
 
 st.subheader('Forecast reference matching')
-matching_label=st.radio('Matching method',['Reference times','Common reference cutoff'],horizontal=True,key='compare_matching')
-matching='reference' if matching_label=='Reference times' else 'cutoff'
 use_offset=st.checkbox('Offset Model B reference time relative to Model A',key='compare_use_offset')
 offset=st.number_input('Model B offset (hours; negative = earlier)',-72.0,72.0,-6.0,step=1.0,key='compare_offset') if use_offset else 0.
-if matching=='reference':
-    ref_tolerance=st.number_input('Reference-time tolerance (hours)',0.0,6.0,1.0,step=.5,key='compare_ref_tolerance')
-    cutoff=None
-    st.caption(f'For each A forecast, select B at A reference {offset:+g} hours, within ±{ref_tolerance:g} hours. Valid targets must match. Actual offsets and both leads appear in the paired data.')
-else:
-    cutoff_text=st.text_input('Common UTC reference cutoff',f'{start} 00:00',key='compare_cutoff')
-    cutoff=cutoff_text;ref_tolerance=0.
-    st.caption(f'Select the latest archived A reference at/before the cutoff and B at/before cutoff {offset:+g} hours, for each target. This uses reference times, not proven publication/availability times.')
-if 'ndfd' in (model_a,model_b):
-    st.info('NDFD reference time is reconstructed from valid_time − forecast_hour (the GRIB reference). The archive does not retain publication time, editing time, or which NBM run was used. The offset is your comparison assumption.')
+ref_tolerance=st.number_input('Reference-time tolerance (hours)',0.0,6.0,1.0,step=.5,key='compare_ref_tolerance')
+st.caption(f'For each A forecast, select B at A reference {offset:+g} hours, within ±{ref_tolerance:g} hours. Valid targets must match. Actual offsets and both leads appear in the paired data.')
 
 @st.cache_data
 def read_metadata(path):
@@ -109,15 +99,13 @@ else:
 context=dict(model_a=model_a,model_b=model_b,element=element,obs=obs,percentile_a=percentile_a,
     percentile_b=percentile_b,start=start,end=end,lead_min=lead_min,lead_max=lead_max,
     threshold=threshold,operator=operator,obs_minutes=obs_minutes,offset=offset,
-    matching=matching,cutoff=cutoff,ref_tolerance=ref_tolerance,stations=stations,
+    ref_tolerance=ref_tolerance,stations=stations,
     archive_root=archive_root,use_dir=use_dir,dir_min=dir_min,dir_max=dir_max)
 
 if st.button('Run Model Comparison',type='primary',key='compare_run'):
     try:
         if lead_min>lead_max:raise ValueError('Minimum lead must not exceed maximum lead')
         if not stations:raise ValueError('Select at least one station')
-        parsed_cutoff=pd.Timestamp(cutoff) if matching=='cutoff' else None
-        if matching=='cutoff' and pd.isna(parsed_cutoff):raise ValueError('Enter a valid UTC reference cutoff')
         horizon=max([lead_max]+FORECAST_HOURS_BY_MODEL_ELEMENT.get(model_a,{}).get(element,[])+
                     FORECAST_HOURS_BY_MODEL_ELEMENT.get(model_b,{}).get(element,[]))+abs(offset)+ref_tolerance+48
         with st.spinner('Loading forecasts and matching common verification cases...'):
@@ -126,7 +114,7 @@ if st.button('Run Model Comparison',type='primary',key='compare_run'):
             pairs,diagnostics=comparison_cases(a,b,o,model_a,model_b,element,percentile_a,percentile_b,
                 obs_source=obs,obs_time_tolerance=f'{obs_minutes}min',offset_hours=offset,
                 reference_tolerance=f'{ref_tolerance}h',lead_min=lead_min,lead_max=lead_max,
-                matching=matching,cutoff=parsed_cutoff)
+                matching='reference')
             if use_dir and not pairs.empty:
                 if 'observed_direction' not in pairs:raise ValueError('The paired observations have no wind direction field')
                 direction=pd.to_numeric(pairs.observed_direction,errors='coerce')
@@ -153,7 +141,7 @@ label_b='B: '+model_b.upper()+(f' p{saved["percentile_b"]}' if prob_b else '')
 for message in result['warnings']:st.warning(message)
 diag=result['diagnostics']
 st.subheader(f'{label_a} versus {label_b}: {cfg["label"]}')
-st.caption(f'Saved matching: {saved["matching"]}; B offset {saved["offset"]:+g} h; observation tolerance {saved["obs_minutes"]} min.' + (f' Reference tolerance ±{saved["ref_tolerance"]:g} h.' if saved['matching']=='reference' else f' UTC cutoff {saved["cutoff"]}.'))
+st.caption(f'B offset {saved["offset"]:+g} h; observation tolerance {saved["obs_minutes"]} min; reference tolerance ±{saved["ref_tolerance"]:g} h.')
 c1,c2,c3,c4=st.columns(4)
 c1.metric('Shared cases',f'{len(pairs):,}')
 c2.metric('A forecasts without B match',f'{diag.get("a_unmatched",0):,}')

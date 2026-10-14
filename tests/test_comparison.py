@@ -216,12 +216,9 @@ def test_streamlit_comparison_offset_and_saved_context(tmp_path):
     assert result['summary_a']['mae']==1 and result['summary_b']['mae']==4
     app.number_input(key='compare_min_cases').set_value(1).run()
     assert not app.exception
-    app.radio(key='compare_matching').set_value('Common reference cutoff').run()
-    app.text_input(key='compare_cutoff').set_value('2026-06-01 00:00')
-    app.button(key='compare_run').click().run(timeout=30)
-    assert not app.exception and not app.error
-    assert len(app.session_state['comparison_result']['cases'])==1
-    app.radio(key='compare_matching').set_value('Reference times').run()
+    assert not any(widget.key == 'compare_matching' for widget in app.radio)
+    assert not any(widget.key == 'compare_cutoff' for widget in app.text_input)
+    assert not any('NDFD reference time is reconstructed' in item.value for item in app.info)
     # A missing run should produce a clear empty-result diagnostic rather than borrowing another cycle.
     app.number_input(key='compare_offset').set_value(-12.).run()
     assert any('previous settings' in i.value for i in app.info)

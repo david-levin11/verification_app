@@ -47,6 +47,11 @@ def prepare_forecasts(frame, model, element, percentile=None):
     else:
         column = get_model_value_column(result, model, element)
     result['model_value'] = pd.to_numeric(result[column], errors='coerce')
+    # Keep forecast direction distinct from the direction of the matched report.
+    for direction_col in get_element_config(element).get('forecast_direction_candidates', []):
+        if direction_col in result:
+            result['forecast_direction'] = pd.to_numeric(result[direction_col], errors='coerce')
+            break
     date_col = get_model_pair_date_column(element)
     result['target_time'] = (utc_naive(result[date_col]).dt.normalize()
         if get_pairing_method(element) == 'date' else result.valid_time)

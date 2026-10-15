@@ -70,12 +70,65 @@ probability cases. Point metrics retain all common point cases. `n_prob` shows
 any smaller probability sample. The shared approximation rules from
 VERIFICATION_CHANGES.md apply, including tails, ties, and crossing quantiles.
 
+## Wind-speed subsets and direction verification
+
+For the wind element, **Set a minimum observed speed for wind-speed verification**
+is optional and off by default. It retains cases with observed speed greater
+than or equal to the selected cutoff. Both models, all wind-speed scorecards,
+plots, probability diagnostics, confidence intervals, and speed-case downloads
+use that same retained subset. Counts show how many shared cases the filter
+excludes. This conditions verification on observed wind: it excludes false
+alarms during lighter observed winds, so unfiltered scores remain useful.
+
+**Verify wind direction** is a separate optional control, off by default. Its
+minimum observed speed defaults to 5 kt, independently of the wind-speed score
+cutoff. The angular-error threshold defaults to 45 degrees. Direction uses the
+shared forecast-reference/target matching, offset, observation tolerance, and
+optional observed-direction sector filter already selected on the page. Speed
+and direction come from the same matched observation report; direction is not
+matched separately to a different report.
+
+Forecast directions are recognized through the wind configuration's
+`forecast_direction_candidates` (`wind_dir_deg`, then `wind_direction`).
+Observation direction uses the existing observation candidates. If either
+forecast or the observation archive lacks direction, the page explains the
+missing source and continues speed/probability verification. Speed percentiles
+alone do not provide a forecast direction distribution. NBM and NDFD samples
+include direction; the supplied NBM QMD sample does not. Other configured wind
+models use the same field detection.
+
+Directions must be finite and between 0 and 360 degrees; 360 is normalized to
+north (0). Sentinel/out-of-range values are excluded. Direction verification
+uses the intersection of valid directions and positive observed/forecast speeds
+for both models, subject to its observed-speed minimum. A zero-speed forecast
+has no defined direction; it remains eligible for wind-speed scoring. The page
+reports sequential exclusion counts for invalid directions, low/calm observed
+winds, and nonpositive forecast speeds.
+
+Absolute angular error is `abs(((forecast - observed + 180) % 360) - 180)`,
+ranging from 0 to 180 degrees. The scorecard reports mean and median absolute
+angular error and the percentage with error **strictly greater** than the chosen
+threshold. Thus an error exactly equal to 45 degrees does not exceed 45.
+Differences in percentages are percentage points. All three metrics are better
+when smaller; the comparison does not establish statistical significance.
+
+Displays include exceedance curves, 15-degree error histograms, lead-day curves,
+station difference maps/tables, and shared paired direction data. Direction cases
+and scorecards can be downloaded separately; scorecards include sample counts
+and the error threshold. Direction results can remain available even if a
+stricter speed-score cutoff removes all speed-verification cases. After changing
+inputs, click **Run Model Comparison** to refresh; existing results continue to
+use their saved settings.
+
 ## Tests
 
-`python -m pytest tests/test_comparison.py tests/test_verification.py -q`
+`python -m pytest tests -q`
 
 Tests use synthetic archives and Streamlit AppTest, covering offsets across a
 month boundary, actual lead differences, distinct targets/stations, duplicate
 keys, sparse probabilities, :53 reports, accumulation duration, daily extrema,
 score orientation, missing matches, and mixed/two-probabilistic
-page flows. No NOAA downloads or real archive writes occur during tests.
+page flows. Wind tests also cover circular errors, sentinel values, common
+direction-case selection, calm winds, independent minimum-speed filters,
+probability sample consistency, missing direction fields, station maps, empty
+subsets, and saved page settings. No NOAA downloads or real archive writes occur during tests.

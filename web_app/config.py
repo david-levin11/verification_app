@@ -315,6 +315,7 @@ ELEMENT_CONFIG = {
         "available_obs_sources": ["obs", "urma"],
         "obs_time_column": "valid_time",
         "model_value_candidates": ["wind_speed_kt", "si10"],
+        "forecast_direction_candidates": ["wind_dir_deg", "wind_direction"],
         "obs_value_candidates": ["obs_wind_speed_kts", "wind_speed_kt"],
         "direction_candidates": ["obs_wind_dir_deg", "wind_dir_deg", "wind_direction"],
         "percentile_prefix": "wind_p",

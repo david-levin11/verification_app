@@ -9,6 +9,9 @@ from config import (MODELS, PERCENTILES, CATEGORY_CONFIG, get_available_elements
                     get_available_obs_sources, get_element_config, is_probabilistic,
                     FORECAST_HOURS_BY_MODEL_ELEMENT)
 from comparison_loader import load_comparison_data
+from wind_verification import (filter_observed_speed, filter_observed_sector,
+                               direction_cases, direction_scores)
+from wind_comparison_panel import render_direction_comparison
 from comparison import (comparison_cases, comparison_scores, grouped_scores,
                         paired_mae_interval, METRIC_LABELS)
 from comparison_plots import (plot_group_scores, plot_probability_comparison,
@@ -101,11 +104,33 @@ if use_dir:
     dir_max=c2.number_input('Maximum observed direction',0,360,45,key='compare_dir_max')
 else:
     dir_min=dir_max=None
+speed_minimum = None
+verify_direction = False
+direction_min_speed = 5.
+direction_error_threshold = 45
+if element == 'wind':
+    st.subheader('Wind verification options')
+    filter_speed = ui.checkbox('Set a minimum observed speed for wind-speed verification', key='compare_filter_speed')
+    if filter_speed:
+        speed_minimum = ui.number_input('Minimum observed speed for speed scores (kt)',
+            min_value=0., value=5., step=1., key='compare_speed_minimum')
+        st.caption('Applied to all wind-speed scores and plots, including probabilities. False alarms during lighter observed winds are excluded; unfiltered scores remain useful.')
+    verify_direction = ui.checkbox('Verify wind direction', key='compare_verify_direction')
+    if verify_direction:
+        w1, w2 = ui.columns(2)
+        direction_min_speed = w1.number_input('Minimum observed speed for direction (kt)',
+            min_value=0., value=5., step=1., key='compare_direction_min_speed')
+        direction_error_threshold = w2.number_input('Direction error threshold (degrees)',
+            min_value=0, max_value=180, value=45, step=5, key='compare_direction_threshold')
+        st.caption('Compare mean/median angular error and the percentage exceeding your threshold. Direction requires archived forecast directions from both models; wind-speed percentiles alone are insufficient.')
+
 context=dict(model_a=model_a,model_b=model_b,element=element,obs=obs,percentile_a=percentile_a,
     percentile_b=percentile_b,start=start,end=end,lead_min=lead_min,lead_max=lead_max,
     threshold=threshold,operator=operator,obs_minutes=obs_minutes,offset=offset,
     ref_tolerance=ref_tolerance,stations=stations,
-    archive_root=archive_root,use_dir=use_dir,dir_min=dir_min,dir_max=dir_max)
+    archive_root=archive_root,use_dir=use_dir,dir_min=dir_min,dir_max=dir_max,
+    speed_minimum=speed_minimum,verify_direction=verify_direction,
+    direction_min_speed=direction_min_speed,direction_error_threshold=direction_error_threshold)
 
 if st.button('Run Model Comparison',type='primary',key='compare_run'):
     try:
@@ -120,16 +145,23 @@ if st.button('Run Model Comparison',type='primary',key='compare_run'):
                 obs_source=obs,obs_time_tolerance=f'{obs_minutes}min',offset_hours=offset,
                 reference_tolerance=f'{ref_tolerance}h',lead_min=lead_min,lead_max=lead_max,
                 matching='reference')
-            if use_dir and not pairs.empty:
-                if 'observed_direction' not in pairs:raise ValueError('The paired observations have no wind direction field')
-                direction=pd.to_numeric(pairs.observed_direction,errors='coerce')
-                mask=direction.between(dir_min,dir_max) if dir_min<=dir_max else (direction.ge(dir_min)|direction.le(dir_max))
-                pairs=pairs.loc[mask].copy()
-            pairs=pairs.reset_index(drop=True)
-            diagnostics['cases_after_direction_filter']=len(pairs)
+            if use_dir:
+                pairs = filter_observed_sector(pairs, dir_min, dir_max)
+            base_cases = pairs.reset_index(drop=True)
+            diagnostics['cases_after_direction_filter'] = len(base_cases)
+            direction_result = None
+            if verify_direction:
+                direction_data, direction_diagnostics = direction_cases(base_cases, direction_min_speed)
+                direction_result = dict(cases=direction_data, diagnostics=direction_diagnostics,
+                    scores=direction_scores(direction_data, direction_error_threshold))
+            pairs = filter_observed_speed(base_cases, speed_minimum).reset_index(drop=True)
+            diagnostics['cases_before_speed_filter'] = len(base_cases)
+            diagnostics['cases_after_speed_filter'] = len(pairs)
+            diagnostics['cases_excluded_by_speed_minimum'] = len(base_cases) - len(pairs)
             scores,sa,sb=comparison_scores(pairs,element,threshold,operator,prob_a,prob_b)
             st.session_state['comparison_result']=dict(cases=pairs,scores=scores,summary_a=sa,summary_b=sb,
-                diagnostics=diagnostics,warnings=warnings,context=context.copy(),metadata=metadata.copy())
+                diagnostics=diagnostics,warnings=warnings,context=context.copy(),metadata=metadata.copy(),
+                direction_result=direction_result)
     except Exception as exc:
         st.error(f'Comparison could not run: {exc}')
 
@@ -152,9 +184,17 @@ c1.metric('Shared cases',f'{len(pairs):,}')
 c2.metric('A forecasts without B match',f'{diag.get("a_unmatched",0):,}')
 c3.metric('Matched forecasts without obs',f'{diag.get("missing_observations",0):,}')
 c4.metric('Observed events',f'{result["summary_a"].get("hits",0)+result["summary_a"].get("misses",0):,}')
+if saved.get('speed_minimum') is not None:
+    st.caption(f"Wind-speed scores use observed speed ≥ {saved['speed_minimum']:g} kt: {diag['cases_excluded_by_speed_minimum']:,} of {diag['cases_before_speed_filter']:,} cases excluded. The same retained cases are used for both models and all speed/probability plots.")
+render_direction_comparison(result, ui, label_a, label_b)
 if pairs.empty:
+    if diag.get('cases_before_speed_filter', 0) and saved.get('speed_minimum') is not None:
+        st.warning('No cases remain for wind-speed scores at this minimum observed speed. Lower the speed-score minimum to include more cases.')
+        st.json(diag); st.stop()
     st.warning('No shared verification cases. Check reference offsets/tolerance, lead ranges, archive coverage, and observation windows.')
     st.json(diag);st.stop()
+if saved.get('verify_direction'):
+    st.subheader('Wind-speed comparison')
 st.caption(f'Event: {element} {saved["operator"]} {saved["threshold"]} {cfg["units"]}. Lead filtering/grouping uses Model A; Model B leads are shown separately. Results pool the shared cases. "Better" indicates the smaller error or higher score, not statistical significance.')
 metrics=result['scores'].copy()
 metrics['better']=metrics.better.replace({'A':label_a,'B':label_b})
@@ -223,6 +263,7 @@ with data_tab:
     st.json(diag)
     columns=['station_id','target_time','a_valid_time','b_valid_time','a_init_time','b_init_time','a_forecast_hour','b_forecast_hour',
         'actual_offset_hours','reference_error_hours','a_model_value','b_model_value','obs_value',
+        'a_forecast_direction','b_forecast_direction','observed_direction',
         'obs_valid_time','obs_time_offset_minutes','obs_window_start','obs_window_end']
     st.dataframe(pairs[[c for c in columns if c in pairs]].head(1000),hide_index=True,use_container_width=True)
     st.download_button('Download all paired cases (CSV)',pairs.to_csv(index=False),

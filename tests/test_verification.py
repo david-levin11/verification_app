@@ -112,35 +112,43 @@ def test_streamlit_aggregate_probability_controls(tmp_path):
                   'obs_wind_speed_kts':[0.]}).to_parquet(folder/'2025_10_archive.parquet',index=False)
     app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/2_Aggregate_Verification.py')).run()
     assert not app.exception
-    app.selectbox(key='ui_model').set_value('nbmqmd').run()
-    app.text_input(key='ui_archive_root').set_value(str(tmp_path))
+    app.selectbox(key='aggregate_ui_model').set_value('nbmqmd').run()
+    app.text_input(key='aggregate_ui_archive_root').set_value(str(tmp_path))
     app.text_input(key='aggregate_station_ids_input').set_value('A')
-    app.date_input(key='ui_end_date').set_value(date(2025,10,1))
-    app.number_input(key='ui_obs_tolerance_minutes').set_value(15)
-    app.selectbox(key='ui_threshold_operator_wind').set_value('<')
+    app.date_input(key='aggregate_ui_end_date').set_value(date(2025,10,1))
+    app.number_input(key='aggregate_ui_obs_tolerance_minutes').set_value(15)
+    app.selectbox(key='aggregate_ui_threshold_operator_wind').set_value('<')
     app.run()
-    app.button[0].click().run(timeout=20)
+    next(b for b in app.button if b.label == "Run Aggregate Verification").click().run(timeout=20)
     assert not app.exception
     assert app.session_state['aggregate_summary']['n_prob']==1
     assert app.session_state['aggregate_summary']['brier_score']==0
     assert app.session_state['aggregate_merged'].obs_time_offset_minutes.iloc[0]==-7
     assert not any('Could not create reliability' in w.value for w in app.warning)
+    # Changing model/element directly on this page keeps prior results readable.
+    app.selectbox(key='aggregate_ui_element').set_value('rh').run()
+    assert not app.exception
+    app.selectbox(key='aggregate_ui_model').set_value('ndfd').run()
+    assert not app.exception
+    assert app.session_state['aggregate_summary']['n_prob'] == 1
     # Station map uses the same probability calculation and tolerance controls.
     metadata=tmp_path/'stations.parquet'
     pd.DataFrame({'station_id':['A'],'latitude':[58.3],'longitude':[-134.5],
                   'name':['Test station']}).to_parquet(metadata,index=False)
     map_app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/1_Map_Explorer.py')).run()
-    map_app.text_input(key='metadata_path').set_value(str(metadata)).run()
-    map_app.selectbox(key='ui_model').set_value('nbmqmd').run()
-    map_app.text_input(key='ui_archive_root').set_value(str(tmp_path))
-    map_app.date_input(key='ui_end_date').set_value(date(2025,10,1))
-    map_app.number_input(key='ui_obs_tolerance_minutes').set_value(15)
-    map_app.selectbox(key='ui_threshold_operator_wind').set_value('<')
+    map_app.text_input(key='map_metadata_path').set_value(str(metadata)).run()
+    map_app.selectbox(key='map_ui_model').set_value('nbmqmd').run()
+    map_app.text_input(key='map_ui_archive_root').set_value(str(tmp_path))
+    map_app.date_input(key='map_ui_end_date').set_value(date(2025,10,1))
+    map_app.number_input(key='map_ui_obs_tolerance_minutes').set_value(15)
+    map_app.selectbox(key='map_ui_threshold_operator_wind').set_value('<')
     map_app.run()
     map_app.selectbox(key='map_selected_metric').set_value('brier_score').run()
-    map_app.button[0].click().run(timeout=20)
+    map_app.session_state['selected_station_list'] = ['HIDDEN']
+    next(b for b in map_app.button if b.label == "Build Station Metric Map").click().run(timeout=20)
     assert not map_app.exception
     assert map_app.session_state['station_metrics'].brier_score.iloc[0]==0
+    assert map_app.session_state['selected_station_list'] == ['HIDDEN']
 
 def test_configured_categories_and_lower_event_defaults():
     from config import CATEGORY_CONFIG, get_element_config

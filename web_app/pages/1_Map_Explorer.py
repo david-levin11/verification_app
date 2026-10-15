@@ -3,6 +3,11 @@ import pandas as pd
 from pathlib import Path
 
 from sidebar_controls import shared_sidebar_controls
+from page_controls import PageControls
+from station_selection import show_selected_stations
+from maps import plot_station_selection_map
+
+ui = PageControls("map")
 
 from config import (
     get_map_metrics,
@@ -80,7 +85,7 @@ def show_coverage_diagnostics(
     paired_missing_metrics = sorted(paired_stations - metric_stations)
 
     with st.expander("Coverage diagnostics", expanded=True):
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4, c5 = ui.columns(5)
 
         c1.metric("Candidate stations", f"{len(candidate_set):,}")
         c2.metric("Model stations", f"{len(model_stations):,}")
@@ -284,7 +289,7 @@ def show_coverage_diagnostics(
 # Shared sidebar controls
 # ---------------------------------------------------------------------
 
-controls = shared_sidebar_controls(show_category_set=False)
+controls = shared_sidebar_controls(show_category_set=False, page_key="map")
 
 archive_root = controls["archive_root"]
 model = controls["model"]
@@ -305,7 +310,7 @@ obs_time_tolerance = controls["obs_time_tolerance"]
 # Map-specific sidebar controls
 # ---------------------------------------------------------------------
 
-metadata_path = st.sidebar.text_input(
+metadata_path = ui.sidebar.text_input(
     "Station Metadata Path",
     value=st.session_state.get(
         "metadata_path",
@@ -328,7 +333,7 @@ st.markdown(
 # Metadata filters
 # ---------------------------------------------------------------------
 
-f1, f2, f3 = st.columns(3)
+f1, f2, f3 = ui.columns(3)
 
 context_options = ["All"]
 if "station_context" in station_meta.columns:
@@ -368,7 +373,7 @@ if zone_type == "Public Zone" and "public_zone_id" in filtered_meta.columns:
     zone_options = ["All"] + sorted(
         filtered_meta["public_zone_id"].dropna().unique().tolist()
     )
-    selected_zone = st.selectbox(
+    selected_zone = ui.selectbox(
         "Public Zone",
         zone_options,
         key="map_public_zone",
@@ -380,7 +385,7 @@ elif zone_type == "Coastal Marine Zone" and "coastal_marine_zone_id" in filtered
     zone_options = ["All"] + sorted(
         filtered_meta["coastal_marine_zone_id"].dropna().unique().tolist()
     )
-    selected_zone = st.selectbox(
+    selected_zone = ui.selectbox(
         "Coastal Marine Zone",
         zone_options,
         key="map_coastal_marine_zone",
@@ -394,7 +399,7 @@ elif zone_type == "Offshore Zone" and "offshore_zone_id" in filtered_meta.column
     zone_options = ["All"] + sorted(
         filtered_meta["offshore_zone_id"].dropna().unique().tolist()
     )
-    selected_zone = st.selectbox(
+    selected_zone = ui.selectbox(
         "Offshore Zone",
         zone_options,
         key="map_offshore_zone",
@@ -407,8 +412,13 @@ elif zone_type == "Offshore Zone" and "offshore_zone_id" in filtered_meta.column
 candidate_stations = sorted(filtered_meta["station_id"].dropna().unique().tolist())
 
 st.caption(f"{len(candidate_stations)} candidate stations from metadata filters.")
+st.subheader("Select stations")
+st.caption("Click a station to select it; click again to deselect. Selected stations are gold.")
+plot_station_selection_map(filtered_meta)
+show_selected_stations(station_meta)
 
-max_stations = st.number_input(
+
+max_stations = ui.number_input(
     "Maximum stations to query",
     min_value=1,
     max_value=300,
@@ -427,7 +437,7 @@ if current_metric not in metric_options:
     current_metric = metric_options[0]
     st.session_state["map_selected_metric"] = current_metric
 
-selected_metric = st.selectbox(
+selected_metric = ui.selectbox(
     "Map Metric",
     metric_options,
     index=metric_options.index(current_metric),
@@ -542,9 +552,7 @@ if st.button("Build Station Metric Map", type="primary"):
             "obs_time_tolerance": obs_time_tolerance,
         }
 
-        st.session_state["selected_station_list"] = sorted(
-            station_metrics["station_id"].head(5).tolist()
-        )
+
 
 
 # ---------------------------------------------------------------------
@@ -603,14 +611,3 @@ if "station_metrics" in st.session_state:
         hide_index=True,
     )
 
-    selected_stations = st.multiselect(
-        "Stations to use in Aggregate Verification",
-        options=sorted(station_metrics["station_id"].unique().tolist()),
-        default=st.session_state.get(
-            "selected_station_list",
-            sorted(station_metrics["station_id"].head(5).tolist()),
-        ),
-        key="map_selected_station_multiselect",
-    )
-
-    st.session_state["selected_station_list"] = selected_stations

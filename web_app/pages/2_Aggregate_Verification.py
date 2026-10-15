@@ -1,6 +1,10 @@
 import streamlit as st
 
 from sidebar_controls import shared_sidebar_controls
+from page_controls import PageControls
+from station_selection import station_ids_input, parse_station_ids
+
+ui = PageControls("aggregate")
 
 from config import CATEGORY_CONFIG, get_element_config, is_probabilistic
 
@@ -21,7 +25,7 @@ st.title("Aggregate Verification")
 # Shared sidebar controls
 # ---------------------------------------------------------------------
 
-controls = shared_sidebar_controls(show_category_set=True)
+controls = shared_sidebar_controls(show_category_set=True, page_key="aggregate")
 
 archive_root = controls["archive_root"]
 model = controls["model"]
@@ -43,29 +47,15 @@ category_set = controls["category_set"]
 # Aggregate-specific controls
 # ---------------------------------------------------------------------
 
-group_name = st.sidebar.text_input(
+group_name = ui.sidebar.text_input(
     "Group Name",
     value=st.session_state.get("aggregate_group_name", "Custom Selection"),
     key="aggregate_group_name",
 )
 
-selected_from_map = st.session_state.get("selected_station_list", [])
-default_station_text = (
-    ", ".join(selected_from_map)
-    if selected_from_map
-    else "EROWC, LIXA2, RIXA2, NKXA2"
-)
-
-station_ids_input = st.text_input(
-    "Station IDs for Aggregate Verification",
-    value=st.session_state.get(
-        "aggregate_station_ids_input",
-        default_station_text,
-    ),
-    key="aggregate_station_ids_input",
-)
-
-station_list = [s.strip() for s in station_ids_input.split(",") if s.strip()]
+station_ids_text = station_ids_input("aggregate", "aggregate_station_ids_input",
+    "Station IDs for Aggregate Verification", default="EROWC, LIXA2, RIXA2, NKXA2")
+station_list = parse_station_ids(station_ids_text)
 
 st.caption(f"{len(station_list)} stations selected.")
 

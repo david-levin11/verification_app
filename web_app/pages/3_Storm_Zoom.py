@@ -16,18 +16,22 @@ from data_loader import fetch_data
 from plots import plot_storm_timeseries
 
 
+from page_controls import PageControls
+
+ui = PageControls("storm")
+
 st.title("Storm Specific Zoom")
 
-archive_root = st.sidebar.text_input("Local Archive Root", "../model")
+archive_root = ui.sidebar.text_input("Local Archive Root", "../model")
 
-model = st.sidebar.selectbox("Model", MODELS)
+model = ui.sidebar.selectbox("Model", MODELS)
 
 available_elements = get_available_elements(model)
-element = st.sidebar.selectbox("Element", available_elements)
+element = ui.sidebar.selectbox("Element", available_elements)
 
 available_obs_sources = get_available_obs_sources(element)
 
-obs = st.sidebar.selectbox(
+obs = ui.sidebar.selectbox(
     "Verification Source",
     available_obs_sources,
 )
@@ -36,7 +40,7 @@ element_cfg = get_element_config(element)
 model_is_probabilistic = is_probabilistic(model, element)
 
 if model_is_probabilistic:
-    percentile = st.sidebar.selectbox(
+    percentile = ui.sidebar.selectbox(
         "Verification Percentile",
         PERCENTILES,
         index=PERCENTILES.index(element_cfg["default_percentile"]),
@@ -50,14 +54,14 @@ if element not in ["wind", "gust"]:
         "Other elements can be added after the aggregate workflow is stable."
     )
 
-s1, s2 = st.columns(2)
+s1, s2 = ui.columns(2)
 storm_station = s1.text_input("Target Station", "EROWC")
 storm_init_time = s2.text_input(
     "Model Init Time (YYYY-MM-DD HH:MM:SS)",
     "2026-02-21 00:00:00",
 )
 
-s3, s4 = st.columns(2)
+s3, s4 = ui.columns(2)
 storm_start = s3.date_input("Plot Start Date", pd.to_datetime("2026-02-21"))
 storm_end = s4.date_input("Plot End Date", pd.to_datetime("2026-02-24"))
 

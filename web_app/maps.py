@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import pydeck as pdk
+from station_selection import selected_station_ids, selectable_chart
 import streamlit as st
 
 
@@ -354,6 +355,8 @@ def plot_station_metric_map(station_metrics, selected_metric):
 
     map_df, vmin, vmax = add_map_style_columns(map_df, selected_metric)
 
+    map_df["selection_outline"] = map_df["station_id"].map(
+        lambda sid: [255, 190, 0, 255] if sid in selected_station_ids() else [40, 40, 40, 180])
     center_lat = float(map_df["latitude"].mean())
     center_lon = float(map_df["longitude"].mean())
 
@@ -377,6 +380,7 @@ def plot_station_metric_map(station_metrics, selected_metric):
 
     layer = pdk.Layer(
         "ScatterplotLayer",
+        id="metric-stations",
         data=map_df,
         get_position="[longitude, latitude]",
         get_fill_color="fill_color",
@@ -390,8 +394,8 @@ def plot_station_metric_map(station_metrics, selected_metric):
 
         pickable=True,
         stroked=True,
-        get_line_color=[40, 40, 40, 180],
-        line_width_min_pixels=1,
+        get_line_color="selection_outline",
+        line_width_min_pixels=3,
     )
 
     view_state = pdk.ViewState(
@@ -408,4 +412,30 @@ def plot_station_metric_map(station_metrics, selected_metric):
         map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
     )
 
-    st.pydeck_chart(deck)
+    selectable_chart(deck, "metric-stations", map_df.station_id.tolist(), "metrics")
+
+
+def plot_station_selection_map(metadata):
+    """Pick from all filtered metadata, without loading forecast archives."""
+    required = {'station_id', 'latitude', 'longitude'}
+    if not required.issubset(metadata.columns):
+        st.info('Station selection needs metadata with station_id, latitude, and longitude.')
+        return
+    data = metadata.drop_duplicates('station_id').copy()
+    for col in ['latitude', 'longitude']:
+        data[col] = pd.to_numeric(data[col], errors='coerce')
+    data = data.dropna(subset=['station_id', 'latitude', 'longitude'])
+    if data.empty:
+        st.info('No stations with coordinates match these filters.')
+        return
+    selected = set(selected_station_ids())
+    data['color'] = data.station_id.map(lambda sid: [255, 190, 0, 255] if sid in selected else [35, 110, 175, 210])
+    data['radius'] = data.station_id.map(lambda sid: 7 if sid in selected else 4)
+    layer = pdk.Layer('ScatterplotLayer', id='metadata-stations', data=data,
+        get_position='[longitude, latitude]', get_fill_color='color', get_radius='radius',
+        radius_units='pixels', pickable=True, stroked=True, get_line_color=[30, 30, 30],
+        line_width_min_pixels=1)
+    deck = pdk.Deck(layers=[layer], initial_view_state=pdk.ViewState(
+        latitude=float(data.latitude.mean()), longitude=float(data.longitude.mean()), zoom=4),
+        tooltip={'text': '{station_id}'}, map_style='https://basemaps.cartocdn.com/gl/positron-gl-style/style.json')
+    selectable_chart(deck, 'metadata-stations', data.station_id.tolist(), 'metadata')

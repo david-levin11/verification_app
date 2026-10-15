@@ -56,3 +56,32 @@ matching, month boundaries, and Streamlit controls.
 The Model Comparison page now uses these shared utilities. See
 MODEL_COMPARISON.md for reference matching, offsets, observation pairing,
 probabilistic sample selection, and archive limitations.
+
+## Independent page controls and station selection
+
+Each page keeps its own model, element, dates, and other inputs across navigation
+within the current session. A dependent selector falls back to a valid option
+when the chosen model no longer supports its element or verification source.
+Previously calculated results retain their original settings and show the
+existing refresh notice when inputs change.
+
+Map Explorer now displays a station-selection map immediately after the metadata
+filters, before loading forecasts. Click a station to toggle selection; selected
+stations are gold. The metric map is also selectable, with selected stations
+outlined in gold. The list below the selection map supports individual removal
+and clearing. Selections survive filter changes and rebuilding metrics; hidden
+stations remain listed. The query limit applies to metric calculations, not the
+station-selection map.
+
+Aggregate Verification and Model Comparison each provide **Use selected map
+stations**. This replaces that page's editable station IDs only when clicked;
+changing map selection does not overwrite an existing manual or imported list.
+In Model Comparison, importing also switches off **Use all stations matching
+these filters**, so the imported IDs take effect. IDs entered manually are
+trimmed, uppercased, and deduplicated.
+
+This uses Streamlit's native `st.pydeck_chart` selection API (`on_select` and
+`selection_mode`); update Streamlit if these parameters are unavailable. Tested
+with Streamlit 1.66.0. Run `python -m pytest tests -q` for computation and Streamlit
+navigation tests. Map click event handling is tested directly; AppTest does not
+simulate browser clicks on map markers.

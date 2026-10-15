@@ -25,8 +25,8 @@ st.markdown(
 )
 
 st.info(
-    "Recommended workflow: start with Map Explorer, select stations, then move "
-    "to Aggregate Verification."
+    "Each page has independent settings. Select stations in Map Explorer, then click "
+    "Use selected map stations in Aggregate Verification or Model Comparison, or enter IDs directly."
 )
 
 

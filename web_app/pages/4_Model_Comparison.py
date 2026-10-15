@@ -14,19 +14,24 @@ from comparison import (comparison_cases, comparison_scores, grouped_scores,
 from comparison_plots import (plot_group_scores, plot_probability_comparison,
                               station_difference_map)
 
+from page_controls import PageControls
+from station_selection import station_ids_input, parse_station_ids
+
+ui = PageControls('compare')
+
 st.title('Model Comparison')
 st.caption('Both forecasts are scored against the same observation on matched targets.')
 models=[m for m in MODELS if m!='urma']
-archive_root=st.sidebar.text_input('Local Archive Root',st.session_state.get('archive_root','../model'),key='compare_archive_root')
-a_col,b_col=st.columns(2)
+archive_root=ui.sidebar.text_input('Local Archive Root',st.session_state.get('archive_root','../model'),key='compare_archive_root')
+a_col,b_col=ui.columns(2)
 model_a=a_col.selectbox('Model A (reference)',models,index=models.index('ndfd'),key='compare_model_a')
 model_b=b_col.selectbox('Model B',models,index=models.index('nbm'),key='compare_model_b')
 common=[e for e in get_available_elements(model_a) if e in get_available_elements(model_b)]
 if not common:
     st.warning('These models have no configured elements in common.');st.stop()
-element=st.sidebar.selectbox('Shared element',common,key='compare_element')
+element=ui.sidebar.selectbox('Shared element',common,key='compare_element')
 cfg=get_element_config(element)
-obs=st.sidebar.selectbox('Verification Source',get_available_obs_sources(element),key=f'compare_obs_{element}')
+obs=ui.sidebar.selectbox('Verification Source',get_available_obs_sources(element),key=f'compare_obs_{element}')
 prob_a,prob_b=is_probabilistic(model_a,element),is_probabilistic(model_b,element)
 percentile_a=(a_col.selectbox('Model A point percentile',PERCENTILES,index=PERCENTILES.index('50'),key=f'compare_pct_a_{element}') if prob_a else None)
 percentile_b=(b_col.selectbox('Model B point percentile',PERCENTILES,index=PERCENTILES.index('50'),key=f'compare_pct_b_{element}') if prob_b else None)
@@ -35,24 +40,24 @@ label_b=f'B: {model_b.upper()}' + (f' p{percentile_b}' if prob_b else '')
 if model_a==model_b and percentile_a==percentile_b:
     st.info('The models and point forecasts are identical; an offset can still compare different runs.')
 
-d1,d2=st.sidebar.columns(2)
+d1,d2=ui.sidebar.columns(2)
 start=d1.date_input('Start Date',pd.Timestamp('2025-10-01').date(),key='compare_start')
 end=d2.date_input('End Date',datetime.now(timezone.utc).date(),key='compare_end')
-l1,l2=st.sidebar.columns(2)
+l1,l2=ui.sidebar.columns(2)
 lead_min=l1.number_input('A minimum lead (h)',0,240,0,step=6,key='compare_lead_min')
 lead_max=l2.number_input('A maximum lead (h)',0,240,72,step=6,key='compare_lead_max')
-threshold=st.sidebar.selectbox(f'Event threshold ({cfg["units"]})',cfg['thresholds'],
+threshold=ui.sidebar.selectbox(f'Event threshold ({cfg["units"]})',cfg['thresholds'],
     index=cfg['thresholds'].index(cfg['default_threshold']),key=f'compare_threshold_{element}')
 operators=['>=','>','<=','<']
-operator=st.sidebar.selectbox('Event definition',operators,
+operator=ui.sidebar.selectbox('Event definition',operators,
     index=operators.index(cfg.get('threshold_operator','>=')),key=f'compare_operator_{element}')
-obs_minutes=st.sidebar.number_input('Observation time tolerance (minutes)',0,180,60,step=5,key='compare_obs_tolerance')
-st.sidebar.caption('Accumulation durations must agree; the tolerance applies to window endpoints. Daily temperatures use their configured anchor date.')
+obs_minutes=ui.sidebar.number_input('Observation time tolerance (minutes)',0,180,60,step=5,key='compare_obs_tolerance')
+ui.sidebar.caption('Accumulation durations must agree; the tolerance applies to window endpoints. Daily temperatures use their configured anchor date.')
 
 st.subheader('Forecast reference matching')
-use_offset=st.checkbox('Offset Model B reference time relative to Model A',key='compare_use_offset')
-offset=st.number_input('Model B offset (hours; negative = earlier)',-72.0,72.0,-6.0,step=1.0,key='compare_offset') if use_offset else 0.
-ref_tolerance=st.number_input('Reference-time tolerance (hours)',0.0,6.0,1.0,step=.5,key='compare_ref_tolerance')
+use_offset=ui.checkbox('Offset Model B reference time relative to Model A',key='compare_use_offset')
+offset=ui.number_input('Model B offset (hours; negative = earlier)',-72.0,72.0,-6.0,step=1.0,key='compare_offset') if use_offset else 0.
+ref_tolerance=ui.number_input('Reference-time tolerance (hours)',0.0,6.0,1.0,step=.5,key='compare_ref_tolerance')
 st.caption(f'For each A forecast, select B at A reference {offset:+g} hours, within ±{ref_tolerance:g} hours. Valid targets must match. Actual offsets and both leads appear in the paired data.')
 
 @st.cache_data
@@ -67,7 +72,7 @@ def read_metadata(path):
         data['station_id']=data.station_id.astype(str).str.strip()
     return data
 
-metadata_path=st.sidebar.text_input('Station Metadata Path',st.session_state.get('metadata_path','../metadata/ak_station_metadata.parquet'),key='compare_metadata')
+metadata_path=ui.sidebar.text_input('Station Metadata Path',st.session_state.get('metadata_path','../metadata/ak_station_metadata.parquet'),key='compare_metadata')
 try:
     metadata=read_metadata(metadata_path)
 except Exception as exc:
@@ -75,23 +80,22 @@ except Exception as exc:
 filtered_meta=metadata.copy()
 if not metadata.empty:
     with st.expander('Station filters'):
-        columns=st.columns(3)
+        columns=ui.columns(3)
         for widget_col,field,label in zip(columns,['wfo_best','station_context','public_zone_id'],['WFO','Station context','Public zone']):
             if field in filtered_meta:
                 options=['All']+sorted(filtered_meta[field].dropna().astype(str).unique().tolist())
                 chosen=widget_col.selectbox(label,options,key=f'compare_filter_{field}')
                 if chosen!='All':filtered_meta=filtered_meta[filtered_meta[field].astype(str).eq(chosen)]
-        use_filtered=st.checkbox('Use all stations matching these filters',key='compare_filtered_stations')
+        use_filtered=ui.checkbox('Use all stations matching these filters',key='compare_filtered_stations')
 else:
     use_filtered=False
-selected=st.session_state.get('selected_station_list',[])
-station_text=st.text_input('Station IDs (comma-separated)',', '.join(selected) if selected else 'PAJN',key='compare_stations')
+station_text=station_ids_input('compare', 'compare_stations', 'Station IDs (comma-separated)')
 stations=(filtered_meta.station_id.dropna().unique().tolist() if use_filtered and 'station_id' in filtered_meta else
-          list(dict.fromkeys(x.strip() for x in station_text.split(',') if x.strip())))
-st.caption(f'{len(stations)} stations selected. Station selections can be carried over from Map Explorer.')
-use_dir=st.checkbox('Filter by observed wind direction',key='compare_use_direction') if cfg.get('supports_direction_filter') else False
+          parse_station_ids(station_text))
+st.caption(f'{len(stations)} stations selected.')
+use_dir=ui.checkbox('Filter by observed wind direction',key='compare_use_direction') if cfg.get('supports_direction_filter') else False
 if use_dir:
-    c1,c2=st.columns(2)
+    c1,c2=ui.columns(2)
     dir_min=c1.number_input('Minimum observed direction',0,360,315,key='compare_dir_min')
     dir_max=c2.number_input('Maximum observed direction',0,360,45,key='compare_dir_max')
 else:
@@ -142,7 +146,7 @@ for message in result['warnings']:st.warning(message)
 diag=result['diagnostics']
 st.subheader(f'{label_a} versus {label_b}: {cfg["label"]}')
 st.caption(f'B offset {saved["offset"]:+g} h; observation tolerance {saved["obs_minutes"]} min; reference tolerance ±{saved["ref_tolerance"]:g} h.')
-c1,c2,c3,c4=st.columns(4)
+c1,c2,c3,c4=ui.columns(4)
 c1.metric('Shared cases',f'{len(pairs):,}')
 c2.metric('A forecasts without B match',f'{diag.get("a_unmatched",0):,}')
 c3.metric('Matched forecasts without obs',f'{diag.get("missing_observations",0):,}')
@@ -155,7 +159,7 @@ metrics=result['scores'].copy()
 metrics['better']=metrics.better.replace({'A':label_a,'B':label_b})
 st.dataframe(metrics[['label','a','b','difference','better']].rename(
     columns={'label':'Metric','a':label_a,'b':label_b,'difference':'A − B','better':'Better'}),hide_index=True,use_container_width=True)
-if st.checkbox('Estimate confidence for the MAE difference',key='compare_bootstrap'):
+if ui.checkbox('Estimate confidence for the MAE difference',key='compare_bootstrap'):
     interval=paired_mae_interval(pairs)
     if interval is None:
         st.info('At least five target days are needed for a day-block confidence interval.')
@@ -164,7 +168,7 @@ if st.checkbox('Estimate confidence for the MAE difference',key='compare_bootstr
         st.caption('All stations and runs within each target day are resampled together; dependence across days can still affect this estimate.')
 
 plot_metrics=metrics.metric.tolist()
-metric=st.selectbox('Metric for charts and station differences',plot_metrics,index=plot_metrics.index('mae'),
+metric=ui.selectbox('Metric for charts and station differences',plot_metrics,index=plot_metrics.index('mae'),
                     format_func=lambda m:METRIC_LABELS[m],key=f'compare_display_metric_{element}_{prob_a}_{prob_b}')
 lead_tab,map_tab,condition_tab,prob_tab,data_tab=st.tabs(['Lead times','Station differences','Conditions','Probabilities','Paired data & coverage'])
 with lead_tab:
@@ -175,7 +179,7 @@ with lead_tab:
     st.caption('Each day uses common cases for the two models. Actual lead times can differ because of the selected offset.')
 with map_tab:
     station_table=grouped_scores(pairs,'station_id',element,saved['threshold'],saved['operator'],prob_a,prob_b)
-    minimum=st.number_input('Minimum shared cases per station',1,10000,10,key='compare_min_cases')
+    minimum=ui.number_input('Minimum shared cases per station',1,10000,10,key='compare_min_cases')
     deck,map_data=station_difference_map(station_table,result['metadata'],metric,label_a,label_b,minimum)
     if deck is None:st.info('A station map needs matching metadata with latitude/longitude and enough shared cases.')
     else:
@@ -183,14 +187,14 @@ with map_tab:
         st.pydeck_chart(deck,use_container_width=True)
     st.dataframe(station_table[station_table.metric.eq(metric)],hide_index=True,use_container_width=True)
 with condition_tab:
-    condition=st.radio('Break down by',['Observed category','Month'],horizontal=True,key='compare_condition')
+    condition=ui.radio('Break down by',['Observed category','Month'],horizontal=True,key='compare_condition')
     work=pairs.copy()
     if condition=='Month':
         work['condition']=work.target_time.dt.strftime('%Y-%m')
     else:
         sets=cfg.get('category_sets',[])
         if sets:
-            category=st.selectbox('Category set',sets,key=f'compare_category_{element}')
+            category=ui.selectbox('Category set',sets,key=f'compare_category_{element}')
             specification=CATEGORY_CONFIG[category]
             work['condition']=pd.cut(work.obs_value,bins=specification['bins'],
                 labels=list(specification['labels'].values()))

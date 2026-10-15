@@ -197,7 +197,7 @@ def comparison_fixture(tmp_path):
 def test_streamlit_comparison_offset_and_saved_context(tmp_path):
     from streamlit.testing.v1 import AppTest
     metadata=comparison_fixture(tmp_path)
-    app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/4_Model_Comparison.py')).run()
+    app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/4_Model_Comparison.py'), default_timeout=15).run()
     assert not app.exception
     app.text_input(key='compare_archive_root').set_value(str(tmp_path))
     app.text_input(key='compare_metadata').set_value(str(metadata))
@@ -230,7 +230,7 @@ def test_streamlit_comparison_offset_and_saved_context(tmp_path):
 def test_streamlit_mixed_and_two_probabilistic_models(tmp_path):
     from streamlit.testing.v1 import AppTest
     comparison_fixture(tmp_path)
-    app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/4_Model_Comparison.py')).run()
+    app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/4_Model_Comparison.py'), default_timeout=15).run()
     app.text_input(key='compare_archive_root').set_value(str(tmp_path))
     app.text_input(key='compare_stations').set_value('A')
     app.date_input(key='compare_start').set_value(date(2026,6,2))

@@ -15,9 +15,10 @@ from comparison_plots import (plot_group_scores, plot_probability_comparison,
                               station_difference_map)
 
 from page_controls import PageControls
-from station_selection import station_ids_input, parse_station_ids
+from station_selection import station_ids_input, parse_station_ids, sync_map_selection
 
 ui = PageControls('compare')
+sync_map_selection('compare', 'compare_stations')
 
 st.title('Model Comparison')
 st.caption('Both forecasts are scored against the same observation on matched targets.')

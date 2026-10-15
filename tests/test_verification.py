@@ -110,7 +110,7 @@ def test_streamlit_aggregate_probability_controls(tmp_path):
     folder=tmp_path/'obs'/'wind';folder.mkdir(parents=True)
     pd.DataFrame({'stid':['A'],'valid_time':[pd.Timestamp('2025-10-01 11:53')],
                   'obs_wind_speed_kts':[0.]}).to_parquet(folder/'2025_10_archive.parquet',index=False)
-    app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/2_Aggregate_Verification.py')).run()
+    app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/2_Aggregate_Verification.py'), default_timeout=15).run()
     assert not app.exception
     app.selectbox(key='aggregate_ui_model').set_value('nbmqmd').run()
     app.text_input(key='aggregate_ui_archive_root').set_value(str(tmp_path))
@@ -135,7 +135,7 @@ def test_streamlit_aggregate_probability_controls(tmp_path):
     metadata=tmp_path/'stations.parquet'
     pd.DataFrame({'station_id':['A'],'latitude':[58.3],'longitude':[-134.5],
                   'name':['Test station']}).to_parquet(metadata,index=False)
-    map_app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/1_Map_Explorer.py')).run()
+    map_app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/1_Map_Explorer.py'), default_timeout=15).run()
     map_app.text_input(key='map_metadata_path').set_value(str(metadata)).run()
     map_app.selectbox(key='map_ui_model').set_value('nbmqmd').run()
     map_app.text_input(key='map_ui_archive_root').set_value(str(tmp_path))

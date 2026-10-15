@@ -25,8 +25,8 @@ st.markdown(
 )
 
 st.info(
-    "Each page has independent settings. Select stations in Map Explorer, then click "
-    "Use selected map stations in Aggregate Verification or Model Comparison, or enter IDs directly."
+    "Each page has independent settings. Select stations in Map Explorer to use them in "
+    "Aggregate Verification or Model Comparison, or enter IDs directly."
 )
 
 

@@ -1,5 +1,4 @@
-"""Shared map selection, explicitly copied into each verification page."""
-import hashlib
+"""Map selections propagate automatically; manual entries last until the next map change."""
 import streamlit as st
 from page_controls import PageControls, set_page_value
 
@@ -14,42 +13,21 @@ def selected_station_ids():
     return list(st.session_state.get(SELECTION_KEY, []))
 
 
-def update_map_selection(chart_key, layer_id):
-    event = st.session_state.get(chart_key, {})
-    objects = event.get('selection', {}).get('objects', {}).get(layer_id, [])
-    current = {str(obj['station_id']) for obj in objects if 'station_id' in obj}
-    previous_key = f'_previous_{chart_key}'
-    previous = set(st.session_state.get(previous_key, []))
-    selected = set(selected_station_ids())
-    # Each native multi-object click toggles one station. Apply the delta to
-    # shared selection so filters and a second map cannot erase hidden sites.
-    selected.symmetric_difference_update(previous.symmetric_difference(current))
-    st.session_state[SELECTION_KEY] = sorted(selected)
-    st.session_state[previous_key] = sorted(current)
-
-
-def selectable_chart(deck, layer_id, station_ids, name):
-    ids = '|'.join(map(str, station_ids))
-    digest = hashlib.sha256(ids.encode()).hexdigest()[:12]
-    epoch = st.session_state.get('_station_selection_epoch', 0)
-    key = f'station_picker_{name}_{digest}_{epoch}'
-    if key not in st.session_state:
-        st.session_state[f'_previous_{key}'] = []
-    st.pydeck_chart(deck, key=key, selection_mode='multi-object',
-        on_select=lambda: update_map_selection(key, layer_id))
+def set_map_station_ids(ids):
+    selected = sorted(set(str(s).strip().upper() for s in ids if str(s).strip()))
+    if SELECTION_KEY not in st.session_state or selected != selected_station_ids():
+        st.session_state[SELECTION_KEY] = selected
+        st.session_state['_map_selection_revision'] = st.session_state.get('_map_selection_revision', 0) + 1
 
 
 def remove_station(station_id=None):
-    st.session_state[SELECTION_KEY] = ([s for s in selected_station_ids() if s != station_id]
-                                       if station_id else [])
-    # Native chart selection is read-only; remount only for explicit removal.
-    st.session_state['_station_selection_epoch'] = st.session_state.get('_station_selection_epoch', 0) + 1
+    set_map_station_ids([s for s in selected_station_ids() if s != station_id] if station_id else [])
 
 
 def show_selected_stations(metadata):
     selected = selected_station_ids()
     st.subheader(f'Selected map stations ({len(selected)})')
-    st.caption('Selection persists across filters and pages. Import it with “Use selected map stations” on Aggregate Verification or Model Comparison.')
+    st.caption('Changes carry over automatically to Aggregate Verification and Model Comparison. You can also enter station IDs manually on those pages.')
     if not selected:
         st.info('Click stations on the map to select them; click again to remove them.')
         return
@@ -65,16 +43,21 @@ def show_selected_stations(metadata):
     st.button('Clear selected stations', key='clear_map_stations', on_click=remove_station)
 
 
-def import_map_stations(page, key):
-    set_page_value(page, key, ', '.join(selected_station_ids()))
-    if page == 'compare':
-        set_page_value(page, 'compare_filtered_stations', False)
+def sync_map_selection(page, key):
+    """Apply each map change once, leaving later manual edits alone."""
+    revision = st.session_state.get('_map_selection_revision', 0)
+    seen_key = f'_map_selection_seen_{page}'
+    if SELECTION_KEY in st.session_state and st.session_state.get(seen_key) != revision:
+        set_page_value(page, key, ', '.join(selected_station_ids()))
+        if page == 'compare':
+            set_page_value(page, 'compare_filtered_stations', False)
+        st.session_state[seen_key] = revision
 
 
 def station_ids_input(page, key, label, default='PAJN'):
-    count = len(selected_station_ids())
-    st.button('Use selected map stations', key=f'{page}_import_map', disabled=count == 0,
-        on_click=import_map_stations, args=(page, key),
-        help='Replace this page’s station IDs with the current map selection.')
-    st.caption(f'{count} stations in the shared map selection. You can also type station IDs below.')
+    sync_map_selection(page, key)
+    st.caption('Map selections carry over automatically. You can edit the station IDs below; a new map selection replaces them.')
+    saved = st.session_state.get(f'_page_settings_{page}', {})
+    if key in st.session_state or key in saved:
+        return PageControls(page).text_input(label, key=key)
     return PageControls(page).text_input(label, default, key=key)

@@ -65,23 +65,31 @@ when the chosen model no longer supports its element or verification source.
 Previously calculated results retain their original settings and show the
 existing refresh notice when inputs change.
 
-Map Explorer now displays a station-selection map immediately after the metadata
-filters, before loading forecasts. Click a station to toggle selection; selected
-stations are gold. The metric map is also selectable, with selected stations
-outlined in gold. The list below the selection map supports individual removal
-and clearing. Selections survive filter changes and rebuilding metrics; hidden
-stations remain listed. The query limit applies to metric calculations, not the
-station-selection map.
+Select stations directly from the generated metric map in Map Explorer. Click a
+station to toggle it; selected stations have a gold outline. There is no separate
+selection map. The list below the metric map supports individual removal and
+clearing. Selections survive filter changes and rebuilding metrics, including
+stations hidden from the current map.
 
-Aggregate Verification and Model Comparison each provide **Use selected map
-stations**. This replaces that page's editable station IDs only when clicked;
-changing map selection does not overwrite an existing manual or imported list.
-In Model Comparison, importing also switches off **Use all stations matching
-these filters**, so the imported IDs take effect. IDs entered manually are
-trimmed, uppercased, and deduplicated.
+Map selection changes automatically update the station-ID fields in Aggregate
+Verification and Model Comparison. Manual edits remain in effect on that page
+until the next map selection change. Clearing the map selection also clears
+those fields on their next visit. Model Comparison switches off **Use all
+stations matching these filters** when receiving a new map selection, so the
+station IDs take effect. Model, element, dates, reference offset, and other page
+settings remain independent. IDs are trimmed, uppercased, and deduplicated.
 
-This uses Streamlit's native `st.pydeck_chart` selection API (`on_select` and
-`selection_mode`); update Streamlit if these parameters are unavailable. Tested
-with Streamlit 1.66.0. Run `python -m pytest tests -q` for computation and Streamlit
-navigation tests. Map click event handling is tested directly; AppTest does not
-simulate browser clicks on map markers.
+The metric map uses a small Streamlit component with a persistent deck.gl map.
+Selection/data updates change its layers without resetting its viewport. The
+last selection's camera position is also retained when returning to the page.
+The component files in `web_app/station_map_frontend/` must be pulled alongside
+`station_map.py`. No frontend build or additional Python dependency is needed.
+The browser loads pinned deck.gl and MapLibre libraries from unpkg.com and the
+CARTO basemap, so those hosts must be accessible.
+
+Run `python -m pytest tests -q` for calculation, state, and navigation tests.
+For browser click/zoom checks with synthetic metrics, install the optional
+Playwright development dependency and Chromium (`python -m playwright install
+chromium`), then run `python tests/browser_station_map.py`. The browser check
+covers zoom retention, click toggles, highlight state, automatic station fields,
+manual overrides, removal, clearing, and consecutive clicks.

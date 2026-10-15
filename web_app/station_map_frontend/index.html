@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+html, body, #map { margin: 0; width: 100%; height: 520px; overflow: hidden; }
+body { font-family: sans-serif; }
+#error { position: absolute; inset: 12px; background: white; padding: 12px; display: none; }
+</style>
+</head>
+<body>
+<div id="map" role="application" aria-label="Station metric map. Click a station to toggle selection."></div>
+<div id="error" role="alert"></div>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/deck.gl@9.1.14/dist.min.js"></script>
+<script src="map.js"></script>
+</body>
+</html>

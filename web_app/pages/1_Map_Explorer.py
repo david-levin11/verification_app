@@ -5,7 +5,6 @@ from pathlib import Path
 from sidebar_controls import shared_sidebar_controls
 from page_controls import PageControls
 from station_selection import show_selected_stations
-from maps import plot_station_selection_map
 
 ui = PageControls("map")
 
@@ -412,10 +411,6 @@ elif zone_type == "Offshore Zone" and "offshore_zone_id" in filtered_meta.column
 candidate_stations = sorted(filtered_meta["station_id"].dropna().unique().tolist())
 
 st.caption(f"{len(candidate_stations)} candidate stations from metadata filters.")
-st.subheader("Select stations")
-st.caption("Click a station to select it; click again to deselect. Selected stations are gold.")
-plot_station_selection_map(filtered_meta)
-show_selected_stations(station_meta)
 
 
 max_stations = ui.number_input(
@@ -587,7 +582,9 @@ if "station_metrics" in st.session_state:
         )
 
     show_map_legend(station_metrics, selected_metric)
+    st.caption("Click a station to select it; click again to deselect. Selected stations have a gold outline.")
     plot_station_metric_map(station_metrics, selected_metric)
+    show_selected_stations(station_meta)
 
     st.subheader("Station Metrics Table")
 

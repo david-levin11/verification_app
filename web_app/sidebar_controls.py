@@ -59,6 +59,13 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
         help='Nearest report to the forecast valid time or accumulation endpoint; 0 requires exact matching.')
     obs_time_tolerance = f'{tolerance}min'
     st.sidebar.caption('Daily temperatures use their configured date; accumulation durations must agree.')
+    minimum_observed_speed = None
+    if element == 'gust':
+        st.sidebar.caption('Gusts use their recorded report times and the selected observation tolerance.')
+        if ui.checkbox('Set a minimum observed gust', key='ui_filter_gust'):
+            minimum_observed_speed = ui.number_input('Minimum observed gust (kt)',
+                min_value=0., value=5., step=1., key='ui_minimum_gust')
+            st.sidebar.caption('Scores exclude lighter observed gusts, including false alarms during those cases.')
     category_set = None
     if show_category_set:
         categories = get_available_category_sets(element)
@@ -69,4 +76,5 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
         forecast_projection=forecast_projection, forecast_projection_start=forecast_projection_start,
         forecast_projection_end=forecast_projection_end, forecast_hours=forecast_hours,
         start_date=start_date, end_date=end_date, threshold=threshold,
-        threshold_operator=threshold_operator, obs_time_tolerance=obs_time_tolerance, category_set=category_set)
+        threshold_operator=threshold_operator, obs_time_tolerance=obs_time_tolerance, category_set=category_set,
+        minimum_observed_speed=minimum_observed_speed)

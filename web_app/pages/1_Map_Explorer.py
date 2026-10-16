@@ -13,6 +13,8 @@ from config import (
 )
 
 from data_loader import fetch_data
+from wind_verification import filter_observed_speed
+from archive_files import gust_observation_coverage
 from pairing import build_verification_pairs
 from metrics import compute_station_metrics
 from maps import plot_station_metric_map, show_map_legend
@@ -304,6 +306,7 @@ end_date = controls["end_date"]
 threshold = controls["threshold"]
 threshold_operator = controls["threshold_operator"]
 obs_time_tolerance = controls["obs_time_tolerance"]
+minimum_observed_speed = controls["minimum_observed_speed"]
 
 # ---------------------------------------------------------------------
 # Map-specific sidebar controls
@@ -501,6 +504,10 @@ if st.button("Build Station Metric Map", type="primary"):
         st.write("Obs rows:", len(obdf))
         st.write("Merged pair rows:", len(merged))
 
+        before_minimum = len(merged)
+        merged = filter_observed_speed(merged, minimum_observed_speed)
+        if minimum_observed_speed is not None:
+            st.caption(f'Observed gust ≥ {minimum_observed_speed:g} kt: {before_minimum-len(merged)} of {before_minimum} paired cases excluded.')
         if merged.empty:
             st.warning("No model/obs pairs were created.")
             st.write("Model columns:", modeldf.columns.tolist())
@@ -532,6 +539,9 @@ if st.button("Build Station Metric Map", type="primary"):
         #     station_metrics=station_metrics,
         # )
 
+        st.session_state['station_minimum_counts'] = dict(before=before_minimum,
+            excluded=before_minimum-len(merged))
+        st.session_state['station_gust_coverage'] = gust_observation_coverage(obdf) if element == 'gust' else None
         st.session_state["station_metrics"] = station_metrics
         st.session_state["station_metrics_context"] = {
             "model": model,
@@ -545,6 +555,7 @@ if st.button("Build Station Metric Map", type="primary"):
             "threshold": threshold,
             "threshold_operator": threshold_operator,
             "obs_time_tolerance": obs_time_tolerance,
+            "minimum_observed_speed": minimum_observed_speed,
         }
 
 
@@ -573,7 +584,14 @@ if "station_metrics" in st.session_state:
             "threshold": threshold,
             "threshold_operator": threshold_operator,
             "obs_time_tolerance": obs_time_tolerance,
+            "minimum_observed_speed": minimum_observed_speed,
         }
+
+    if result_context.get('element') == 'gust' and st.session_state.get('station_gust_coverage'):
+        st.caption(st.session_state['station_gust_coverage'])
+    if result_context.get('minimum_observed_speed') is not None:
+        counts = st.session_state.get('station_minimum_counts', {})
+        st.caption(f"Observed gust ≥ {result_context['minimum_observed_speed']:g} kt; {counts.get('excluded', 0)} of {counts.get('before', 0)} paired cases excluded.")
 
     if result_context and result_context != current_context:
         st.info(

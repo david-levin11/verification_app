@@ -83,43 +83,21 @@ if st.button("Generate Storm Timeseries", type="primary"):
         )
 
     if message:
-        fatal_markers = [
-            "Data Missing",
-            "Database error",
-            "Observation Database error",
-            "Observation schema error",
-            "No model data",
-            "No observation data",
-            "No NDFD data",
-            "No stations",
-        ]
-
+        fatal_markers = ['Data Missing', 'Database error', 'Observation Database error',
+            'Observation schema error', 'No model data', 'No observation data', 'No NDFD data', 'No stations']
         if any(message.startswith(marker) for marker in fatal_markers):
-            st.error(message)
-            st.stop()
-        else:
-            st.warning(message)
-
-        if modeldf.empty:
-            st.error("No model data returned.")
-            st.stop()
-
-        if obdf.empty:
-            st.error("No observation data returned.")
-            st.stop()
-
-    else:
+            st.error(message); st.stop()
+        st.warning(message)
+    if modeldf.empty or obdf.empty:
+        st.error('No model or observation data returned.'); st.stop()
+    try:
         fig = plot_storm_timeseries(
-            model_df=modeldf,
-            obs_df=obdf,
-            target_station=storm_station.strip(),
-            target_init_time=storm_init_time,
-            plot_start=storm_start,
-            plot_end=storm_end,
-            model=model,
-        )
-
-        if fig:
-            st.pyplot(fig)
-        else:
-            st.warning("Could not generate chart due to missing data.")
+            model_df=modeldf, obs_df=obdf, target_station=storm_station.strip(),
+            target_init_time=storm_init_time, plot_start=storm_start, plot_end=storm_end,
+            model=model, element=element, percentile=percentile)
+    except ValueError as exc:
+        st.error(str(exc)); st.stop()
+    if fig is not None:
+        st.pyplot(fig)
+    else:
+        st.warning(f'No valid {element_cfg["label"].lower()} data for this station and initialization.')

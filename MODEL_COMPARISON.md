@@ -132,3 +132,7 @@ page flows. Wind tests also cover circular errors, sentinel values, common
 direction-case selection, calm winds, independent minimum-speed filters,
 probability sample consistency, missing direction fields, station maps, empty
 subsets, and saved page settings. No NOAA downloads or real archive writes occur during tests.
+
+Gust verification now supports dedicated and combined wind/gust archives across
+all pages, with missing-report coverage and optional observed-gust minimums. See
+[GUST_VERIFICATION.md](GUST_VERIFICATION.md) for source priority and timing assumptions.

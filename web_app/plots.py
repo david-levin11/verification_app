@@ -4,83 +4,69 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.patches as patches
 from probability import probability_cases, reliability_table
-from config import get_percentile_columns
+from config import get_percentile_columns, get_element_config, is_probabilistic
+from pairing import get_model_value_column, get_obs_value_column
 
 def plot_storm_timeseries(
-    model_df,
-    obs_df,
-    target_station,
-    target_init_time,
-    plot_start,
-    plot_end,
-    model,
-    savepath=None
+    model_df, obs_df, target_station, target_init_time, plot_start, plot_end,
+    model, savepath=None, element='wind', percentile=None,
 ):
-    """
-    Creates a time series chart for a specific station and model run.
-    Draws a plume for probabilistic models, or a single line for deterministic models.
-    """
-    # 1. Determine Model Column
-    is_probabilistic = model in ["nbmqmd", "nbmqmd_exp"]
-    model_col = 'wind_p50' if is_probabilistic else 'wind_speed_kt'
-
-    # Catch if deterministic model uses a slightly different column name
-    if not is_probabilistic and model_col not in model_df.columns:
-        # Fallback if standard name isn't found
-        possible_cols = [c for c in model_df.columns if 'wind' in c.lower()]
-        model_col = possible_cols[0] if possible_cols else model_df.columns[-1]
-
-    # 2. Process Model Data
-    model_plot_df = model_df[
-        (model_df['station_id'] == target_station) &
-        (model_df['init_time'] == pd.to_datetime(target_init_time)) &
-        (model_df['valid_time'] >= pd.to_datetime(plot_start)) &
-        (model_df['valid_time'] <= pd.to_datetime(plot_end))
-    ].copy()
-
-    model_plot_df = model_plot_df.dropna(subset=[model_col]).sort_values('valid_time')
-
-    if model_plot_df.empty:
-        print(f"No model data found for {target_station} initialized at {target_init_time}.")
+    """Plot the selected element/percentile from one model run and actual reports."""
+    from datetime import date, datetime
+    cfg = get_element_config(element)
+    probabilistic = is_probabilistic(model, element)
+    percentile = str(percentile or '50') if probabilistic else None
+    model_col = get_model_value_column(model_df, model, element, percentile)
+    obs_col = get_obs_value_column(obs_df, element)
+    start = pd.to_datetime(plot_start, utc=True).tz_convert(None)
+    finish = pd.to_datetime(plot_end, utc=True).tz_convert(None)
+    if isinstance(plot_end, date) and not isinstance(plot_end, datetime):
+        finish += pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
+    if start > finish:
+        raise ValueError('Plot start date must not be after end date')
+    init = pd.to_datetime(target_init_time, utc=True).tz_convert(None)
+    data = model_df.copy()
+    observations = obs_df.copy()
+    for frame in [data, observations]:
+        frame['valid_time'] = pd.to_datetime(frame.valid_time, utc=True).dt.tz_convert(None)
+    data['init_time'] = pd.to_datetime(data.init_time, utc=True).dt.tz_convert(None)
+    data = data.loc[data.station_id.astype(str).str.strip().eq(target_station) &
+        data.init_time.eq(init) & data.valid_time.between(start, finish)].copy()
+    data[model_col] = pd.to_numeric(data[model_col], errors='coerce')
+    data = data.loc[np.isfinite(data[model_col])].sort_values('valid_time')
+    if data.empty:
         return None
-
-    # 3. Process Observation Data
-    obs_station_col = 'station_id' if 'station_id' in obs_df.columns else 'stid'
-    raw_obs_col = "obs_wind_speed_kts" if "obs_wind_speed_kts" in obs_df.columns else "wind_speed_kt"
-
-    obs_plot_df = obs_df[
-        (obs_df[obs_station_col] == target_station) &
-        (obs_df['valid_time'] >= pd.to_datetime(plot_start)) &
-        (obs_df['valid_time'] <= pd.to_datetime(plot_end))
-    ].copy().dropna(subset=[raw_obs_col]).sort_values('valid_time')
-
-    # 4. Plotting
+    station_col = 'station_id' if 'station_id' in observations else 'stid'
+    observations = observations.loc[observations[station_col].astype(str).str.strip().eq(target_station) &
+        observations.valid_time.between(start, finish)].sort_values('valid_time').copy()
+    observations[obs_col] = pd.to_numeric(observations[obs_col], errors='coerce')
+    observations[obs_col] = observations[obs_col].where(np.isfinite(observations[obs_col]))
     fig, ax = plt.subplots(figsize=(12, 6))
-    
-    model_dates = model_plot_df['valid_time']
-    obs_dates = obs_plot_df['valid_time']
-    
-    # Draw Model Data
-    if is_probabilistic:
-        ax.fill_between(model_dates, model_plot_df['wind_p10'], model_plot_df['wind_p90'], color='#99CCFF', alpha=0.4, label='10th-90th Percentile')
-        ax.fill_between(model_dates, model_plot_df['wind_p25'], model_plot_df['wind_p75'], color='#003399', alpha=0.4, label='25th-75th Percentile')
-        ax.plot(model_dates, model_plot_df['wind_p50'], color='#000066', linewidth=2, linestyle='--', label='50th Percentile (Median)')
+    if probabilistic:
+        columns = get_percentile_columns(element)
+        for lo, hi, color, alpha in [('10','90','#99CCFF',.4), ('25','75','#003399',.35)]:
+            if columns[lo] in data and columns[hi] in data:
+                ax.fill_between(data.valid_time, pd.to_numeric(data[columns[lo]], errors='coerce'),
+                    pd.to_numeric(data[columns[hi]], errors='coerce'), color=color, alpha=alpha,
+                    label=f'{lo}th–{hi}th percentiles')
+        ax.plot(data.valid_time, data[model_col], color='#000066', linewidth=2,
+                linestyle='--', label=f'{model.upper()} p{percentile}')
     else:
-        ax.plot(model_dates, model_plot_df[model_col], color='#000066', linewidth=2, linestyle='-', label=f'{model.upper()} Forecast')
-    
-    # Draw Observations
-    if not obs_plot_df.empty:
-        ax.plot(obs_dates, obs_plot_df[raw_obs_col], color='#CC0000', linewidth=2.5, marker='o', markersize=4, label='Observed')
-
-    ax.set_ylabel('Wind Speed (kts)', fontsize=12)
-    ax.set_xlabel('Valid Time (UTC)', fontsize=12)
-    ax.set_title(f"{model.upper()} Forecast Init: {target_init_time} at {target_station.upper()}\nValid: {plot_start} to {plot_end}")
-    ax.legend(loc='upper left')
-    ax.grid(True, linestyle=':', alpha=0.7)
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-
+        ax.plot(data.valid_time, data[model_col], color='#000066', linewidth=2,
+                label=f'{model.upper()} Forecast')
+    if observations[obs_col].notna().any():
+        # Leave NaNs in the line to show gaps; explicit zero reports remain valid.
+        ax.plot(observations.valid_time, observations[obs_col], color='#CC0000', linewidth=2.5,
+                marker='o', markersize=4, label='Observed')
+    ax.set_ylabel(f"{cfg['label']} ({cfg['units']})")
+    ax.set_xlabel('Valid Time (UTC)')
+    ax.set_title(f"{model.upper()} {cfg['label']} Forecast Init: {target_init_time} at {target_station.upper()}\nValid: {plot_start} to {plot_end}")
+    ax.legend(loc='upper left'); ax.grid(True, linestyle=':', alpha=.7)
+    fig.autofmt_xdate(); fig.tight_layout()
+    if savepath:
+        fig.savefig(savepath)
     return fig
+
 
 
 def plot_confusion_matrix(

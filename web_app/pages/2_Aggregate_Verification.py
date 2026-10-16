@@ -9,6 +9,8 @@ ui = PageControls("aggregate")
 from config import CATEGORY_CONFIG, get_element_config, is_probabilistic
 
 from data_loader import fetch_data
+from wind_verification import filter_observed_speed
+from archive_files import gust_observation_coverage
 from pairing import build_verification_pairs, add_category_columns
 from metrics import compute_summary_metrics
 from plots import (
@@ -41,6 +43,7 @@ end_date = controls["end_date"]
 threshold = controls["threshold"]
 threshold_operator = controls["threshold_operator"]
 obs_time_tolerance = controls["obs_time_tolerance"]
+minimum_observed_speed = controls["minimum_observed_speed"]
 category_set = controls["category_set"]
 
 # ---------------------------------------------------------------------
@@ -117,6 +120,10 @@ if st.button("Run Aggregate Verification", type="primary"):
             obs_time_tolerance=obs_time_tolerance,
         )
 
+        before_minimum = len(merged)
+        merged = filter_observed_speed(merged, minimum_observed_speed)
+        if minimum_observed_speed is not None:
+            st.caption(f'Observed gust ≥ {minimum_observed_speed:g} kt: {before_minimum-len(merged)} of {before_minimum} paired cases excluded.')
         if merged.empty:
             st.warning("No valid model/observation pairs were found.")
             st.stop()
@@ -129,6 +136,9 @@ if st.button("Run Aggregate Verification", type="primary"):
             probabilistic=model_is_probabilistic,
         )
 
+        st.session_state['aggregate_minimum_counts'] = dict(before=before_minimum,
+            excluded=before_minimum-len(merged))
+        st.session_state['aggregate_gust_coverage'] = gust_observation_coverage(obdf) if element == 'gust' else None
         st.session_state["aggregate_merged"] = merged
         st.session_state["aggregate_summary"] = summary
         st.session_state["aggregate_context"] = {
@@ -142,6 +152,7 @@ if st.button("Run Aggregate Verification", type="primary"):
             "threshold": threshold,
             "threshold_operator": threshold_operator,
             "obs_time_tolerance": obs_time_tolerance,
+            "minimum_observed_speed": minimum_observed_speed,
             "category_set": category_set,
             "group_name": group_name,
             "station_list": station_list,
@@ -167,10 +178,17 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         "threshold": threshold,
             "threshold_operator": threshold_operator,
             "obs_time_tolerance": obs_time_tolerance,
+            "minimum_observed_speed": minimum_observed_speed,
         "category_set": category_set,
         "group_name": group_name,
         "station_list": station_list,
     }
+
+    if result_context.get('element') == 'gust' and st.session_state.get('aggregate_gust_coverage'):
+        st.caption(st.session_state['aggregate_gust_coverage'])
+    if result_context.get('minimum_observed_speed') is not None:
+        counts = st.session_state.get('aggregate_minimum_counts', {})
+        st.caption(f"Observed gust ≥ {result_context['minimum_observed_speed']:g} kt; {counts.get('excluded', 0)} of {counts.get('before', 0)} paired cases excluded.")
 
     if result_context and result_context != current_context:
         st.info(

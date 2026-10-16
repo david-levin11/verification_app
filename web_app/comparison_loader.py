@@ -1,8 +1,8 @@
 """Read two forecast archives and one observation archive for comparison."""
 from datetime import date, datetime
-from pathlib import Path
 import duckdb
 import pandas as pd
+from archive_files import resolve_archive_paths, gust_observation_coverage
 from config import (get_model_pair_date_column, get_obs_filter_time_column,
                     get_obs_time_column, get_pairing_method)
 
@@ -17,18 +17,9 @@ def date_bounds(start, end):
 
 
 def archive_paths(root, model, element, start, end):
-    """Prefer normalized files, accepting legacy per-element NDFD filenames."""
-    paths, missing = [], []
-    for month in pd.period_range(pd.Timestamp(start).normalize(), pd.Timestamp(end).normalize(), freq='M'):
-        folder = Path(root) / model / element
-        names = [f'{month.year}_{month.month:02d}_archive.parquet',
-                 f'{month.year}_{month.month:02d}_{model}_{element}_archive.parquet']
-        found = next((folder / n for n in names if (folder / n).is_file()), None)
-        if found:
-            paths.append(str(found))
-        else:
-            missing.append(str(folder / names[0]))
-    return paths, missing
+    files, missing, _ = resolve_archive_paths(root, model, element, start, end,
+                                              observation=model in ['obs', 'urma'])
+    return files, missing
 
 
 def load_comparison_data(root, model_a, model_b, obs, element, start, end,
@@ -53,14 +44,11 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
         else:
             lo, hi = start, end
             read_start = start - pd.Timedelta(hours=lookback_hours)
-        files, missing = archive_paths(root, model, element, read_start, hi)
-        if not files and observation and model == 'obs' and element == 'gust':
-            # The observation archiver writes gusts alongside sustained wind.
-            files, missing = archive_paths(root, model, 'wind', read_start, hi)
-            if files:
-                warnings.append('OBS gust: using gust columns from the wind observation archive.')
+        files, missing, source_warnings = resolve_archive_paths(
+            root, model, element, read_start, hi, observation=observation)
+        warnings.extend(source_warnings)
         if not files:
-            raise ValueError(f'No {model.upper()} {element} archive files were found under {root}')
+            raise ValueError(f'No usable {model.upper()} {element} archive files were found under {root}. ' + ' '.join(source_warnings))
         if missing:
             warnings.append(f'{model.upper()}: {len(missing)} requested monthly file(s) unavailable; using {len(files)} file(s).')
         with duckdb.connect() as connection:
@@ -80,5 +68,9 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
             if time_column not in frame:
                 raise ValueError(f'{model.upper()} archive lacks {time_column}')
             frame['valid_time'] = frame[time_column]
+            if element == 'gust':
+                coverage = gust_observation_coverage(frame)
+                if coverage:
+                    warnings.append(coverage)
         return frame
     return query(model_a), query(model_b), query(obs, True), warnings

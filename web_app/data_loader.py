@@ -1,7 +1,9 @@
 import duckdb
 import pandas as pd
 from pathlib import Path
-from config import get_obs_time_column, get_obs_filter_time_column, get_pairing_method
+from config import (get_obs_time_column, get_obs_filter_time_column, get_pairing_method,
+                    get_forecast_hours)
+from archive_files import resolve_archive_paths, gust_observation_coverage
 from datetime import date, datetime
 
 WEB_APP_DIR = Path(__file__).resolve().parent
@@ -10,28 +12,9 @@ LOCAL_ARCHIVE_ROOT = PROJECT_ROOT / "model"
 
 
 def generate_monthly_paths(root, model, element, start_date, end_date):
-    start = pd.to_datetime(start_date)
-    end = pd.to_datetime(end_date)
-
-    months = pd.period_range(start=start, end=end, freq="M")
-
-    existing_files = []
-    missing_files = []
-
-    for month in months:
-        path = (
-            Path(root)
-            / model
-            / element
-            / f"{month.year}_{month.month:02d}_archive.parquet"
-        )
-
-        if path.exists():
-            existing_files.append(str(path))
-        else:
-            missing_files.append(str(path))
-
-    return existing_files, missing_files
+    files, missing, _ = resolve_archive_paths(root, model, element, start_date, end_date,
+                                              observation=model in ['obs', 'urma'])
+    return files, missing
 
 def fetch_data(
     analysis_mode,
@@ -93,20 +76,25 @@ def fetch_data(
     # 0. Resolve available monthly files
     # ------------------------------------------------------------------
 
-    modelfiles, missing_modelfiles = generate_monthly_paths(
-        root=archive_root,
-        model=model,
-        element=element,
-        start_date=query_start,
-        end_date=query_end,
-    )
+    if analysis_mode == 'Storm Specific Zoom':
+        init_date = pd.Timestamp(storm_init_time)
+        if init_date.tzinfo is not None:
+            init_date = init_date.tz_convert('UTC').tz_localize(None)
+        model_read_start = min(query_start, init_date)
+    else:
+        hours = forecast_hours or get_forecast_hours(model, element, 'All') or [0]
+        model_read_start = query_start - pd.Timedelta(hours=max(hours))
+    modelfiles, missing_modelfiles, source_warnings = resolve_archive_paths(
+        archive_root, model, element, model_read_start, query_end)
+    warnings.extend(source_warnings)
 
     if not modelfiles:
         return (
             pd.DataFrame(),
             pd.DataFrame(),
             f"Data Missing: Could not find any local {model.upper()} {element} data "
-            f"for the selected dates. Missing files included: {missing_modelfiles[:5]}",
+            f"for the selected dates. Missing files included: {missing_modelfiles[:5]} "
+            + " ".join(source_warnings),
         )
 
     if missing_modelfiles:
@@ -116,20 +104,17 @@ def fetch_data(
             f"Missing: {missing_modelfiles[:5]}"
         )
 
-    obfiles, missing_obfiles = generate_monthly_paths(
-        root=archive_root,
-        model=obs,
-        element=element,
-        start_date=obs_query_start,
-        end_date=obs_query_end,
-    )
+    obfiles, missing_obfiles, source_warnings = resolve_archive_paths(
+        archive_root, obs, element, obs_query_start, obs_query_end, observation=True)
+    warnings.extend(source_warnings)
 
     if not obfiles:
         return (
             pd.DataFrame(),
             pd.DataFrame(),
             f"Data Missing: Could not find any local {obs.upper()} {element} observation data "
-            f"for the selected dates. Missing files included: {missing_obfiles[:5]}",
+            f"for the selected dates. Missing files included: {missing_obfiles[:5]} "
+            + " ".join(source_warnings),
         )
 
     if missing_obfiles:
@@ -149,40 +134,40 @@ def fetch_data(
         if model == "ndfd":
             # NDFD does not have init_time natively.
             modelquery = f"""
-            SELECT * FROM read_parquet({modelfiles})
+            SELECT * FROM read_parquet(?, union_by_name=true)
             WHERE station_id IN ({station_placeholders})
               AND valid_time BETWEEN ? AND ?
             """
-            model_params = query_stations + [query_start, query_end]
+            model_params = [modelfiles] + query_stations + [query_start, query_end]
 
         else:
             modelquery = f"""
-            SELECT * FROM read_parquet({modelfiles})
+            SELECT * FROM read_parquet(?, union_by_name=true)
             WHERE station_id IN ({station_placeholders})
               AND init_time = ?
               AND valid_time BETWEEN ? AND ?
             """
-            model_params = query_stations + [storm_init_time, query_start, query_end]
+            model_params = [modelfiles] + query_stations + [storm_init_time, query_start, query_end]
 
     else:
         if forecast_hours:
             hour_str = ", ".join(str(h) for h in forecast_hours)
 
             modelquery = f"""
-            SELECT * FROM read_parquet({modelfiles})
+            SELECT * FROM read_parquet(?, union_by_name=true)
             WHERE station_id IN ({station_placeholders})
               AND forecast_hour IN ({hour_str})
               AND valid_time BETWEEN ? AND ?
             """
-            model_params = query_stations + [query_start, query_end]
+            model_params = [modelfiles] + query_stations + [query_start, query_end]
 
         else:
             modelquery = f"""
-            SELECT * FROM read_parquet({modelfiles})
+            SELECT * FROM read_parquet(?, union_by_name=true)
             WHERE station_id IN ({station_placeholders})
               AND valid_time BETWEEN ? AND ?
             """
-            model_params = query_stations + [query_start, query_end]
+            model_params = [modelfiles] + query_stations + [query_start, query_end]
 
     try:
         modeldf = con.execute(modelquery, model_params).df()
@@ -247,11 +232,11 @@ def fetch_data(
         obs_filter_time_col = obs_time_col
 
     obquery = f"""
-    SELECT * FROM read_parquet({obfiles})
+    SELECT * FROM read_parquet(?, union_by_name=true)
     WHERE {station_select} IN ({station_placeholders})
       AND {obs_filter_time_col} BETWEEN ? AND ?
     """
-    ob_params = query_stations + [obs_query_start, obs_query_end]
+    ob_params = [obfiles] + query_stations + [obs_query_start, obs_query_end]
 
     try:
         obdf = con.execute(obquery, ob_params).df()
@@ -323,6 +308,10 @@ def fetch_data(
     # 6. Return data and any non-fatal warnings
     # ------------------------------------------------------------------
 
+    if element == 'gust':
+        coverage = gust_observation_coverage(obdf)
+        if coverage:
+            warnings.append(coverage)
     message = "\n\n".join(warnings) if warnings else None
 
     return modeldf, obdf, message

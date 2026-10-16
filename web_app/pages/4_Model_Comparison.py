@@ -108,14 +108,14 @@ speed_minimum = None
 verify_direction = False
 direction_min_speed = 5.
 direction_error_threshold = 45
-if element == 'wind':
-    st.subheader('Wind verification options')
-    filter_speed = ui.checkbox('Set a minimum observed speed for wind-speed verification', key='compare_filter_speed')
+if element in ['wind', 'gust']:
+    st.subheader('Wind verification options' if element == 'wind' else 'Gust verification options')
+    filter_speed = ui.checkbox('Set a minimum observed speed for wind-speed verification' if element == 'wind' else 'Set a minimum observed gust', key='compare_filter_speed' if element == 'wind' else 'compare_filter_gust')
     if filter_speed:
-        speed_minimum = ui.number_input('Minimum observed speed for speed scores (kt)',
-            min_value=0., value=5., step=1., key='compare_speed_minimum')
-        st.caption('Applied to all wind-speed scores and plots, including probabilities. False alarms during lighter observed winds are excluded; unfiltered scores remain useful.')
-    verify_direction = ui.checkbox('Verify wind direction', key='compare_verify_direction')
+        speed_minimum = ui.number_input('Minimum observed speed for speed scores (kt)' if element == 'wind' else 'Minimum observed gust (kt)',
+            min_value=0., value=5., step=1., key='compare_speed_minimum' if element == 'wind' else 'compare_gust_minimum')
+        st.caption('Applied to all speed/gust scores and plots, including probabilities. False alarms during lighter observed values are excluded; unfiltered scores remain useful.')
+    verify_direction = ui.checkbox('Verify wind direction', key='compare_verify_direction') if element == 'wind' else False
     if verify_direction:
         w1, w2 = ui.columns(2)
         direction_min_speed = w1.number_input('Minimum observed speed for direction (kt)',
@@ -185,11 +185,11 @@ c2.metric('A forecasts without B match',f'{diag.get("a_unmatched",0):,}')
 c3.metric('Matched forecasts without obs',f'{diag.get("missing_observations",0):,}')
 c4.metric('Observed events',f'{result["summary_a"].get("hits",0)+result["summary_a"].get("misses",0):,}')
 if saved.get('speed_minimum') is not None:
-    st.caption(f"Wind-speed scores use observed speed ≥ {saved['speed_minimum']:g} kt: {diag['cases_excluded_by_speed_minimum']:,} of {diag['cases_before_speed_filter']:,} cases excluded. The same retained cases are used for both models and all speed/probability plots.")
+    st.caption(f"{cfg['label']} scores use observed value ≥ {saved['speed_minimum']:g} kt: {diag['cases_excluded_by_speed_minimum']:,} of {diag['cases_before_speed_filter']:,} cases excluded. The same retained cases are used for both models and all speed/probability plots.")
 render_direction_comparison(result, ui, label_a, label_b)
 if pairs.empty:
     if diag.get('cases_before_speed_filter', 0) and saved.get('speed_minimum') is not None:
-        st.warning('No cases remain for wind-speed scores at this minimum observed speed. Lower the speed-score minimum to include more cases.')
+        st.warning('No cases remain for wind-speed scores at this minimum observed speed. Lower the speed-score minimum to include more cases.' if element == 'wind' else 'No cases remain at this minimum observed gust. Lower the gust minimum to include more cases.')
         st.json(diag); st.stop()
     st.warning('No shared verification cases. Check reference offsets/tolerance, lead ranges, archive coverage, and observation windows.')
     st.json(diag);st.stop()

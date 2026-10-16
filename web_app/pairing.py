@@ -270,6 +270,10 @@ def build_verification_pairs(
     modeldf["model_value"] = pd.to_numeric(modeldf[model_col], errors="coerce")
     obdf["obs_value"] = pd.to_numeric(obdf[obs_col], errors="coerce")
 
+    if element == 'gust':
+        modeldf['model_value'] = modeldf['model_value'].replace([float('inf'), -float('inf')], float('nan'))
+        obdf['obs_value'] = obdf['obs_value'].replace([float('inf'), -float('inf')], float('nan'))
+
     pairing_method = get_pairing_method(element)
 
     required_model_cols = [

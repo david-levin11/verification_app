@@ -416,17 +416,6 @@ candidate_stations = sorted(filtered_meta["station_id"].dropna().unique().tolist
 st.caption(f"{len(candidate_stations)} candidate stations from metadata filters.")
 
 
-max_stations = ui.number_input(
-    "Maximum stations to query",
-    min_value=1,
-    max_value=300,
-    value=min(300, max(1, len(candidate_stations))),
-    step=25,
-    key="map_max_stations",
-)
-
-candidate_stations = candidate_stations[: int(max_stations)]
-
 metric_options = get_map_metrics(model, element)
 
 # If model/element changes and previous metric is invalid, reset safely.

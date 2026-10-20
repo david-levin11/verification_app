@@ -80,6 +80,27 @@ def test_per_month_precedence_schema_validation_and_no_double_count(tmp_path):
     assert not files and len(missing)==1
 
 
+def test_wind_queries_do_not_report_gust_fallbacks(tmp_path):
+    fixture(tmp_path)
+    for model, observation in [('hrrr', False), ('obs', True)]:
+        files, missing, warnings = resolve_archive_paths(
+            tmp_path, model, 'wind', '2026-05-01', '2026-05-31', observation)
+        assert len(files) == 1 and not missing and not warnings
+        # The same combined files should still produce the helpful gust notice.
+        _, _, warnings = resolve_archive_paths(
+            tmp_path, model, 'gust', '2026-05-01', '2026-05-31', observation)
+        assert any('using gust columns from the wind archive' in w for w in warnings)
+    m, o, message = fetch_data(
+        'Aggregate Verification', 'hrrr', 'obs', date(2026,5,2), date(2026,5,2),
+        ['A'], None, None, {}, None, element='wind', archive_root=tmp_path)
+    assert len(m) == len(o) == 3
+    assert not message or 'gust' not in message.lower()
+    a, b, o, warnings = load_comparison_data(
+        tmp_path, 'hrrr', 'hrrr', 'obs', 'wind', date(2026,5,2), date(2026,5,2), ['A'])
+    assert len(a) == len(b) == len(o) == 3
+    assert not any('gust' in w.lower() for w in warnings)
+
+
 @pytest.mark.parametrize('model', ['nbm','hrrr','ndfd','nbmqmd','urma'])
 def test_both_loaders_use_gust_values_and_keep_zero_not_missing(tmp_path, model):
     fixture(tmp_path)

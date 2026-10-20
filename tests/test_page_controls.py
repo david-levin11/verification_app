@@ -7,6 +7,32 @@ ROOT = Path(__file__).parents[1] / 'web_app'
 sys.path.insert(0, str(ROOT))
 
 
+def test_map_queries_every_filtered_station_without_a_cap(tmp_path, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    import data_loader
+    stations = [f'S{i:04d}' for i in range(451)]
+    meta = tmp_path / 'stations.parquet'
+    pd.DataFrame(dict(station_id=stations, latitude=[60.]*451,
+        longitude=[-150.]*451, wfo_best=['AJK']*350+['AFC']*101)).to_parquet(meta)
+    requests = []
+    def capture_query(**kwargs):
+        requests.append(kwargs['station_list'])
+        return pd.DataFrame(), pd.DataFrame(), 'Data Missing: synthetic query capture'
+    monkeypatch.setattr(data_loader, 'fetch_data', capture_query)
+    app = AppTest.from_file(str(ROOT / 'app.py'), default_timeout=15).run()
+    app.switch_page('pages/1_Map_Explorer.py').run()
+    app.text_input(key='map_metadata_path').set_value(str(meta)).run()
+    assert not app.exception
+    assert not any(n.label == 'Maximum stations to query' for n in app.number_input)
+    next(b for b in app.button if b.label == 'Build Station Metric Map').click().run()
+    assert not app.exception
+    assert requests[-1] == stations
+    app.selectbox(key='map_wfo').set_value('AJK').run()
+    next(b for b in app.button if b.label == 'Build Station Metric Map').click().run()
+    assert not app.exception
+    assert requests[-1] == stations[:350]
+
+
 def test_map_events_viewport_remove_clear_and_deduplication(monkeypatch):
     import station_selection as selection
     from station_map import apply_map_event

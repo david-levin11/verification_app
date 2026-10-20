@@ -36,7 +36,7 @@ def resolve_archive_paths(root, model, element, start, end, observation=False):
                         warnings.append(f'{model.upper()} gust: skipped {path}; no gust value columns.')
                         continue
                 found = str(path)
-                if source_element == 'wind':
+                if element == 'gust' and source_element == 'wind':
                     fallback.append(found)
                 break
             if found:

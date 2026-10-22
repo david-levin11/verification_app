@@ -233,7 +233,8 @@ def test_gust_page_flows_and_minimum_filters(tmp_path, monkeypatch):
     app.switch_page('pages/3_Storm_Zoom.py').run()
     app.text_input(key='storm_Local Archive Root').set_value(str(tmp_path))
     app.selectbox(key='storm_Element').set_value('gust').run()
-    app.text_input(key='storm_Target Station').set_value('A')
+    app.session_state['selected_station_list']=['A']
+    app.radio(key='storm_station_scope').set_value('Map Explorer selections').run()
     app.text_input(key='storm_Model Init Time (YYYY-MM-DD HH:MM:SS)').set_value('2026-05-01 00:00:00')
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,5,2))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,5,2))

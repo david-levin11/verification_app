@@ -1,8 +1,8 @@
 # Storm verification: wind, gust, and RH
 
 Storm Specific Zoom explores one archived model initialization. Choose the element,
-event dates, observation tolerance, and either a target station, a manual/shared
-Map Explorer station list, or metadata filters. Network and elevation filters have
+event dates, observation tolerance, and either the shared Map Explorer selection
+or metadata filters. Network and elevation filters have
 no station cap. Generate the analysis to load the run; changing inputs leaves the
 saved result labeled with its original settings until you generate again.
 
@@ -13,6 +13,9 @@ Deterministic elements provide forecast, observation, signed error and absolute
 error maps. Probabilistic elements also provide observed-percentile, median-error,
 interval-width and threshold-probability maps. Probability calculations use the
 same threshold direction and shared quantile interpolation as other pages.
+Each display explains the question it answers. A labeled color bar uses the same
+colormap and numeric limits as the station markers; probability ticks and tooltips
+show percentages. Outline colors distinguish observed events on probability maps.
 Wind direction error is available when both archived forecast and matched observed
 directions exist. Calm/nonpositive speeds are excluded, with an additional
 observed-speed minimum for the direction map.

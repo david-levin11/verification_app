@@ -29,7 +29,7 @@ def main():
             'storm_metadata':str(base/'stations.parquet'),
             'storm_Model Init Time (YYYY-MM-DD HH:MM:SS)':'2026-05-01 00:00:00',
             'storm_Plot Start Date':date(2026,5,1),'storm_Plot End Date':date(2026,5,2),
-            'storm_station_scope':'Station list / Map Explorer selection','storm_station_ids':'A,B'}
+            'storm_station_scope':'Map Explorer selections','selected_station_list':['A','B']}
         app.write_text(f'''
 import sys, runpy, datetime
 sys.path.insert(0,{str(ROOT)!r})
@@ -74,6 +74,7 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
                 assert not frame.locator('#error').is_visible()
                 assert frame.evaluate('records.length')==2
                 assert 'rank_label' in frame.evaluate('records[0]')
+                expect(page.locator('[role="tabpanel"]:visible').get_by_test_id('stImage').first).to_be_visible()
                 frame.locator('#zoom-in').click()
                 zoom=frame.evaluate('viewState.zoom')
                 def pick(station):
@@ -96,6 +97,8 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
                 page.get_by_label('Map display',exact=True).click()
                 page.get_by_role('option',name='Threshold probability',exact=True).click()
                 frame.wait_for_function('records.every(d=>Array.isArray(d.event_outline_color))')
+                assert frame.evaluate('records.every(d=>d.metric_value_text.endsWith("%"))')
+                assert abs(frame.evaluate('viewState.zoom')-zoom)<1e-7
                 assert not page.get_by_test_id('stException').count()
                 assert not errors,errors
                 browser.close()

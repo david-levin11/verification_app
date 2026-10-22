@@ -135,8 +135,8 @@ def test_pages_keep_settings_and_receive_new_map_selection_automatically(tmp_pat
     assert app.text_input(key='compare_stations').value == ''
     app.switch_page('pages/3_Storm_Zoom.py').run()
     assert not app.exception
-    app.text_input(key='storm_Target Station').set_value('PANC').run()
+    app.radio(key='storm_station_scope').set_value('Map Explorer selections').run()
     app.switch_page('pages/2_Aggregate_Verification.py').run()
     app.switch_page('pages/3_Storm_Zoom.py').run()
-    assert app.text_input(key='storm_Target Station').value == 'PANC'
+    assert app.radio(key='storm_station_scope').value == 'Map Explorer selections'
     assert not app.exception

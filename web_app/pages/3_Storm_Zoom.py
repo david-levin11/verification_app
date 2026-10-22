@@ -10,9 +10,10 @@ from data_loader import fetch_data
 from plots import plot_storm_timeseries
 from page_controls import PageControls
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
-from station_selection import station_ids_input, parse_station_ids
+from station_selection import selected_station_ids
 from storm_analysis import build_storm_cases, available_intervals, interval_summary, evolution_summary
-from storm_visuals import snapshot_map_data, render_storm_map, plot_evolution
+from storm_visuals import (snapshot_map_data, render_storm_map, plot_evolution,
+                           map_colorbar, map_description)
 
 ui = PageControls('storm')
 st.title('Storm Specific Zoom')
@@ -48,20 +49,16 @@ except Exception as exc:
     st.warning(f'Could not read metadata: {exc}')
     metadata = pd.DataFrame()
 
-left,right = ui.columns(2)
-# Retain the familiar single-station controls as the lightweight default.
-target = left.text_input('Target Station','EROWC')
-init_text = right.text_input('Model Init Time (YYYY-MM-DD HH:MM:SS)','2026-02-21 00:00:00')
+init_text = ui.text_input('Model Init Time (YYYY-MM-DD HH:MM:SS)','2026-02-21 00:00:00')
 left,right = ui.columns(2)
 start = left.date_input('Plot Start Date',pd.Timestamp('2026-02-21'))
 end = right.date_input('Plot End Date',pd.Timestamp('2026-02-24'))
-scope = ui.radio('Stations to load',['Target station','Station list / Map Explorer selection','Filtered metadata stations'],
+scope = ui.radio('Stations to load',['Filtered metadata stations','Map Explorer selections'],
                  key='storm_station_scope',horizontal=True)
-station_text = station_ids_input('storm','storm_station_ids','Station IDs (comma-separated)',default='')
 filtered = metadata.copy()
 if scope=='Filtered metadata stations':
     if metadata.empty:
-        st.warning('Provide station metadata to load filtered stations. Single stations and manual lists do not require metadata.')
+        st.warning('Provide station metadata to load filtered stations, or choose stations selected in Map Explorer.')
     else:
         with st.expander('Station filters',expanded=True):
             cols=ui.columns(2)
@@ -72,9 +69,12 @@ if scope=='Filtered metadata stations':
                     if chosen!='All':filtered=filtered[filtered[field].astype(str).eq(chosen)]
             filtered=network_elevation_controls(filtered,ui,'storm')
             st.dataframe(station_context_table(filtered),hide_index=True,use_container_width=True)
-stations = (parse_station_ids(target) if scope=='Target station' else parse_station_ids(station_text)
-            if scope=='Station list / Map Explorer selection' else
-            filtered.station_id.dropna().unique().tolist() if 'station_id' in filtered else [])
+if scope=='Map Explorer selections':
+    stations=selected_station_ids()
+    if stations:st.caption('Selected in Map Explorer: '+', '.join(stations))
+    else:st.info('Select stations on the Map Explorer map; they will appear here automatically.')
+else:
+    stations=filtered.station_id.dropna().unique().tolist() if 'station_id' in filtered else []
 st.caption(f'{len(stations):,} stations requested. Maps require metadata coordinates; station plots and scores do not.')
 context=dict(model=model,element=element,obs=obs,percentile=percentile,threshold=threshold,
     operator=operator,minutes=minutes,init=init_text,start=start,end=end,stations=stations,
@@ -136,6 +136,7 @@ with spatial:
         map_options['Direction angular error']='angular_error'
     map_label=ui.selectbox('Map display',list(map_options),key=f'storm_map_display_{saved["element"]}_{probabilistic}')
     metric=map_options[map_label]
+    st.write(map_description(metric,map_label,cfg,saved['percentile'],saved['threshold'],saved['operator']))
     map_snapshot=snapshot.copy()
     if metric=='angular_error':
         minimum=ui.number_input('Minimum observed speed for direction (kt)',min_value=0.,value=5.,step=1.,key='storm_direction_minimum')
@@ -148,17 +149,17 @@ with spatial:
         unit = ('percentile' if metric=='observed_percentile' else 'probability (0–1)' if metric=='forecast_probability'
                 else 'degrees' if metric=='angular_error' else spread_units
                 if metric in ['error','absolute_error','median_error'] or metric.startswith('width_') else cfg['units'])
-        st.caption(f'{map_label}: color scale {limits[0]:g} to {limits[1]:g} {unit}. '
-                   f'{len(map_data)} stations plotted. Click a station to populate Station detail.')
-        if metric in ['observed_percentile','error','median_error']:
-            st.caption('Blue = lower / negative; white = middle / zero; red = higher / positive.')
-        else:st.caption('Purple = lower values; yellow = higher values.')
+        st.caption(f'{len(map_data)} stations plotted. Click a station to populate Station detail.')
+        render_storm_map(map_data,metric,view,result['generation'])
+        fig=map_colorbar(metric,limits,map_label,unit)
+        st.pyplot(fig);plt.close(fig)
         if metric=='forecast_probability':
             st.caption('Outline: green = event observed; purple = event not observed; gray = no matched observation. Gold marks the selected station.')
             st.caption('Probabilities are approximated from archived quantiles using the same interpolation and tail assumptions as the other verification pages.')
-        render_storm_map(map_data,metric,view,result['generation'])
     if probabilistic:
         st.subheader('Forecast spread and observed coverage')
+        st.write('Mean interval width answers the question: “How wide was the forecast uncertainty across these stations?” '
+                 'Observed coverage answers the question: “How often did the observations fall inside each forecast interval?”')
         summary=interval_summary(snapshot)
         st.dataframe(summary,hide_index=True,use_container_width=True)
         st.caption(f'Widths are in {spread_units}. Every interval uses the same matched stations with valid bounds for all displayed intervals. '
@@ -172,6 +173,8 @@ with spatial:
     st.download_button('Download snapshot cases (CSV)',snapshot.to_csv(index=False),
         file_name=f'storm_{saved["model"]}_{saved["element"]}_{pd.Timestamp(valid):%Y%m%d%H}.csv',mime='text/csv')
 with evolution:
+    st.write('Storm evolution answers the question: “How did forecast uncertainty and observed coverage change across forecast projections?”'
+             if probabilistic else 'Storm evolution answers the question: “How did forecast errors change across forecast projections?”')
     balanced=ui.checkbox('Use stations matched at every projection',key='storm_balanced')
     summary=evolution_summary(cases,balanced)
     st.caption('Each projection uses its available stations unless the fixed-station option is enabled. Counts are shown explicitly; '
@@ -180,6 +183,8 @@ with evolution:
     st.pyplot(fig);plt.close(fig)
     st.dataframe(summary,hide_index=True,use_container_width=True)
 with detail:
+    st.write('The station plume answers the question: “How did the forecast and its uncertainty compare with what happened at this station?”'
+             if probabilistic else 'The station plot answers the question: “How did the forecast compare with what happened at this station?”')
     station=ui.selectbox('Station detail',station_options,
         index=station_options.index(saved['stations'][0]) if saved['stations'][0] in station_options else 0,
         key='storm_detail_station')

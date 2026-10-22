@@ -10,6 +10,52 @@ from station_map import _station_map
 from storm_analysis import available_intervals
 
 
+def map_colormap(metric):
+    return plt.get_cmap('RdBu_r' if metric in ['observed_percentile','error','median_error'] else 'viridis')
+
+
+def map_colorbar(metric, limits, label, units):
+    """Use exactly the same normalization and colormap as the station markers."""
+    from matplotlib.colorbar import ColorbarBase
+    from matplotlib.colors import Normalize
+    from matplotlib.ticker import PercentFormatter
+    fig=plt.figure(figsize=(10,1.05))
+    ax=fig.add_axes([.08,.55,.84,.23])
+    bar=ColorbarBase(ax,cmap=map_colormap(metric),norm=Normalize(*limits),orientation='horizontal')
+    if metric=='forecast_probability':
+        bar.set_ticks([0,.25,.5,.75,1])
+        bar.formatter=PercentFormatter(xmax=1,decimals=0)
+        bar.update_ticks()
+        bar.set_label(f'{label} (%)')
+    else:
+        if metric=='observed_percentile':bar.set_ticks([0,25,50,75,100])
+        bar.set_label(f'{label} ({units})')
+    return fig
+
+
+def map_description(metric,label,cfg,percentile,threshold,operator):
+    element=cfg['label'].lower()
+    point=f'p{percentile} forecast' if percentile is not None else 'forecast'
+    questions={
+        'model_value':f'What {element} did the {point} predict at each station?',
+        'obs_value':f'What {element} was observed near this forecast valid time?',
+        'error':f'How much did the {point} overpredict or underpredict the observed {element}?',
+        'absolute_error':f'How large was the {point} error, regardless of whether it was too high or too low?',
+        'median_error':f'Was the middle of the forecast distribution (p50) above or below the observed {element}?',
+        'observed_percentile':f'Where did the observed {element} fall within the forecast distribution?',
+        'forecast_probability':f'What probability did this run assign to {element} {operator} {threshold:g} {cfg["units"]}?',
+        'angular_error':'How many degrees apart were the forecast and observed wind directions?',
+    }
+    if metric.startswith('width_'):
+        _,lo,hi=metric.split('_')
+        question=f'How wide was the central {int(hi)-int(lo)}% of the forecast distribution at each station?'
+    else:question=questions[metric]
+    text=f'{label} answers the question: “{question}”'
+    if metric in ['error','median_error']:
+        text+=' Positive values mean the forecast was too high; negative values mean it was too low.'
+    return text
+
+
 def snapshot_map_data(snapshot, metadata, metric):
     if metadata.empty or not {'station_id','latitude','longitude'}.issubset(metadata):
         return pd.DataFrame(), None, None
@@ -28,11 +74,12 @@ def snapshot_map_data(snapshot, metadata, metric):
         low, high = -bound, bound
     else:
         low, high = 0., max(float(data[metric].max()), 1e-6)
-    cmap = plt.get_cmap('RdBu_r' if metric in ['observed_percentile','error','median_error'] else 'viridis')
+    cmap = map_colormap(metric)
     data['fill_color'] = [list((np.array(cmap((value-low)/(high-low)))*255).astype(int)) for value in data[metric]]
     data['point_radius'] = 7
     data['metric_value'] = data[metric]
     data['metric_value_text'] = (data.rank_label if metric=='observed_percentile' else
+                                 data[metric].map(lambda value: f'{value:.0%}') if metric=='forecast_probability' else
                                  data[metric].map(lambda value: f'{value:.2f}'))
     bounds = []
     for lo_level, hi_level in available_intervals(snapshot):

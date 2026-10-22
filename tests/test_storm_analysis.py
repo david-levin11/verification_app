@@ -179,8 +179,10 @@ def test_storm_page_load_snapshots_evolution_and_station_detail(tmp_path,monkeyp
     app.text_input(key='storm_Model Init Time (YYYY-MM-DD HH:MM:SS)').set_value('2026-05-01 00:00:00')
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,5,1))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,5,2))
-    app.radio(key='storm_station_scope').set_value('Station list / Map Explorer selection').run()
-    app.text_input(key='storm_station_ids').set_value('A,B')
+    app.session_state['selected_station_list']=['A','B']
+    app.radio(key='storm_station_scope').set_value('Map Explorer selections').run()
+    assert list(app.radio(key='storm_station_scope').options)==['Filtered metadata stations','Map Explorer selections']
+    assert not any(x.label in ['Target Station','Station IDs (comma-separated)'] for x in app.text_input)
     next(b for b in app.button if b.label=='Generate Storm Timeseries').click().run(timeout=30)
     assert not app.exception and not app.error, [x.value for x in app.exception]+[x.value for x in app.error]
     assert len(app.session_state['storm_result']['cases'])==4
@@ -190,7 +192,7 @@ def test_storm_page_load_snapshots_evolution_and_station_detail(tmp_path,monkeyp
     app.run()
     assert not app.exception
     assert app.selectbox(key='storm_detail_station').value=='B'
-    assert 'selected_station_list' not in app.session_state
+    assert app.session_state['selected_station_list']==['A','B']
     app.checkbox(key='storm_balanced').set_value(True).run()
     assert not app.exception
     # Input edits must not silently relabel saved results.

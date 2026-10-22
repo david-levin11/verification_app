@@ -9,7 +9,7 @@ from pairing import get_model_value_column, get_obs_value_column
 
 def plot_storm_timeseries(
     model_df, obs_df, target_station, target_init_time, plot_start, plot_end,
-    model, savepath=None, element='wind', percentile=None,
+    model, savepath=None, element='wind', percentile=None, intervals=None,
 ):
     """Plot the selected element/percentile from one model run and actual reports."""
     from datetime import date, datetime
@@ -44,10 +44,17 @@ def plot_storm_timeseries(
     fig, ax = plt.subplots(figsize=(12, 6))
     if probabilistic:
         columns = get_percentile_columns(element)
-        for lo, hi, color, alpha in [('10','90','#99CCFF',.4), ('25','75','#003399',.35)]:
+        from probability import quantile_probability
+        available = [(col,float(level)/100) for level,col in columns.items() if col in data]
+        values = data[[col for col,_ in available]].apply(pd.to_numeric,errors='coerce')
+        valid_distribution = pd.Series([np.isfinite(quantile_probability(row,
+            [level for _,level in available],0)) for row in values.to_numpy()],index=data.index)
+        bands = intervals or [('10','90'),('25','75')]
+        for lo, hi in bands:
+            color,alpha = ('#003399',.35) if lo=='25' else ('#99CCFF',.4) if lo=='10' else ('#BBBBBB',.25)
             if columns[lo] in data and columns[hi] in data:
-                ax.fill_between(data.valid_time, pd.to_numeric(data[columns[lo]], errors='coerce'),
-                    pd.to_numeric(data[columns[hi]], errors='coerce'), color=color, alpha=alpha,
+                ax.fill_between(data.valid_time, pd.to_numeric(data[columns[lo]], errors='coerce').where(valid_distribution),
+                    pd.to_numeric(data[columns[hi]], errors='coerce').where(valid_distribution), color=color, alpha=alpha,
                     label=f'{lo}th–{hi}th percentiles')
         ax.plot(data.valid_time, data[model_col], color='#000066', linewidth=2,
                 linestyle='--', label=f'{model.upper()} p{percentile}')

@@ -37,8 +37,8 @@ function layers() {
     getRadius: d => d.point_radius,
     radiusUnits: 'pixels', radiusMinPixels: 3, radiusMaxPixels: 10,
     pickable: true, stroked: true,
-    getLineColor: d => selected.has(d.station_id) ? [255, 190, 0, 255] : [40, 40, 40, 180],
-    getLineWidth: d => selected.has(d.station_id) ? 3 : 1,
+    getLineColor: d => selected.has(d.station_id) ? [255, 190, 0, 255] : (d.event_outline_color || [40, 40, 40, 180]),
+    getLineWidth: d => selected.has(d.station_id) ? 3 : (d.event_outline_color ? 2 : 1),
     lineWidthUnits: 'pixels',
     updateTriggers: {getLineColor: [...selected].join('|'), getLineWidth: [...selected].join('|')}
   })];
@@ -52,6 +52,7 @@ function toggleStation(info) {
   latestEventId = `${instanceId}-${++sequence}`;
   send('streamlit:setComponentValue', {dataType: 'json', value: {
     event_id: latestEventId,
+    clicked_station_id: id,
     station_ids: [...selected].sort(),
     view_state: Object.fromEntries(['latitude', 'longitude', 'zoom', 'pitch', 'bearing'].map(k => [k, viewState[k]]))
   }});
@@ -59,7 +60,10 @@ function toggleStation(info) {
 
 function tooltip({object}) {
   if (!object) return null;
-  const lines = [object.station_id, `${metric}: ${object.metric_value ?? '—'}`];
+  const lines = [object.station_id, `${metric}: ${object.metric_value_text ?? object.metric_value ?? '—'}`];
+  for (const field of ['model_value', 'median_value', 'obs_value', 'rank_label', 'interval_bounds', 'forecast_hour', 'obs_valid_time', 'obs_time_offset_minutes', 'mnet_id', 'elevation_ft']) {
+    if (object[field] != null) lines.push(`${field}: ${object[field]}`);
+  }
   for (const field of ['n', 'bias', 'mae', 'rmse', 'pod', 'far', 'csi']) {
     if (field !== metric && object[field] != null) lines.push(`${field.toUpperCase()}: ${object[field]}`);
   }

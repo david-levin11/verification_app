@@ -72,6 +72,10 @@ def fetch_data(
         return pd.DataFrame(), pd.DataFrame(), "No stations were provided."
 
     con = duckdb.connect()
+    # Archive timestamps and naive UI bounds are UTC. In older DuckDB versions,
+    # comparing TIMESTAMPTZ observations with naive bounds otherwise interprets
+    # midnight in the computer's local zone and drops the first UTC date.
+    con.execute("SET TimeZone = 'UTC'")
 
     warnings = []
 

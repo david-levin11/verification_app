@@ -110,3 +110,13 @@ Storm results use the main page scrollbar and content-sized tabs, including on
 short laptop viewports. Maps retain their fixed iframe height; wheel zoom remains
 opt-in. The optional browser regression checks wheel scrolling over the map and
 both plots and verifies that the bottom of each display is reachable.
+
+### UTC query boundaries
+
+Both archive loaders explicitly set their DuckDB session time zone to UTC.
+Timezone-aware observation dates are stored at UTC midnight while UI query bounds
+are naive UTC timestamps. Without an explicit session zone, older DuckDB versions
+can interpret the bound as local midnight: in Alaska in February that is 09Z,
+which excludes the first day's 00Z observation-date row. This can leave the first
+MinT projection unmatched even when its 00Z–18Z observation is present. The fix
+changes query interpretation only; it does not shift or modify archived records.

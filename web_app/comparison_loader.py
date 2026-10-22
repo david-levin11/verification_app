@@ -54,6 +54,8 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
         if missing:
             warnings.append(f'{model.upper()}: {len(missing)} requested monthly file(s) unavailable; using {len(files)} file(s).')
         with duckdb.connect() as connection:
+            # Both aware archive timestamps and naive selection bounds mean UTC.
+            connection.execute("SET TimeZone = 'UTC'")
             schema = connection.execute('SELECT * FROM read_parquet(?, union_by_name=true) LIMIT 0', [files]).df()
             station_column = 'station_id' if 'station_id' in schema else 'stid'
             time_column = (get_obs_filter_time_column(element) if observation else

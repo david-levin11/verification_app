@@ -69,7 +69,7 @@ verification dataset.
 
 Daily snapshots, coverage summaries, and evolution charts use the configured
 forecast date rather than treating an archive valid timestamp as an instantaneous
-temperature. This matters because QMD maximum-temperature samples use 12Z timestamps
+temperature. The supplied legacy QMD maximum-temperature samples use 12Z timestamps
 and NDFD samples use 00Z. These timestamps are not used to infer forecast measurement
 windows. Archived initialization times and lead hours remain available in case tables.
 
@@ -87,3 +87,25 @@ UTC, including windows ending the next day or month. No forecast interval is inv
 Negative and zero temperatures remain valid. Minimum-temperature events default to
 <=32°F, with threshold and direction configurable. Temperature values, widths, and
 errors are displayed in °F.
+
+### Legacy temperature timestamps
+
+The old QMD decoder recorded initialization and valid times 18 hours early for
+daily extrema. The app does not automatically repair these timestamps. For the
+supplied legacy MaxT convention, the stored valid date coincides with the observation
+date (the day the 12Z–next-day 06Z window starts), so date pairing can still select
+the intended observation. Initialization selection, run labels, and cross-model
+reference offsets nevertheless use the incorrect archived reference time.
+
+An archive repair also needs a coordinated update to temperature date targeting:
+a corrected MaxT endpoint at next-day 06Z must map back to the observation window's
+date. Simply repairing files and continuing to take the endpoint's calendar date
+would pair a different day's observation. Mixed legacy and corrected timestamps
+must not be guessed from cycle hours alone.
+
+### Scrolling
+
+Storm results use the main page scrollbar and content-sized tabs, including on
+short laptop viewports. Maps retain their fixed iframe height; wheel zoom remains
+opt-in. The optional browser regression checks wheel scrolling over the map and
+both plots and verifies that the bottom of each display is reachable.

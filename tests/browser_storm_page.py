@@ -113,10 +113,36 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
                 frame.wait_for_function('records.every(d=>Array.isArray(d.event_outline_color))')
                 assert frame.evaluate('records.every(d=>d.metric_value_text.endsWith("%"))')
                 assert abs(frame.evaluate('viewState.zoom')-zoom)<1e-7
+                # A normal desktop viewport hid clipping in the original test.
+                # Scroll over the actual map/image, not merely the page margin,
+                # and require the bottom of each display to be reachable.
+                page.set_viewport_size({'width':1280,'height':650})
+                for tab_name in ['Spatial snapshot','Storm evolution','Station detail']:
+                    page.get_by_role('tab',name=tab_name,exact=True).click()
+                    panel=page.locator('[role="tabpanel"]:visible')
+                    target=(frame.frame_element() if tab_name=='Spatial snapshot' else
+                            panel.get_by_test_id('stImage').first)
+                    main=page.get_by_test_id('stMain')
+                    top=target.bounding_box()['y']
+                    main.evaluate('(el,top)=>el.scrollTop+=top-100',top)
+                    bounds=target.bounding_box()
+                    page.mouse.move(bounds['x']+bounds['width']/2,200)
+                    before=main.evaluate('(el)=>el.scrollTop')
+                    page.mouse.wheel(0,250)
+                    page.wait_for_function('document.querySelector(\'[data-testid="stMain"]\').scrollTop > '+str(before))
+                    for _ in range(15):
+                        bounds=target.bounding_box()
+                        if bounds['y']+bounds['height']<=640:break
+                        page.mouse.wheel(0,250)
+                        page.wait_for_timeout(100)
+                    bounds=target.bounding_box()
+                    assert 0<bounds['y']+bounds['height']<=650,(tab_name,bounds)
+                    if tab_name=='Spatial snapshot':
+                        assert abs(frame.evaluate('viewState.zoom')-zoom)<1e-7
                 assert not page.get_by_test_id('stException').count()
                 assert not errors,errors
                 browser.close()
-                print(f'Storm {element} browser checks passed: map render, zoom, click-to-detail, three tabs, fixed cohort, threshold-probability map.')
+                print(f'Storm {element} browser checks passed: map render, zoom, click-to-detail, three tabs, fixed cohort, threshold-probability map, scrolling over map and plots in a short viewport.')
         except Exception:
             log.flush();log.seek(0);print(log.read());raise
         finally:

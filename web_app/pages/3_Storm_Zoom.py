@@ -17,6 +17,21 @@ from storm_visuals import (snapshot_map_data, render_storm_map, plot_evolution,
                            map_colorbar, map_description)
 
 ui = PageControls('storm')
+# Keep one page scrollbar. In particular, never constrain the tab panel to the
+# remaining viewport height: its map/figures can be taller than a laptop screen.
+# Use stable test IDs rather than Streamlit's generated CSS class names.
+st.markdown('''<style>
+section[data-testid="stMain"], main[data-testid="stMain"],
+section.main { overflow-y: auto !important; }
+[data-testid="stMainBlockContainer"],
+[data-testid="stTabs"],
+[data-testid="stTabs"] > div,
+[data-testid="stTabs"] [role="tabpanel"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+</style>''', unsafe_allow_html=True)
 st.title('Storm Specific Zoom')
 st.caption('Explore one model run across stations and forecast projections. All displayed times are UTC.')
 archive_root = ui.sidebar.text_input('Local Archive Root', '../model')

@@ -1,11 +1,11 @@
 """Match forecast references first, then attach one shared observation per case."""
 import numpy as np
 import pandas as pd
-from config import (get_element_config, get_model_pair_date_column,
-                    get_pairing_method, get_percentile_columns, is_probabilistic)
+from config import get_element_config, get_percentile_columns, is_probabilistic
 from pairing import build_verification_pairs, get_model_value_column
 from metrics import compute_summary_metrics
 from probability import forecast_probabilities, probability_scores
+from forecast_targets import forecast_target_time
 
 POINT_METRICS = ['bias', 'mae', 'rmse', 'pod', 'far', 'csi', 'frequency_bias']
 PROB_METRICS = ['brier_score', 'reliability_error']
@@ -52,9 +52,7 @@ def prepare_forecasts(frame, model, element, percentile=None):
         if direction_col in result:
             result['forecast_direction'] = pd.to_numeric(result[direction_col], errors='coerce')
             break
-    date_col = get_model_pair_date_column(element)
-    result['target_time'] = (utc_naive(result[date_col]).dt.normalize()
-        if get_pairing_method(element) == 'date' else result.valid_time)
+    result['target_time'] = forecast_target_time(result, model, element)
     result = result.dropna(subset=['init_time','valid_time','target_time','model_value'])
     result = result[np.isfinite(result.model_value) & result.forecast_hour.ge(0)]
     return result

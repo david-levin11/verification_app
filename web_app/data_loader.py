@@ -3,6 +3,7 @@ import pandas as pd
 from pathlib import Path
 from config import (get_obs_time_column, get_obs_filter_time_column, get_pairing_method,
                     get_forecast_hours)
+from forecast_targets import forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage
 from datetime import date, datetime
 
@@ -63,6 +64,8 @@ def fetch_data(
     padding = tolerance if get_pairing_method(element) == "time" else pd.Timedelta(0)
     obs_query_start = query_start - padding
     obs_query_end = query_end + padding
+    target_sql = forecast_target_sql(model, element)
+    model_read_end = query_end + (pd.Timedelta(days=1) if element == "maxt" else pd.Timedelta(0))
     query_stations = station_list
 
     if not query_stations:
@@ -85,7 +88,7 @@ def fetch_data(
         hours = forecast_hours or get_forecast_hours(model, element, 'All') or [0]
         model_read_start = query_start - pd.Timedelta(hours=max(hours))
     modelfiles, missing_modelfiles, source_warnings = resolve_archive_paths(
-        archive_root, model, element, model_read_start, query_end)
+        archive_root, model, element, model_read_start, model_read_end)
     warnings.extend(source_warnings)
 
     if not modelfiles:
@@ -136,7 +139,7 @@ def fetch_data(
             modelquery = f"""
             SELECT * FROM read_parquet(?, union_by_name=true)
             WHERE station_id IN ({station_placeholders})
-              AND valid_time BETWEEN ? AND ?
+              AND ({target_sql}) BETWEEN ? AND ?
             """
             model_params = [modelfiles] + query_stations + [query_start, query_end]
 
@@ -145,7 +148,7 @@ def fetch_data(
             SELECT * FROM read_parquet(?, union_by_name=true)
             WHERE station_id IN ({station_placeholders})
               AND init_time = ?
-              AND valid_time BETWEEN ? AND ?
+              AND ({target_sql}) BETWEEN ? AND ?
             """
             model_params = [modelfiles] + query_stations + [storm_init_time, query_start, query_end]
 
@@ -157,7 +160,7 @@ def fetch_data(
             SELECT * FROM read_parquet(?, union_by_name=true)
             WHERE station_id IN ({station_placeholders})
               AND forecast_hour IN ({hour_str})
-              AND valid_time BETWEEN ? AND ?
+              AND ({target_sql}) BETWEEN ? AND ?
             """
             model_params = [modelfiles] + query_stations + [query_start, query_end]
 
@@ -165,7 +168,7 @@ def fetch_data(
             modelquery = f"""
             SELECT * FROM read_parquet(?, union_by_name=true)
             WHERE station_id IN ({station_placeholders})
-              AND valid_time BETWEEN ? AND ?
+              AND ({target_sql}) BETWEEN ? AND ?
             """
             model_params = [modelfiles] + query_stations + [query_start, query_end]
 

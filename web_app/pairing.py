@@ -380,11 +380,8 @@ def build_verification_pairs(
                 f"Available obs columns: {obdf.columns.tolist()}"
             )
 
-        modeldf["pair_date"] = (
-            pd.to_datetime(modeldf[model_pair_col], errors="coerce", utc=True)
-            .dt.tz_convert(None)
-            .dt.date
-        )
+        from forecast_targets import forecast_target_time
+        modeldf["pair_date"] = forecast_target_time(modeldf, model, element).dt.date
 
         obdf["pair_date"] = (
             pd.to_datetime(obdf[obs_pair_col], errors="coerce", utc=True)

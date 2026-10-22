@@ -18,7 +18,9 @@ def main():
     import argparse
     parser=argparse.ArgumentParser()
     parser.add_argument('--element',choices=['wind','maxt','mint'],default='wind')
-    element=parser.parse_args().element
+    parser.add_argument('--corrected-times',action='store_true',help='Use corrected daily temperature endpoints')
+    args=parser.parse_args()
+    element=args.element
     from playwright.sync_api import sync_playwright, expect
     from test_storm_analysis import frames, metadata
     from test_temperature_storm import temperature_frames
@@ -26,6 +28,9 @@ def main():
         base=Path(folder)
         daily=element in ['maxt','mint']
         m,o=temperature_frames(element) if daily else frames()
+        if daily and args.corrected_times:
+            m['valid_time']=m.valid_time.dt.normalize()+pd.Timedelta(hours=30 if element=='maxt' else 18)
+            m['forecast_hour']=(m.valid_time-m.init_time).dt.total_seconds()/3600
         for model,frame in [('nbmqmd',m),('obs',o)]:
             path=base/model/element;path.mkdir(parents=True)
             month_values=frame.date if daily and model=='obs' else frame.init_time if model!='obs' else frame.valid_time
@@ -36,7 +41,8 @@ def main():
         defaults={'storm_Local Archive Root':str(base),'storm_Model':'nbmqmd','storm_Element':element,
             'storm_metadata':str(base/'stations.parquet'),
             'storm_Model Init Time (YYYY-MM-DD HH:MM:SS)':str(m.init_time.iloc[0]),
-            'storm_Plot Start Date':m.valid_time.min().date(),'storm_Plot End Date':m.valid_time.max().date(),
+            'storm_Plot Start Date':o.date.min().date() if daily else m.valid_time.min().date(),
+            'storm_Plot End Date':o.date.max().date() if daily else m.valid_time.max().date(),
             'storm_station_scope':'Map Explorer selections','selected_station_list':['A','B']}
         app.write_text(f'''
 import sys, runpy, datetime

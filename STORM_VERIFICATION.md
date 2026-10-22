@@ -97,11 +97,12 @@ date (the day the 12Z–next-day 06Z window starts), so date pairing can still s
 the intended observation. Initialization selection, run labels, and cross-model
 reference offsets nevertheless use the incorrect archived reference time.
 
-An archive repair also needs a coordinated update to temperature date targeting:
-a corrected MaxT endpoint at next-day 06Z must map back to the observation window's
-date. Simply repairing files and continuing to take the endpoint's calendar date
-would pair a different day's observation. Mixed legacy and corrected timestamps
-must not be guessed from cycle hours alone.
+The shared forecast-target rule now maps a corrected NBM-family MaxT endpoint
+at next-day 06Z back to the preceding observation date. Legacy 12Z MaxT labels,
+MinT labels, and NDFD calendar-date labels retain their existing date convention.
+Both loaders filter on this same target date, including the last requested day
+and month boundaries. No run initialization is inferred or repaired by the app;
+use the archive repair script for confirmed legacy data.
 
 ### Scrolling
 

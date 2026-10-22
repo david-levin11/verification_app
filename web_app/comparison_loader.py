@@ -2,6 +2,7 @@
 from datetime import date, datetime
 import duckdb
 import pandas as pd
+from forecast_targets import forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage
 from config import (get_model_pair_date_column, get_obs_filter_time_column,
                     get_obs_time_column, get_pairing_method)
@@ -44,8 +45,9 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
         else:
             lo, hi = start, end
             read_start = start - pd.Timedelta(hours=lookback_hours)
+        read_end = hi + (pd.Timedelta(days=1) if not observation and element == "maxt" else pd.Timedelta(0))
         files, missing, source_warnings = resolve_archive_paths(
-            root, model, element, read_start, hi, observation=observation)
+            root, model, element, read_start, read_end, observation=observation)
         warnings.extend(source_warnings)
         if not files:
             raise ValueError(f'No usable {model.upper()} {element} archive files were found under {root}. ' + ' '.join(source_warnings))
@@ -58,10 +60,11 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
                            get_model_pair_date_column(element) if get_pairing_method(element) == 'date' else 'valid_time')
             if station_column not in schema or time_column not in schema:
                 raise ValueError(f'{model.upper()} archive lacks station ID or {time_column}')
+            time_expression = f'"{time_column}"' if observation else forecast_target_sql(model, element)
             # Identifiers come from fixed config/schema; values and paths are bound parameters.
             statement = (f'SELECT * FROM read_parquet(?, union_by_name=true) '
                          f'WHERE "{station_column}" IN (SELECT unnest(?)) '
-                         f'AND "{time_column}" BETWEEN ? AND ?')
+                         f'AND ({time_expression}) BETWEEN ? AND ?')
             frame = connection.execute(statement, [files, stations, lo.to_pydatetime(), hi.to_pydatetime(warn=False)]).df()
         if observation:
             time_column = get_obs_time_column(element)

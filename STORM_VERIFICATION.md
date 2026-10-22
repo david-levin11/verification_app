@@ -1,4 +1,4 @@
-# Storm verification: wind, gust, and RH
+# Storm verification: wind, gust, RH, and maximum/minimum temperature
 
 Storm Specific Zoom explores one archived model initialization. Choose the element,
 event dates, observation tolerance, and either the shared Map Explorer selection
@@ -8,7 +8,8 @@ saved result labeled with its original settings until you generate again.
 
 ## Spatial snapshot
 
-Select an actual available valid time, labeled with hours since initialization.
+Select an actual available valid time, labeled with hours since initialization,
+or a forecast date for maximum/minimum temperature.
 Deterministic elements provide forecast, observation, signed error and absolute
 error maps. Probabilistic elements also provide observed-percentile, median-error,
 interval-width and threshold-probability maps. Probability calculations use the
@@ -57,8 +58,32 @@ are not shaded. Point errors use the selected percentile; median-error maps use
 p50. RH axes use 0–100%. Case tables retain the actual matched observation time and
 offset, with missing observations left missing and recorded zeros retained.
 
-Single-run forecasts are deduplicated by station/valid time, keeping the last row.
+Single-run forecasts are deduplicated by station/verification target, keeping the last row.
 NDFD references are reconstructed by the existing loader. Nearest-report matching
-uses the selected tolerance (URMA analysis matching remains exact). This phase
-supports only wind/gust/RH; accumulation and temperature-period views remain future
-work, and snow requires its appropriate verification dataset.
+uses the selected tolerance (URMA analysis matching remains exact). Daily extremes
+use the same configured date matching as Model Comparison, without a reporting-time
+tolerance. Accumulation views remain future work, and snow requires its appropriate
+verification dataset.
+
+## Maximum and minimum temperature
+
+Daily snapshots, coverage summaries, and evolution charts use the configured
+forecast date rather than treating an archive valid timestamp as an instantaneous
+temperature. This matters because QMD maximum-temperature samples use 12Z timestamps
+and NDFD samples use 00Z. These timestamps are not used to infer forecast measurement
+windows. Archived initialization times and lead hours remain available in case tables.
+
+Observation windows and their end-time offsets from archive valid times are retained
+in case tables and exports. The end-time offset is diagnostic, not a matching
+tolerance. Date duplicates follow the existing shared matching convention, keeping
+the last eligible archived row. Missing window metadata stays unknown and does not
+change the shared date match.
+
+The station temperature plot compares the selected forecast percentile (or deterministic
+forecast) and matched observed extreme on each forecast date. Available quantile
+intervals are vertical bands; temperatures are not connected as an instantaneous
+time series. A separate strip shows the actual observation measurement windows in
+UTC, including windows ending the next day or month. No forecast interval is invented.
+Negative and zero temperatures remain valid. Minimum-temperature events default to
+<=32°F, with threshold and direction configurable. Temperature values, widths, and
+errors are displayed in °F.

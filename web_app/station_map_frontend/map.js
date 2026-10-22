@@ -61,7 +61,9 @@ function toggleStation(info) {
 function tooltip({object}) {
   if (!object) return null;
   const lines = [object.station_id, `${metric}: ${object.metric_value_text ?? object.metric_value ?? '—'}`];
-  for (const field of ['model_value', 'median_value', 'obs_value', 'rank_label', 'interval_bounds', 'forecast_hour', 'obs_valid_time', 'obs_time_offset_minutes', 'mnet_id', 'elevation_ft']) {
+  const times = object.forecast_date ? ['forecast_date', 'valid_time', 'obs_window_start', 'obs_window_end']
+    : ['forecast_hour', 'obs_valid_time', 'obs_time_offset_minutes'];
+  for (const field of ['model_value', 'median_value', 'obs_value', 'rank_label', 'interval_bounds', ...times, 'mnet_id', 'elevation_ft']) {
     if (object[field] != null) lines.push(`${field}: ${object[field]}`);
   }
   for (const field of ['n', 'bias', 'mae', 'rmse', 'pod', 'far', 'csi']) {

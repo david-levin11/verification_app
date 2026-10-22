@@ -35,6 +35,7 @@ def map_colorbar(metric, limits, label, units):
 
 def map_description(metric,label,cfg,percentile,threshold,operator):
     element=cfg['label'].lower()
+    daily=cfg.get('pairing_method')=='date'
     point=f'p{percentile} forecast' if percentile is not None else 'forecast'
     questions={
         'model_value':f'What {element} did the {point} predict at each station?',
@@ -46,13 +47,18 @@ def map_description(metric,label,cfg,percentile,threshold,operator):
         'forecast_probability':f'What probability did this run assign to {element} {operator} {threshold:g} {cfg["units"]}?',
         'angular_error':'How many degrees apart were the forecast and observed wind directions?',
     }
+    if daily:
+        questions['model_value']=f'What {element} did the {point} predict for this forecast date?'
+        questions['obs_value']=f'What {element} was observed for this forecast date?'
+        questions['error']=f'How many degrees too warm or too cold was the {point}?'
     if metric.startswith('width_'):
         _,lo,hi=metric.split('_')
         question=f'How wide was the central {int(hi)-int(lo)}% of the forecast distribution at each station?'
     else:question=questions[metric]
     text=f'{label} answers the question: “{question}”'
     if metric in ['error','median_error']:
-        text+=' Positive values mean the forecast was too high; negative values mean it was too low.'
+        text+=(' Positive values mean the forecast was too warm; negative values mean it was too cold.' if daily else
+               ' Positive values mean the forecast was too high; negative values mean it was too low.')
     return text
 
 
@@ -72,6 +78,11 @@ def snapshot_map_data(snapshot, metadata, metric):
     elif metric in ['error','median_error']:
         bound = max(float(data[metric].abs().max()), 1e-6)
         low, high = -bound, bound
+    elif metric in ['model_value','obs_value']:
+        # Temperatures may be below zero; zero-based positive-only scales hide
+        # differences between cold stations and mislabel their map colors.
+        low, high = min(0.,float(data[metric].min())), max(0.,float(data[metric].max()))
+        if low==high:high=low+1e-6
     else:
         low, high = 0., max(float(data[metric].max()), 1e-6)
     cmap = map_colormap(metric)
@@ -114,13 +125,13 @@ def render_storm_map(data, metric, view, generation):
         st.rerun()
 
 
-def plot_evolution(summary, intervals, units):
+def plot_evolution(summary, intervals, units, date_based=False):
     probabilistic = bool(intervals)
     fig, axes = plt.subplots(3 if probabilistic else 2, 1, figsize=(11,8 if probabilistic else 6), sharex=True)
     if summary.empty:
         axes[0].text(.5,.5,'No stations meet the selected cohort requirements.',ha='center',transform=axes[0].transAxes)
         return fig
-    x = summary.forecast_hour
+    x = summary.valid_time if date_based else summary.forecast_hour
     if probabilistic:
         for lo,hi in intervals:
             label = f'p{lo}–p{hi}'
@@ -135,8 +146,9 @@ def plot_evolution(summary, intervals, units):
         axes[0].plot(x,summary.rmse,'o-',label='RMSE')
         axes[0].set_ylabel(f'Error ({units})')
     axes[-1].plot(x,summary.matched_stations,'o--',label='Matched stations')
-    axes[-1].set_ylabel('Stations');axes[-1].set_xlabel('Forecast projection (hours from initialization)')
+    axes[-1].set_ylabel('Stations');axes[-1].set_xlabel('Forecast date used for verification' if date_based else 'Forecast projection (hours from initialization)')
     for ax in axes:
         ax.grid(alpha=.25);ax.legend()
+    if date_based:fig.autofmt_xdate()
     fig.tight_layout()
     return fig

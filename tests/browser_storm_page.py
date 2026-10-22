@@ -15,20 +15,28 @@ ROOT=Path(__file__).parents[1]/'web_app'
 
 
 def main():
+    import argparse
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--element',choices=['wind','maxt','mint'],default='wind')
+    element=parser.parse_args().element
     from playwright.sync_api import sync_playwright, expect
     from test_storm_analysis import frames, metadata
+    from test_temperature_storm import temperature_frames
     with tempfile.TemporaryDirectory() as folder:
         base=Path(folder)
-        m,o=frames()
+        daily=element in ['maxt','mint']
+        m,o=temperature_frames(element) if daily else frames()
         for model,frame in [('nbmqmd',m),('obs',o)]:
-            path=base/model/'wind';path.mkdir(parents=True)
-            frame.to_parquet(path/'2026_05_archive.parquet',index=False)
+            path=base/model/element;path.mkdir(parents=True)
+            month_values=frame.date if daily and model=='obs' else frame.init_time if model!='obs' else frame.valid_time
+            for month,part in frame.groupby(month_values.dt.strftime('%Y_%m')):
+                part.to_parquet(path/f'{month}_archive.parquet',index=False)
         metadata().to_parquet(base/'stations.parquet',index=False)
         app=base/'storm_app.py'
-        defaults={'storm_Local Archive Root':str(base),'storm_Model':'nbmqmd','storm_Element':'wind',
+        defaults={'storm_Local Archive Root':str(base),'storm_Model':'nbmqmd','storm_Element':element,
             'storm_metadata':str(base/'stations.parquet'),
-            'storm_Model Init Time (YYYY-MM-DD HH:MM:SS)':'2026-05-01 00:00:00',
-            'storm_Plot Start Date':date(2026,5,1),'storm_Plot End Date':date(2026,5,2),
+            'storm_Model Init Time (YYYY-MM-DD HH:MM:SS)':str(m.init_time.iloc[0]),
+            'storm_Plot Start Date':m.valid_time.min().date(),'storm_Plot End Date':m.valid_time.max().date(),
             'storm_station_scope':'Map Explorer selections','selected_station_list':['A','B']}
         app.write_text(f'''
 import sys, runpy, datetime
@@ -74,11 +82,16 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
                 assert not frame.locator('#error').is_visible()
                 assert frame.evaluate('records.length')==2
                 assert 'rank_label' in frame.evaluate('records[0]')
+                if daily:
+                    assert frame.evaluate('records.every(d=>d.forecast_date && d.obs_window_start && d.obs_window_end)')
+                    assert not page.get_by_label('Observation tolerance (minutes)',exact=True).count()
                 expect(page.locator('[role="tabpanel"]:visible').get_by_test_id('stImage').first).to_be_visible()
                 frame.locator('#zoom-in').click()
                 zoom=frame.evaluate('viewState.zoom')
+                frame.wait_for_function('Math.abs(mapInstance.getViewports()[0].zoom-viewState.zoom)<1e-7')
                 def pick(station):
                     xy=frame.evaluate('(id)=>{const d=records.find(d=>d.station_id===id);return mapInstance.getViewports()[0].project([d.longitude,d.latitude]);}',station)
+                    frame.wait_for_function('(xy)=>mapInstance.pickObject({x:xy[0],y:xy[1],radius:4})?.object?.station_id === "B"',arg=xy)
                     box=frame.frame_element().bounding_box()
                     page.mouse.click(box['x']+xy[0],box['y']+xy[1])
                 frame.frame_element().scroll_into_view_if_needed()
@@ -90,8 +103,9 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
                 expect(selector.get_by_role('combobox')).to_have_value('B')
                 expect(page.locator('[role="tabpanel"]:visible').get_by_test_id('stImage').first).to_be_visible()
                 page.get_by_role('tab',name='Storm evolution',exact=True).click()
-                page.get_by_text('Use stations matched at every projection',exact=True).click()
-                expect(page.get_by_label('Use stations matched at every projection',exact=True)).to_be_checked()
+                cohort_label='Use stations matched on every forecast date' if daily else 'Use stations matched at every projection'
+                page.get_by_text(cohort_label,exact=True).click()
+                expect(page.get_by_label(cohort_label,exact=True)).to_be_checked()
                 expect(page.locator('[role="tabpanel"]:visible').get_by_test_id('stImage').first).to_be_visible()
                 page.get_by_role('tab',name='Spatial snapshot',exact=True).click()
                 page.get_by_label('Map display',exact=True).click()
@@ -102,7 +116,7 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
                 assert not page.get_by_test_id('stException').count()
                 assert not errors,errors
                 browser.close()
-                print('Storm browser checks passed: map render, zoom, click-to-detail, three tabs, fixed cohort, threshold-probability map.')
+                print(f'Storm {element} browser checks passed: map render, zoom, click-to-detail, three tabs, fixed cohort, threshold-probability map.')
         except Exception:
             log.flush();log.seek(0);print(log.read());raise
         finally:

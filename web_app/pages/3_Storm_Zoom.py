@@ -11,7 +11,8 @@ from plots import plot_storm_timeseries
 from page_controls import PageControls
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
 from station_selection import selected_station_ids
-from storm_analysis import build_storm_cases, available_intervals, interval_summary, evolution_summary
+from storm_analysis import build_storm_cases, available_intervals, interval_summary, evolution_summary, STORM_ELEMENTS
+from temperature_storm import plot_temperature_periods, temperature_snapshot_label
 from storm_visuals import (snapshot_map_data, render_storm_map, plot_evolution,
                            map_colorbar, map_description)
 
@@ -20,9 +21,11 @@ st.title('Storm Specific Zoom')
 st.caption('Explore one model run across stations and forecast projections. All displayed times are UTC.')
 archive_root = ui.sidebar.text_input('Local Archive Root', '../model')
 model = ui.sidebar.selectbox('Model', MODELS)
-available_elements = [e for e in get_available_elements(model) if e in ['wind','gust','rh']]
+available_elements = [e for e in get_available_elements(model) if e in STORM_ELEMENTS]
 element = ui.sidebar.selectbox('Element', available_elements)
-cfg = get_element_config(element)
+cfg = get_element_config(element).copy()
+daily = element in ['maxt','mint']
+if daily:cfg['units']='°F'
 obs = ui.sidebar.selectbox('Verification Source', get_available_obs_sources(element))
 probabilistic = is_probabilistic(model, element)
 percentile = (ui.sidebar.selectbox('Verification Percentile', PERCENTILES,
@@ -33,7 +36,11 @@ threshold = ui.sidebar.number_input(f'Event threshold ({cfg["units"]})', value=f
 operators = ['>=','>','<=','<']
 operator = ui.sidebar.selectbox('Event direction', operators,
     index=operators.index(cfg.get('threshold_operator','>=')), key=f'storm_operator_{element}')
-minutes = ui.sidebar.number_input('Observation tolerance (minutes)',0,180,60,step=5,key='storm_obs_minutes')
+if daily:
+    minutes=0
+    st.sidebar.caption('Daily temperature observations match the forecast date. Reporting-time tolerance does not apply; the observed measurement windows appear in the results.')
+else:
+    minutes = ui.sidebar.number_input('Observation tolerance (minutes)',0,180,60,step=5,key='storm_obs_minutes')
 
 @st.cache_data
 def read_metadata(path):
@@ -108,17 +115,21 @@ if result is None:
 saved=result['context']
 if saved!=context:
     st.info('Controls have changed. Generate again to refresh the results; the displays below still use the saved request.')
-cases=result['cases'];cfg=get_element_config(saved['element'])
+cases=result['cases'];cfg=get_element_config(saved['element']).copy()
+daily=saved['element'] in ['maxt','mint']
+if daily:cfg['units']='°F'
 spread_units='percentage points' if saved['element']=='rh' else cfg['units']
 probabilistic=is_probabilistic(saved['model'],saved['element'])
 for message in result['warnings']:st.warning(message)
+matching_label='matched by forecast date' if daily else f'observation tolerance ±{saved["minutes"]} min'
 st.caption(f"{saved['model'].upper()} {cfg['label']} — initialized {result['init']} UTC. "
-           f"Event: {saved['operator']} {saved['threshold']:g} {cfg['units']}; observation tolerance ±{saved['minutes']} min.")
+           f"Event: {saved['operator']} {saved['threshold']:g} {cfg['units']}; {matching_label}.")
 left,right=ui.columns(2)
-valid_times=[pd.Timestamp(t) for t in cases.valid_time.drop_duplicates().sort_values()]
-valid=left.selectbox('Snapshot valid time',valid_times,key=f'storm_valid_{result["generation"]}',
-    format_func=lambda t: f'{pd.Timestamp(t):%Y-%m-%d %H:%M} UTC (+{(pd.Timestamp(t)-result["init"]).total_seconds()/3600:g} h)')
-snapshot=cases[cases.valid_time.eq(valid)].copy()
+valid_times=[pd.Timestamp(t) for t in cases.target_time.drop_duplicates().sort_values()]
+valid=left.selectbox('Snapshot forecast date' if daily else 'Snapshot valid time',valid_times,key=f'storm_valid_{result["generation"]}',
+    format_func=(lambda t: temperature_snapshot_label(t,cases,saved['element'])) if daily else
+    (lambda t: f'{pd.Timestamp(t):%Y-%m-%d %H:%M} UTC (+{(pd.Timestamp(t)-result["init"]).total_seconds()/3600:g} h)'))
+snapshot=cases[cases.target_time.eq(valid)].copy()
 station_options=sorted(cases.station_id.unique().tolist())
 if st.session_state.get('storm_detail_station') not in station_options:
     st.session_state.pop('storm_detail_station',None)
@@ -126,7 +137,8 @@ if st.session_state.get('storm_detail_station') not in station_options:
 spatial,evolution,detail=st.tabs(['Spatial snapshot','Storm evolution','Station detail'])
 with spatial:
     st.write(f'{len(snapshot):,} forecast stations; {snapshot.obs_value.notna().sum():,} matched observations; '
-             f'{snapshot.obs_value.isna().sum():,} without a matched observation at this projection.')
+             f'{snapshot.obs_value.isna().sum():,} without a matched observation '+
+             ('for this forecast date.' if daily else 'at this projection.'))
     map_options={'Forecast':'model_value','Observation':'obs_value','Signed error':'error','Absolute error':'absolute_error'}
     if probabilistic:
         map_options={'Observed percentile':'observed_percentile','Median forecast error':'median_error',
@@ -173,34 +185,44 @@ with spatial:
     st.download_button('Download snapshot cases (CSV)',snapshot.to_csv(index=False),
         file_name=f'storm_{saved["model"]}_{saved["element"]}_{pd.Timestamp(valid):%Y%m%d%H}.csv',mime='text/csv')
 with evolution:
-    st.write('Storm evolution answers the question: “How did forecast uncertainty and observed coverage change across forecast projections?”'
-             if probabilistic else 'Storm evolution answers the question: “How did forecast errors change across forecast projections?”')
-    balanced=ui.checkbox('Use stations matched at every projection',key='storm_balanced')
+    across='from one forecast date to the next' if daily else 'across forecast projections'
+    st.write(f'Storm evolution answers the question: “How did forecast uncertainty and observed coverage change {across}?”'
+             if probabilistic else f'Storm evolution answers the question: “How did forecast errors change {across}?”')
+    balanced=ui.checkbox('Use stations matched on every forecast date' if daily else 'Use stations matched at every projection',key='storm_balanced')
     summary=evolution_summary(cases,balanced)
-    st.caption('Each projection uses its available stations unless the fixed-station option is enabled. Counts are shown explicitly; '
-               'interval widths and coverage use the same eligible stations within each projection.')
-    fig=plot_evolution(summary,available_intervals(cases),spread_units)
+    period='forecast date' if daily else 'projection'
+    st.caption(f'Each {period} uses its available stations unless the fixed-station option is enabled. Counts are shown explicitly; '
+               f'interval widths and coverage use the same eligible stations within each {period}.')
+    fig=plot_evolution(summary,available_intervals(cases),spread_units,date_based=daily)
     st.pyplot(fig);plt.close(fig)
     st.dataframe(summary,hide_index=True,use_container_width=True)
 with detail:
-    st.write('The station plume answers the question: “How did the forecast and its uncertainty compare with what happened at this station?”'
-             if probabilistic else 'The station plot answers the question: “How did the forecast compare with what happened at this station?”')
+    if daily:
+        st.write(f'The temperature comparison answers the question: “How did forecast and observed {cfg["label"].lower()} compare for each forecast date?”')
+    else:
+        st.write('The station plume answers the question: “How did the forecast and its uncertainty compare with what happened at this station?”'
+                 if probabilistic else 'The station plot answers the question: “How did the forecast compare with what happened at this station?”')
     station=ui.selectbox('Station detail',station_options,
         index=station_options.index(saved['stations'][0]) if saved['stations'][0] in station_options else 0,
         key='storm_detail_station')
-    plot_observations=result['obdf']
-    if plot_observations.empty:
-        st.info('No observations were loaded. The plume shows forecast information only.')
-        plot_observations=pd.DataFrame({'stid':pd.Series(dtype=str),
-            'valid_time':pd.Series(dtype='datetime64[ns]'),cfg['obs_value_candidates'][0]:pd.Series(dtype=float)})
-    fig=plot_storm_timeseries(model_df=result['modeldf'],obs_df=plot_observations,target_station=station,
-        target_init_time=result['init'],plot_start=saved['start'],plot_end=saved['end'],
-        model=saved['model'],element=saved['element'],percentile=saved['percentile'],
-        intervals=[('5','95'),('10','90'),('25','75')] if probabilistic else None)
+    if daily:
+        fig=plot_temperature_periods(cases,station,saved['model'],saved['element'],saved['percentile'],
+                                     saved['threshold'],saved['operator'])
+    else:
+        plot_observations=result['obdf']
+        if plot_observations.empty:
+            st.info('No observations were loaded. The plume shows forecast information only.')
+            plot_observations=pd.DataFrame({'stid':pd.Series(dtype=str),
+                'valid_time':pd.Series(dtype='datetime64[ns]'),cfg['obs_value_candidates'][0]:pd.Series(dtype=float)})
+        fig=plot_storm_timeseries(model_df=result['modeldf'],obs_df=plot_observations,target_station=station,
+            target_init_time=result['init'],plot_start=saved['start'],plot_end=saved['end'],
+            model=saved['model'],element=saved['element'],percentile=saved['percentile'],
+            intervals=[('5','95'),('10','90'),('25','75')] if probabilistic else None)
     if fig is not None:
         if saved['element']=='rh':fig.axes[0].set_ylim(0,100)
         st.pyplot(fig);plt.close(fig)
     point=saved['percentile']
     st.caption((f'Point error uses p{point}; the median-error map always uses p50. ' if probabilistic else '')+
-               'The plume shows actual report timestamps; the case table records which report was matched to each forecast.')
+               ('Temperatures are compared by the configured forecast date. The window strip, when available, shows actual observed measurement periods; no forecast window is inferred from an archive timestamp.'
+                if daily else 'The plume shows actual report timestamps; the case table records which report was matched to each forecast.'))
     st.dataframe(cases[cases.station_id.eq(station)],hide_index=True,use_container_width=True)

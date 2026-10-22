@@ -1,12 +1,14 @@
-"""Single-run, station-level storm diagnostics for point weather elements."""
+"""Single-run storm diagnostics using shared point and daily-date matching."""
 import numpy as np
 import pandas as pd
 from comparison import prepare_forecasts
-from config import get_percentile_columns, is_probabilistic, get_element_config
+from config import (get_percentile_columns, is_probabilistic, get_element_config,
+                    get_pairing_method, get_obs_time_column)
 from pairing import build_verification_pairs, get_obs_value_column
 from probability import forecast_probabilities, threshold_event
 
 INTERVALS = [('25', '75'), ('10', '90'), ('5', '95')]
+STORM_ELEMENTS = ['wind', 'gust', 'rh', 'maxt', 'mint']
 
 
 def observed_percentile(values, levels, observed):
@@ -36,19 +38,23 @@ def observed_percentile(values, levels, observed):
 
 def build_storm_cases(model_frame, observations, model, obs_source, element,
                       init_time, percentile=None, tolerance='1h', threshold=25, operator='>='):
-    if element not in ['wind', 'gust', 'rh']:
-        raise ValueError('Storm diagnostics currently support wind, gust, and RH.')
+    if element not in STORM_ELEMENTS:
+        raise ValueError('Storm diagnostics currently support wind, gust, RH, and maximum/minimum temperature.')
+    daily = get_pairing_method(element) == 'date'
     prepared = prepare_forecasts(model_frame, model, element, percentile)
     if prepared.empty:
         return prepared
     init = pd.to_datetime(init_time, utc=True).tz_convert(None)
     prepared = prepared[prepared.init_time.eq(init)].copy()
-    prepared = prepared.drop_duplicates(['station_id', 'valid_time'], keep='last')
+    # Use the same target key as Model Comparison, including normalized daily dates.
+    prepared = prepared.drop_duplicates(['station_id', 'target_time'], keep='last')
     if prepared.empty:
         return prepared
     prepared['model_value'] = prepared.model_value.where(np.isfinite(prepared.model_value))
     reports = observations.copy()
     if not reports.empty:
+        if 'valid_time' not in reports and get_obs_time_column(element) in reports:
+            reports['valid_time'] = reports[get_obs_time_column(element)]
         value_column = get_obs_value_column(reports, element)
         reports[value_column] = pd.to_numeric(reports[value_column], errors='coerce')
         reports = reports[np.isfinite(reports[value_column])].copy()
@@ -56,6 +62,13 @@ def build_storm_cases(model_frame, observations, model, obs_source, element,
                                       percentile, tolerance) if not reports.empty else pd.DataFrame())
     columns = ['station_id', 'init_time', 'valid_time', 'obs_value', 'obs_valid_time',
                'obs_time_offset_minutes']
+    if daily and not pairs.empty:
+        for edge in ['start','end']:
+            column = next((c for c in [f'obs_window_{edge}',f'window_{edge}_obs',f'window_{edge}'] if c in pairs), None)
+            if column:
+                pairs[f'obs_window_{edge}'] = pd.to_datetime(pairs[column],utc=True,errors='coerce').dt.tz_convert(None)
+                columns.append(f'obs_window_{edge}')
+        if 'pair_date' in pairs:columns.append('pair_date')
     if element == 'wind' and not pairs.empty:
         for column in get_element_config(element).get('direction_candidates', []):
             name = column + '_obs' if column + '_obs' in pairs else column
@@ -103,6 +116,11 @@ def build_storm_cases(model_frame, observations, model, obs_source, element,
                 result[f'inside_{low}_{high}'] = result.obs_value.between(a,b).astype(float).where(
                     valid & result.obs_value.notna())
     result['median_error'] = result.median_value - result.obs_value
+    if daily:
+        result['forecast_date'] = result.target_time
+        for edge in ['start','end']:
+            if f'obs_window_{edge}' not in result:result[f'obs_window_{edge}'] = pd.NaT
+        result = result.rename(columns={'obs_time_offset_minutes':'obs_window_end_offset_minutes'})
     if 'forecast_direction' in result and 'observed_direction' in result:
         valid = (result.forecast_direction.between(0,360) & result.observed_direction.between(0,360)
                  & result.model_value.gt(0) & result.obs_value.gt(0))
@@ -134,15 +152,18 @@ def interval_summary(snapshot):
 
 def evolution_summary(cases, balanced=False):
     data = cases.copy()
+    target = 'target_time' if 'target_time' in data else 'valid_time'
     if balanced:
         eligible = common_interval_cases(data)
-        counts = eligible.groupby('station_id').valid_time.nunique()
-        stations = counts[counts.eq(data.valid_time.nunique())].index
+        counts = eligible.groupby('station_id')[target].nunique()
+        stations = counts[counts.eq(data[target].nunique())].index
         data = data[data.station_id.isin(stations)]
     rows = []
-    for valid, part in data.groupby('valid_time', sort=True):
+    for valid, part in data.groupby(target, sort=True):
         paired = part.dropna(subset=['obs_value'])
-        row = dict(valid_time=valid, forecast_hour=float(part.forecast_hour.iloc[0]),
+        low,high = float(part.forecast_hour.min()),float(part.forecast_hour.max())
+        row = dict(valid_time=valid, forecast_hour=low if low==high else np.nan,
+                   forecast_hour_min=low,forecast_hour_max=high,
                    forecast_stations=len(part), matched_stations=len(paired),
                    bias=paired.error.mean(), mae=paired.absolute_error.mean(),
                    rmse=np.sqrt((paired.error**2).mean()))

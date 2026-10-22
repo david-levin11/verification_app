@@ -5,6 +5,7 @@ from pathlib import Path
 from sidebar_controls import shared_sidebar_controls
 from page_controls import PageControls
 from station_selection import show_selected_stations
+from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
 
 ui = PageControls("map")
 
@@ -35,7 +36,7 @@ def load_station_metadata(metadata_path):
     if "station_id" in df.columns:
         df["station_id"] = df["station_id"].astype(str).str.strip()
 
-    return df
+    return normalize_station_metadata(df)
 
 
 st.title("Map Explorer")
@@ -411,9 +412,13 @@ elif zone_type == "Offshore Zone" and "offshore_zone_id" in filtered_meta.column
             filtered_meta["offshore_zone_id"] == selected_zone
         ]
 
+filtered_meta = network_elevation_controls(filtered_meta, ui, 'map')
 candidate_stations = sorted(filtered_meta["station_id"].dropna().unique().tolist())
 
 st.caption(f"{len(candidate_stations)} candidate stations from metadata filters.")
+with st.expander('Matching station list'):
+    st.caption('Click a column heading to sort stations, including network ID and elevation.')
+    st.dataframe(station_context_table(filtered_meta), hide_index=True, use_container_width=True)
 
 
 metric_options = get_map_metrics(model, element)
@@ -613,5 +618,6 @@ if "station_metrics" in st.session_state:
         station_metrics.sort_values(selected_metric, ascending=False),
         use_container_width=True,
         hide_index=True,
+        column_config={'mnet_id': 'Synoptic Network ID', 'elevation_ft': 'Elevation (ft)'},
     )
 

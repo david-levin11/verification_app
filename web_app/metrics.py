@@ -106,6 +106,7 @@ def compute_station_metrics(
                 "latitude",
                 "longitude",
                 "elevation_ft",
+                "mnet_id",
                 "wfo_best",
                 "public_zone_id",
                 "public_zone_name",

@@ -19,6 +19,7 @@ from comparison_plots import (plot_group_scores, plot_probability_comparison,
 
 from page_controls import PageControls
 from station_selection import station_ids_input, parse_station_ids, sync_map_selection
+from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
 
 ui = PageControls('compare')
 sync_map_selection('compare', 'compare_stations')
@@ -74,7 +75,7 @@ def read_metadata(path):
         data=data.rename(columns={'stid':'station_id'})
     if 'station_id' in data:
         data['station_id']=data.station_id.astype(str).str.strip()
-    return data
+    return normalize_station_metadata(data)
 
 metadata_path=ui.sidebar.text_input('Station Metadata Path',st.session_state.get('metadata_path','../metadata/ak_station_metadata.parquet'),key='compare_metadata')
 try:
@@ -90,7 +91,10 @@ if not metadata.empty:
                 options=['All']+sorted(filtered_meta[field].dropna().astype(str).unique().tolist())
                 chosen=widget_col.selectbox(label,options,key=f'compare_filter_{field}')
                 if chosen!='All':filtered_meta=filtered_meta[filtered_meta[field].astype(str).eq(chosen)]
+        filtered_meta=network_elevation_controls(filtered_meta, ui, 'compare')
         use_filtered=ui.checkbox('Use all stations matching these filters',key='compare_filtered_stations')
+        st.caption('Click a column heading to sort the matching station list.')
+        st.dataframe(station_context_table(filtered_meta),hide_index=True,use_container_width=True)
 else:
     use_filtered=False
 station_text=station_ids_input('compare', 'compare_stations', 'Station IDs (comma-separated)')
@@ -225,8 +229,13 @@ with map_tab:
     if deck is None:st.info('A station map needs matching metadata with latitude/longitude and enough shared cases.')
     else:
         st.caption(f'Blue: {label_a} better. Orange: {label_b} better. White: similar. Bias compares distance from zero; frequency bias compares distance from one.')
+        st.caption('Circle size reflects shared case counts. Marker sizes stay readable as you zoom.')
         st.pydeck_chart(deck,use_container_width=True)
-    st.dataframe(station_table[station_table.metric.eq(metric)],hide_index=True,use_container_width=True)
+    display_table=station_table[station_table.metric.eq(metric)]
+    context=station_context_table(result['metadata'])
+    if 'station_id' in context:
+        display_table=display_table.merge(context.drop_duplicates('station_id'),on='station_id',how='left')
+    st.dataframe(display_table,hide_index=True,use_container_width=True)
 with condition_tab:
     condition=ui.radio('Break down by',['Observed category','Month'],horizontal=True,key='compare_condition')
     work=pairs.copy()

@@ -8,6 +8,22 @@ let metric = '';
 let sequence = 0;
 let latestEventId = null;
 const instanceId = `${Date.now()}-${Math.random()}`;
+let scrollZoomEnabled = false;
+
+function zoomBy(amount) {
+  if (!mapInstance || !viewState) return;
+  viewState = {...viewState, zoom: Math.max(0, Math.min(20, viewState.zoom + amount))};
+  mapInstance.setProps({viewState});
+}
+document.getElementById('zoom-in').addEventListener('click', () => zoomBy(1));
+document.getElementById('zoom-out').addEventListener('click', () => zoomBy(-1));
+document.getElementById('scroll-zoom').addEventListener('change', event => {
+  scrollZoomEnabled = event.target.checked;
+  if (mapInstance) mapInstance.setProps({controller: {scrollZoom: scrollZoomEnabled}});
+  document.getElementById('instructions').textContent = scrollZoomEnabled
+    ? 'Scroll to zoom is on. Turn it off to scroll the page over the map.'
+    : 'Drag to pan. Use + / − to zoom. Scroll to move down the page.';
+});
 
 function send(type, payload = {}) {
   window.parent.postMessage({isStreamlitMessage: true, type, ...payload}, '*');
@@ -66,7 +82,7 @@ function render(event) {
       mapInstance = new deck.DeckGL({
         container: 'map', map: maplibregl,
         mapStyle: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-        viewState, controller: true, layers: layers(),
+        viewState, controller: {scrollZoom: scrollZoomEnabled}, layers: layers(),
         onViewStateChange: ({viewState: next}) => {
           viewState = next;
           mapInstance.setProps({viewState});

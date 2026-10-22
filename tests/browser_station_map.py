@@ -27,12 +27,15 @@ import streamlit as st
 from maps import plot_station_metric_map
 from station_selection import show_selected_stations, station_ids_input
 st.set_page_config(layout='wide')
+st.markdown('## Station map')
 data = pd.DataFrame({{'station_id':['PAJN','PANC'], 'latitude':[58.30,58.30],
     'longitude':[-134.50,-134.00], 'mae':[1.,2.], 'n':[20,30]}})
 plot_station_metric_map(data, 'mae')
 show_selected_stations(data)
 station_ids_input('aggregate', 'aggregate_station_ids_input', 'Aggregate station IDs', default='')
 station_ids_input('compare', 'compare_stations', 'Comparison station IDs', default='')
+st.markdown('## Below map')
+st.markdown('Extra content below the map.\\n\\n' * 30)
 ''')
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
@@ -56,7 +59,7 @@ station_ids_input('compare', 'compare_stations', 'Comparison station IDs', defau
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True, args=['--no-sandbox',
                     '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'])
-                page = browser.new_page(viewport={'width':1280,'height':1100}, ignore_https_errors=True)
+                page = browser.new_page(viewport={'width':1280,'height':700}, ignore_https_errors=True)
                 # Optional local copies of the pinned CDN assets for restricted CI.
                 assets = os.environ.get('STATION_MAP_TEST_ASSETS')
                 if assets:
@@ -76,11 +79,29 @@ station_ids_input('compare', 'compare_stations', 'Comparison station IDs', defau
                     print('Map status:', frame.locator('body').inner_text(), flush=True)
                     raise
                 assert not frame.locator('#error').is_visible()
+                def page_scroll():
+                    return page.get_by_test_id('stMain').evaluate('(el) => el.scrollTop')
                 bounds = frame.frame_element().bounding_box()
-                page.mouse.move(bounds['x']+bounds['width']/2, bounds['y']+250)
+                page.mouse.move(bounds['x']+bounds['width']/2, min(bounds['y']+150, 600))
+                zoom_before_scroll = frame.evaluate('viewState.zoom')
+                before_scroll = page_scroll()
+                page.mouse.wheel(0, 250)
+                page.wait_for_function('document.querySelector(\'[data-testid="stMain"]\').scrollTop > '+str(before_scroll))
+                assert frame.evaluate('viewState.zoom') == zoom_before_scroll
+                # Bring the toolbar into view and zoom using the explicit controls.
+                frame.locator('#zoom-in').click()
+                frame.wait_for_function('viewState.zoom > 4.5')
+                frame.locator('#zoom-out').click()
+                frame.wait_for_function('viewState.zoom === '+str(zoom_before_scroll))
+                frame.locator('#scroll-zoom').check()
+                bounds = frame.frame_element().bounding_box()
+                page.mouse.move(bounds['x']+bounds['width']/2, min(bounds['y']+200, 600))
                 page.mouse.wheel(0, -500)
                 frame.wait_for_function('viewState.zoom > 4.5')
                 page.wait_for_timeout(500)  # allow wheel inertia to settle
+                frame.locator('#scroll-zoom').uncheck()
+                page.set_viewport_size({'width':1280,'height':1100})
+                page.get_by_test_id('stMain').evaluate('(el) => {el.scrollTop = 0;}')
                 def view():
                     return frame.evaluate('Object.fromEntries(["latitude","longitude","zoom","pitch","bearing"].map(k=>[k,viewState[k]]))')
                 zoomed = view()
@@ -116,7 +137,7 @@ station_ids_input('compare', 'compare_stations', 'Comparison station IDs', defau
                 assert not page.get_by_text('Use selected map stations', exact=True).count()
                 assert not page.get_by_test_id('stException').count()
                 browser.close()
-                print('Browser checks passed: zoom, toggle, highlight, automatic station fields, manual override, remove, clear.')
+                print('Browser checks passed: page scroll over map, zoom buttons, optional wheel zoom, viewport preservation, toggle, highlight, automatic station fields, manual override, remove, clear.')
         except Exception:
             log.flush(); log.seek(0); print(log.read())
             raise

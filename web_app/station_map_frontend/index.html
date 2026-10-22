@@ -8,10 +8,23 @@
 html, body, #map { margin: 0; width: 100%; height: 520px; overflow: hidden; }
 body { font-family: sans-serif; }
 #error { position: absolute; inset: 12px; background: white; padding: 12px; display: none; }
+#controls { position: absolute; top: 10px; right: 10px; z-index: 10; display: flex;
+  align-items: center; gap: 6px; background: white; border-radius: 4px; padding: 6px;
+  box-shadow: 0 1px 5px #0004; font-size: 13px; }
+#controls button { width: 30px; height: 30px; font-size: 20px; cursor: pointer; }
+#controls label { display: flex; align-items: center; gap: 3px; }
+#instructions { position: absolute; bottom: 6px; left: 6px; z-index: 10;
+  background: #fffffff0; padding: 4px 6px; font-size: 12px; pointer-events: none; }
 </style>
 </head>
 <body>
 <div id="map" role="application" aria-label="Station metric map. Click a station to toggle selection."></div>
+<div id="controls" role="group" aria-label="Map zoom controls">
+  <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+  <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+  <label><input id="scroll-zoom" type="checkbox">Scroll to zoom</label>
+</div>
+<div id="instructions">Drag to pan. Use + / − to zoom. Scroll to move down the page.</div>
 <div id="error" role="alert"></div>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/deck.gl@9.1.14/dist.min.js"></script>

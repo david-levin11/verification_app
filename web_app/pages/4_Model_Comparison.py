@@ -251,9 +251,16 @@ with condition_tab:
         else:
             work['condition']=np.where(work.obs_value>=saved['threshold'],'At/above threshold','Below threshold')
     table=grouped_scores(work.dropna(subset=['condition']),'condition',element,saved['threshold'],saved['operator'],prob_a,prob_b)
+    if condition=='Observed category' and metric in ['pod','far','csi','frequency_bias']:
+        st.info(f"Categories group cases by the observed value; the event remains {cfg['label']} "
+                f"{saved['operator']} {saved['threshold']:g} {cfg['units']}. These scores measure "
+                "that event within each category, rather than whether the forecast chose the same category. "
+                "POD = hits / observed events. A category with cases but zero observed events has undefined POD (N/A).")
     fig=plot_group_scores(table,'condition',metric,label_a,label_b,condition)
     st.pyplot(fig);plt.close(fig)
     st.dataframe(table[table.metric.eq(metric)],hide_index=True,use_container_width=True)
+    if metric=='pod':
+        st.caption('n counts all shared cases in the group; observed_events counts observations meeting the selected event threshold. More non-event cases do not make POD defined.')
     st.caption('Condition scores are descriptive. Overall threshold scores include all common cases, including non-events and false alarms.')
 with prob_tab:
     if prob_a or prob_b:

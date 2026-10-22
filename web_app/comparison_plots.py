@@ -7,12 +7,20 @@ from probability import probability_cases, reliability_table
 
 
 def plot_group_scores(table, group, metric, label_a, label_b, xlabel):
-    data=table[table.metric.eq(metric)].dropna(subset=['a','b'])
+    # Retain groups with undefined scores so missing denominators are visible,
+    # and one model's undefined FAR does not hide the other model's valid score.
+    data=table[table.metric.eq(metric)]
     fig,ax=plt.subplots(figsize=(10,4))
     positions=np.arange(len(data))
     ax.plot(positions,data.a,'o-',label=label_a,color='#2166ac')
     ax.plot(positions,data.b,'s-',label=label_b,color='#b35806')
     ax.set_xticks(positions, [str(v) for v in data[group]])
+    if len(data) > 5:
+        plt.setp(ax.get_xticklabels(), rotation=35, ha='right')
+    for position, (_, row) in zip(positions, data.iterrows()):
+        if pd.isna(row.a) and pd.isna(row.b):
+            ax.text(position, .03, 'N/A', transform=ax.get_xaxis_transform(),
+                    ha='center', va='bottom', fontsize=8, color='#666666')
     ax.set_ylabel(METRIC_LABELS.get(metric,metric));ax.set_xlabel(xlabel)
     ax.grid(alpha=.25);ax.legend();fig.tight_layout()
     return fig

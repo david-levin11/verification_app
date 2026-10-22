@@ -14,10 +14,12 @@ Requires pandas and pyarrow. A failed run leaves an INCOMPLETE manifest.
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
 import sys
+import time
 from uuid import uuid4
 from datetime import datetime, timezone
 import pandas as pd
@@ -130,9 +132,7 @@ def repair(source, output, models=('nbmqmd',), elements=DEFAULT_ELEMENTS):
               'duplicate_policy':'Keep the second occurrence in source filename/row order',
               'inputs':[],'outputs':[]}
     def save():
-        temp=output/'manifest.json.tmp'
-        temp.write_text(json.dumps(manifest,indent=2)+'\n')
-        temp.replace(output/'manifest.json')
+        save_json(output/'manifest.json',manifest)
     save()
     try:
         groups={}
@@ -191,7 +191,10 @@ def repair(source, output, models=('nbmqmd',), elements=DEFAULT_ELEMENTS):
         save()
     except Exception as exc:
         manifest['error']=f'{type(exc).__name__}: {exc}'
-        save()
+        try:
+            save()
+        except OSError as manifest_error:
+            print(f'Could not record failure in manifest: {manifest_error}',file=sys.stderr)
         raise
     print(f"COMPLETE: {sum(x['rows'] for x in manifest['outputs']):,} rows; manifest: {output/'manifest.json'}")
     return manifest
@@ -201,9 +204,39 @@ STATE_FILE = 'timestamp_repair_state.json'
 
 
 def save_json(path, data):
-    temp=path.with_name(path.name+'.tmp')
-    temp.write_text(json.dumps(data,indent=2)+'\n')
-    temp.replace(path)
+    """Atomic journal update, allowing short-lived Windows sharing locks.
+
+    All handles owned by this process are closed before replace. Windows can
+    nevertheless deny replacement while a scanner/indexer/editor has the old
+    destination open. Never unlink the destination to work around that lock.
+    """
+    temp=path.with_name(path.name+'.'+uuid4().hex+'.tmp')
+    try:
+        with temp.open('x',encoding='utf-8') as handle:
+            handle.write(json.dumps(data,indent=2)+'\n')
+            handle.flush()
+            os.fsync(handle.fileno())
+        for attempt in range(10):
+            try:
+                temp.replace(path)
+                return
+            except OSError as exc:
+                if getattr(exc,'winerror',None) not in {5,32,33}:
+                    raise
+                if attempt==9:
+                    raise PermissionError(
+                        f'Windows still blocks replacing {path} after 10 attempts. '
+                        'Close editors/previews or sync tools using this file and check '
+                        f'the folder permissions before retrying. Original error: {exc}'
+                    ) from exc
+                if attempt==0:
+                    print(f'Windows is blocking {path.name}; retrying the atomic update...',flush=True)
+                time.sleep(min(.1*2**attempt,1.))
+    finally:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass  # A locked temporary file must not mask the original failure.
 
 
 def rollback_install(backup):
@@ -214,11 +247,13 @@ def rollback_install(backup):
     source=Path(journal['source_root'])
     if journal['status']=='INSTALLED':
         raise ValueError('Completed installation cannot be rolled back automatically after new writes')
+    moved_originals=False
     for rel in reversed(journal['datasets']):
         old=backup/'originals'/rel
         live=source/rel
         staged=backup/'corrected_staging'/rel
         if old.exists():
+            moved_originals=True
             if live.exists():
                 if staged.exists():
                     raise ValueError(f'Ambiguous rollback state for {rel}; preserve all copies')
@@ -231,7 +266,8 @@ def rollback_install(backup):
     state=source/STATE_FILE
     if state.exists() and json.loads(state.read_text()).get('backup_root')==str(backup):
         state.unlink()
-    print(f'Original archives restored; diagnostic copies retained at {backup}')
+    outcome='Original archives restored' if moved_originals else 'Original archives left unchanged'
+    print(f'{outcome}; diagnostic copies retained at {backup}')
 
 
 def repair_in_place(source, models=('nbmqmd',), elements=DEFAULT_ELEMENTS):

@@ -76,3 +76,22 @@ for both forecast models and shared observations, including with a reference off
 Restart the app and regenerate saved results after repair. Use real initialization
 times (00Z/12Z for the default QMD schedule), not the old 06Z/18Z labels. Ensure the
 fixed archiver decoder is deployed before resuming archive writes.
+
+## Windows manifest replacement errors
+
+`WinError 5` while replacing `manifest.json.tmp` with `manifest.json` means Windows
+denied the progress-file replacement. A transient sharing lock is one possible
+cause; the message alone does not identify the locking process or rule out a
+permissions problem. The writer now uses unique temporary names, flushes and closes
+files before replacement, and retries Windows access/sharing/lock errors up to
+10 times (under 10 seconds of waiting). It never deletes the previous journal
+as a workaround and preserves the original failure if recording that failure
+also fails.
+
+If this happens during staging, before any installation message, the model
+archives have not been replaced. After a successful rollback/unchanged message,
+pull the fixed script and rerun the same command. It creates a fresh backup and
+staging directory. Keep the old incomplete directory for diagnostics; do not copy
+its staged files over the live archive. If the replacement remains blocked,
+close editors/previews or sync tools accessing the JSON files and check folder
+permissions. The script still stops rather than installing unverified output.

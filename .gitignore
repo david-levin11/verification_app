@@ -2,6 +2,7 @@ model/
 updates/
 metadata/
 archive_backups/
+model_timestamp_backup_20*
 settings.json
 *cpython*
 *.csv

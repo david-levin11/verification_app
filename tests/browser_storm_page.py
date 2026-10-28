@@ -17,28 +17,35 @@ ROOT=Path(__file__).parents[1]/'web_app'
 def main():
     import argparse
     parser=argparse.ArgumentParser()
-    parser.add_argument('--element',choices=['wind','maxt','mint'],default='wind')
+    parser.add_argument('--element',choices=['wind','maxt','mint','precip6hr','precip24hr'],default='wind')
+    parser.add_argument('--model',choices=['nbm','nbmqmd'],default='nbmqmd')
     parser.add_argument('--corrected-times',action='store_true',help='Use corrected daily temperature endpoints')
     args=parser.parse_args()
     element=args.element
+    model=args.model
     from playwright.sync_api import sync_playwright, expect
     from test_storm_analysis import frames, metadata
     from test_temperature_storm import temperature_frames
     with tempfile.TemporaryDirectory() as folder:
         base=Path(folder)
         daily=element in ['maxt','mint']
-        m,o=temperature_frames(element) if daily else frames()
-        if daily and args.corrected_times:
+        if model=='nbm' or element.startswith('precip'):
+            from test_nbm_deterministic import deterministic_frames
+            m,o,q=deterministic_frames(element)
+            if model=='nbmqmd':m=q
+        else:
+            m,o=temperature_frames(element) if daily else frames()
+        if daily and args.corrected_times and model!='nbm':
             m['valid_time']=m.valid_time.dt.normalize()+pd.Timedelta(hours=30 if element=='maxt' else 18)
             m['forecast_hour']=(m.valid_time-m.init_time).dt.total_seconds()/3600
-        for model,frame in [('nbmqmd',m),('obs',o)]:
-            path=base/model/element;path.mkdir(parents=True)
-            month_values=frame.date if daily and model=='obs' else frame.init_time if model!='obs' else frame.valid_time
+        for source,frame in [(model,m),('obs',o)]:
+            path=base/source/element;path.mkdir(parents=True)
+            month_values=frame.date if daily and source=='obs' else frame.init_time if source!='obs' else frame.valid_time
             for month,part in frame.groupby(month_values.dt.strftime('%Y_%m')):
                 part.to_parquet(path/f'{month}_archive.parquet',index=False)
         metadata().to_parquet(base/'stations.parquet',index=False)
         app=base/'storm_app.py'
-        defaults={'storm_Local Archive Root':str(base),'storm_Model':'nbmqmd','storm_Element':element,
+        defaults={'storm_Local Archive Root':str(base),'storm_Model':model,'storm_Element':element,
             'storm_metadata':str(base/'stations.parquet'),
             'storm_Model Init Time (YYYY-MM-DD HH:MM:SS)':str(m.init_time.iloc[0]),
             'storm_Plot Start Date':o.date.min().date() if daily else m.valid_time.min().date(),
@@ -87,7 +94,9 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
                 frame.wait_for_function('mapInstance && mapInstance.getViewports().length>0')
                 assert not frame.locator('#error').is_visible()
                 assert frame.evaluate('records.length')==2
-                assert 'rank_label' in frame.evaluate('records[0]')
+                assert ('rank_label' in frame.evaluate('records[0]'))==(model=='nbmqmd')
+                if model=='nbm':
+                    assert not page.get_by_label('Verification Percentile',exact=True).count()
                 if daily:
                     assert frame.evaluate('records.every(d=>d.forecast_date && d.obs_window_start && d.obs_window_end)')
                     assert not page.get_by_label('Observation tolerance (minutes)',exact=True).count()
@@ -115,9 +124,12 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
                 expect(page.locator('[role="tabpanel"]:visible').get_by_test_id('stImage').first).to_be_visible()
                 page.get_by_role('tab',name='Spatial snapshot',exact=True).click()
                 page.get_by_label('Map display',exact=True).click()
-                page.get_by_role('option',name='Threshold probability',exact=True).click()
-                frame.wait_for_function('records.every(d=>Array.isArray(d.event_outline_color))')
-                assert frame.evaluate('records.every(d=>d.metric_value_text.endsWith("%"))')
+                page.get_by_role('option',name='Threshold probability' if model=='nbmqmd' else 'Signed error',exact=True).click()
+                if model=='nbmqmd':
+                    frame.wait_for_function('records.every(d=>Array.isArray(d.event_outline_color))')
+                    assert frame.evaluate('records.every(d=>d.metric_value_text.endsWith("%"))')
+                else:
+                    frame.wait_for_function('metric === "error"')
                 assert abs(frame.evaluate('viewState.zoom')-zoom)<1e-7
                 # A normal desktop viewport hid clipping in the original test.
                 # Scroll over the actual map/image, not merely the page margin,
@@ -148,7 +160,7 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
                 assert not page.get_by_test_id('stException').count()
                 assert not errors,errors
                 browser.close()
-                print(f'Storm {element} browser checks passed: map render, zoom, click-to-detail, three tabs, fixed cohort, threshold-probability map, scrolling over map and plots in a short viewport.')
+                print(f'Storm {model} {element} browser checks passed: map render, zoom, click-to-detail, three tabs, fixed cohort, map display, scrolling over map and plots in a short viewport.')
         except Exception:
             log.flush();log.seek(0);print(log.read());raise
         finally:

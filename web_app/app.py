@@ -48,7 +48,7 @@ st.markdown(
 
     3. **Storm Specific Zoom**
        - Generate station-specific time series or plume-style plots.
-       - Currently optimized for wind and gust workflows.
+       - Supports wind, gust, RH, daily temperature extremes, and 6/24-hour precipitation.
 
     4. **Model Comparison**
        - Choose two models, their shared element, and a forecast reference offset.

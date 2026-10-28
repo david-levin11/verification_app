@@ -8,7 +8,7 @@ from pairing import build_verification_pairs, get_obs_value_column
 from probability import forecast_probabilities, threshold_event
 
 INTERVALS = [('25', '75'), ('10', '90'), ('5', '95')]
-STORM_ELEMENTS = ['wind', 'gust', 'rh', 'maxt', 'mint']
+STORM_ELEMENTS = ['wind', 'gust', 'rh', 'maxt', 'mint', 'precip6hr', 'precip24hr']
 
 
 def observed_percentile(values, levels, observed):
@@ -39,7 +39,7 @@ def observed_percentile(values, levels, observed):
 def build_storm_cases(model_frame, observations, model, obs_source, element,
                       init_time, percentile=None, tolerance='1h', threshold=25, operator='>='):
     if element not in STORM_ELEMENTS:
-        raise ValueError('Storm diagnostics currently support wind, gust, RH, and maximum/minimum temperature.')
+        raise ValueError('Storm diagnostics support wind, gust, RH, daily temperatures, and 6/24-hour precipitation.')
     daily = get_pairing_method(element) == 'date'
     prepared = prepare_forecasts(model_frame, model, element, percentile)
     if prepared.empty:
@@ -51,6 +51,10 @@ def build_storm_cases(model_frame, observations, model, obs_source, element,
     if prepared.empty:
         return prepared
     prepared['model_value'] = prepared.model_value.where(np.isfinite(prepared.model_value))
+    accum_hours = get_element_config(element).get('accum_hours')
+    if accum_hours is not None:
+        prepared['model_window_end'] = prepared.valid_time
+        prepared['model_window_start'] = prepared.valid_time - pd.Timedelta(hours=accum_hours)
     reports = observations.copy()
     if not reports.empty:
         if 'valid_time' not in reports and get_obs_time_column(element) in reports:
@@ -62,6 +66,8 @@ def build_storm_cases(model_frame, observations, model, obs_source, element,
                                       percentile, tolerance) if not reports.empty else pd.DataFrame())
     columns = ['station_id', 'init_time', 'valid_time', 'obs_value', 'obs_valid_time',
                'obs_time_offset_minutes']
+    if accum_hours is not None and not pairs.empty:
+        columns.extend(['obs_window_start', 'obs_window_end'])
     if daily and not pairs.empty:
         for edge in ['start','end']:
             column = next((c for c in [f'obs_window_{edge}',f'window_{edge}_obs',f'window_{edge}'] if c in pairs), None)
@@ -86,6 +92,10 @@ def build_storm_cases(model_frame, observations, model, obs_source, element,
             ['station_id','init_time','valid_time'], keep='last'),
             on=['station_id','init_time','valid_time'], how='left', validate='one_to_one')
     result['obs_value'] = pd.to_numeric(result.obs_value, errors='coerce')
+    if accum_hours is not None:
+        for edge in ['start','end']:
+            if f'obs_window_{edge}' not in result:
+                result[f'obs_window_{edge}'] = pd.NaT
     result['obs_value'] = result.obs_value.where(np.isfinite(result.obs_value))
     result['error'] = result.model_value - result.obs_value
     result['absolute_error'] = result.error.abs()

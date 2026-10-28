@@ -62,8 +62,8 @@ Single-run forecasts are deduplicated by station/verification target, keeping th
 NDFD references are reconstructed by the existing loader. Nearest-report matching
 uses the selected tolerance (URMA analysis matching remains exact). Daily extremes
 use the same configured date matching as Model Comparison, without a reporting-time
-tolerance. Accumulation views remain future work, and snow requires its appropriate
-verification dataset.
+tolerance. Precipitation views use the shared duration/endpoint matcher. Snow
+requires its appropriate verification dataset.
 
 ## Maximum and minimum temperature
 
@@ -120,3 +120,28 @@ can interpret the bound as local midnight: in Alaska in February that is 09Z,
 which excludes the first day's 00Z observation-date row. This can leave the first
 MinT projection unmatched even when its 00Z–18Z observation is present. The fix
 changes query interpretation only; it does not shift or modify archived records.
+
+
+## Deterministic NBM and precipitation
+
+NBM wind, MaxT, MinT, precip6hr and precip24hr use scalar forecast values. These
+combinations have no percentile selector, observed-percentile/spread maps, or
+probability scores. NBMQMD distributions remain probabilistic; model comparison
+can score a deterministic NBM forecast against an NBMQMD point percentile while
+reporting probability scores for the probabilistic side only. NBM RH/snow and
+experimental-model capabilities retain their existing configuration.
+
+The app accepts the deterministic archiver's maxt, mint, precip6hr and precip24hr
+columns (temperatures already in Fahrenheit and precipitation already in inches),
+plus the existing wind_speed_kt/si10 wind columns. These intervals are decoded with
+authoritative reference/endpoint timestamps by the archiver; the local legacy
+percentile repair script is not part of loading these new scalar forecasts.
+
+Storm Specific supports 6-hour and 24-hour precipitation across its map, evolution,
+and station-detail views. Snapshots select an accumulation endpoint and use common
+observation window-duration and endpoint-tolerance rules. The station plot shows
+individual forecast/observed totals as horizontal segments over their respective
+windows, with endpoint markers. A zero is a valid dry-period total; missing reports
+remain missing. The plot is not a running cumulative total. Sliding/overlapping
+24-hour windows remain separate, dependent cases. Probabilistic precipitation, when
+selected from NBMQMD, retains uncertainty maps and endpoint quantile intervals.

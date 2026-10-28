@@ -51,6 +51,8 @@ def map_description(metric,label,cfg,percentile,threshold,operator):
         questions['model_value']=f'What {element} did the {point} predict for this forecast date?'
         questions['obs_value']=f'What {element} was observed for this forecast date?'
         questions['error']=f'How many degrees too warm or too cold was the {point}?'
+    elif cfg.get('accum_hours'):
+        questions['obs_value']=f'What {element} total was observed over a matching accumulation window ending near this valid time?'
     if metric.startswith('width_'):
         _,lo,hi=metric.split('_')
         question=f'How wide was the central {int(hi)-int(lo)}% of the forecast distribution at each station?'

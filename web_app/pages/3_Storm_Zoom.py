@@ -13,6 +13,7 @@ from station_metadata import normalize_station_metadata, network_elevation_contr
 from station_selection import selected_station_ids
 from storm_analysis import build_storm_cases, available_intervals, interval_summary, evolution_summary, STORM_ELEMENTS
 from temperature_storm import plot_temperature_periods, temperature_snapshot_label
+from accumulation_storm import plot_accumulation_periods
 from storm_visuals import (snapshot_map_data, render_storm_map, plot_evolution,
                            map_colorbar, map_description)
 
@@ -56,6 +57,8 @@ if daily:
     st.sidebar.caption('Daily temperature observations match the forecast date. Reporting-time tolerance does not apply; the observed measurement windows appear in the results.')
 else:
     minutes = ui.sidebar.number_input('Observation tolerance (minutes)',0,180,60,step=5,key='storm_obs_minutes')
+    if cfg.get('accum_hours'):
+        st.sidebar.caption('Accumulation durations must agree. Tolerance applies to the window endpoint.')
 
 @st.cache_data
 def read_metadata(path):
@@ -132,6 +135,7 @@ if saved!=context:
     st.info('Controls have changed. Generate again to refresh the results; the displays below still use the saved request.')
 cases=result['cases'];cfg=get_element_config(saved['element']).copy()
 daily=saved['element'] in ['maxt','mint']
+accumulation=cfg.get('accum_hours') is not None
 if daily:cfg['units']='°F'
 spread_units='percentage points' if saved['element']=='rh' else cfg['units']
 probabilistic=is_probabilistic(saved['model'],saved['element'])
@@ -214,6 +218,8 @@ with evolution:
 with detail:
     if daily:
         st.write(f'The temperature comparison answers the question: “How did forecast and observed {cfg["label"].lower()} compare for each forecast date?”')
+    elif accumulation:
+        st.write(f'The accumulation comparison answers the question: “How did forecast and observed {cfg["label"].lower()} totals compare over their measurement windows?”')
     else:
         st.write('The station plume answers the question: “How did the forecast and its uncertainty compare with what happened at this station?”'
                  if probabilistic else 'The station plot answers the question: “How did the forecast compare with what happened at this station?”')
@@ -222,6 +228,9 @@ with detail:
         key='storm_detail_station')
     if daily:
         fig=plot_temperature_periods(cases,station,saved['model'],saved['element'],saved['percentile'],
+                                     saved['threshold'],saved['operator'])
+    elif accumulation:
+        fig=plot_accumulation_periods(cases,station,saved['model'],saved['element'],saved['percentile'],
                                      saved['threshold'],saved['operator'])
     else:
         plot_observations=result['obdf']
@@ -239,5 +248,6 @@ with detail:
     point=saved['percentile']
     st.caption((f'Point error uses p{point}; the median-error map always uses p50. ' if probabilistic else '')+
                ('Temperatures are compared by the configured forecast date. The window strip, when available, shows actual observed measurement periods; no forecast window is inferred from an archive timestamp.'
-                if daily else 'The plume shows actual report timestamps; the case table records which report was matched to each forecast.'))
+                if daily else 'Each horizontal segment represents a separate accumulation total over its window; it is not a running cumulative total. Overlapping windows are not independent verification cases.'
+                if accumulation else 'The plume shows actual report timestamps; the case table records which report was matched to each forecast.'))
     st.dataframe(cases[cases.station_id.eq(station)],hide_index=True,use_container_width=True)

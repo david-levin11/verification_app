@@ -48,6 +48,8 @@ AVAILABLE_ELEMENTS_BY_MODEL = {
     "nbm": [
         "wind",
         "gust",
+        "precip6hr",
+        "precip24hr",
         "snow6hr",
         "snow24hr",
         "snow48hr",
@@ -107,7 +109,8 @@ AVAILABLE_ELEMENTS_BY_MODEL = {
 # =============================================================================
 # Probabilistic capability
 # =============================================================================
-# Based on archiver_config PROBABILISTIC_ELEMENTS.
+# NBM temperature/precipitation interval archives contain scalar forecasts.
+# NBMQMD and NBMQMD_EXP retain their separately archived quantile distributions.
 
 PROBABILISTIC_ELEMENTS_BY_MODEL = {
     "nbm": [
@@ -115,8 +118,6 @@ PROBABILISTIC_ELEMENTS_BY_MODEL = {
         "snow24hr",
         "snow48hr",
         "snow72hr",
-        "maxt",
-        "mint",
         "rh",
     ],
     "nbm_exp": [
@@ -179,6 +180,8 @@ FORECAST_HOURS_BY_MODEL_ELEMENT = {
         "snow6hr": [11, 17, 23, 29, 35, 41, 47, 53, 59, 65, 71, 83, 89, 95, 101, 107, 113, 119, 125, 131, 137, 143, 149, 155, 161],
         "maxt": [18, 30, 42, 54, 66, 78, 90, 102, 114, 126, 138, 150, 162, 174],
         "mint": [18, 30, 42, 54, 66, 78, 90, 102, 114, 126, 138, 150, 162, 174],
+        "precip6hr": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120],
+        "precip24hr": [24, 30, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168],
         "rh": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120],
     },
     "nbm_exp": {

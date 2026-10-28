@@ -6,8 +6,7 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 from config import (MODELS, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
-                    get_available_obs_sources, get_element_config, is_probabilistic,
-                    FORECAST_HOURS_BY_MODEL_ELEMENT)
+                    get_available_obs_sources, get_element_config, is_probabilistic)
 from comparison_loader import load_comparison_data
 from wind_verification import (filter_observed_speed, filter_observed_sector,
                                direction_cases, direction_scores)
@@ -49,8 +48,8 @@ d1,d2=ui.sidebar.columns(2)
 start=d1.date_input('Start Date',pd.Timestamp('2025-10-01').date(),key='compare_start')
 end=d2.date_input('End Date',datetime.now(timezone.utc).date(),key='compare_end')
 l1,l2=ui.sidebar.columns(2)
-lead_min=l1.number_input('A minimum lead (h)',0,240,0,step=6,key='compare_lead_min')
-lead_max=l2.number_input('A maximum lead (h)',0,240,72,step=6,key='compare_lead_max')
+lead_min=l1.number_input('A minimum lead (h)',0,240,0,step=3,key='compare_lead_min')
+lead_max=l2.number_input('A maximum lead (h)',0,240,168,step=3,key='compare_lead_max')
 threshold=ui.sidebar.selectbox(f'Event threshold ({cfg["units"]})',cfg['thresholds'],
     index=cfg['thresholds'].index(cfg['default_threshold']),key=f'compare_threshold_{element}')
 operators=['>=','>','<=','<']
@@ -140,8 +139,8 @@ if st.button('Run Model Comparison',type='primary',key='compare_run'):
     try:
         if lead_min>lead_max:raise ValueError('Minimum lead must not exceed maximum lead')
         if not stations:raise ValueError('Select at least one station')
-        horizon=max([lead_max]+FORECAST_HOURS_BY_MODEL_ELEMENT.get(model_a,{}).get(element,[])+
-                    FORECAST_HOURS_BY_MODEL_ELEMENT.get(model_b,{}).get(element,[]))+abs(offset)+ref_tolerance+48
+        # B may be older and daily target labels may differ from endpoints.
+        horizon=lead_max+abs(offset)+ref_tolerance+48
         with st.spinner('Loading forecasts and matching common verification cases...'):
             a,b,o,warnings=load_comparison_data(archive_root,model_a,model_b,obs,element,start,end,stations,
                 horizon,f'{obs_minutes}min')
@@ -221,7 +220,7 @@ with lead_tab:
     fig=plot_group_scores(table,'lead_day',metric,label_a,label_b,'Model A forecast day')
     st.pyplot(fig);plt.close(fig)
     st.dataframe(table[table.metric.eq(metric)][['lead_day','n','observed_events','n_prob','a','b','difference']],hide_index=True)
-    st.caption('Each day uses common cases for the two models. Actual lead times can differ because of the selected offset.')
+    st.caption('Days use Model A leads: Day 1 = 0–24 h, Day 2 = >24–48 h, through Day 7 = >144–168 h. All archived projections in the lead range are eligible; only shared station/valid targets are scored. Actual Model B leads can differ with an offset.')
 with map_tab:
     station_table=grouped_scores(pairs,'station_id',element,saved['threshold'],saved['operator'],prob_a,prob_b)
     minimum=ui.number_input('Minimum shared cases per station',1,10000,10,key='compare_min_cases')

@@ -166,79 +166,9 @@ def get_available_elements(model: str) -> list[str]:
 
 
 # =============================================================================
-# Forecast hours
-# =============================================================================
-# Based on archiver_config HERBIE_FORECASTS, normalized to lowercase elements.
-
-FORECAST_HOURS_BY_MODEL_ELEMENT = {
-    "nbm": {
-        "wind": [5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65, 71, 83, 95, 107, 119, 131, 143, 155, 167],
-        "gust": [5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65, 71, 83, 95, 107, 119, 131, 143, 155, 167],
-        "snow24hr": [29, 35, 41, 47, 53, 59, 65, 71, 83, 89, 95, 101, 107, 113, 119, 125, 131, 137, 143, 149, 155, 161],
-        "snow48hr": [53, 59, 65, 71, 83, 89, 95, 101, 107, 113, 119, 125, 131, 137, 143, 149, 155, 161],
-        "snow72hr": [83, 89, 95, 101, 107, 113, 119, 125, 131, 137, 143, 149, 155, 161],
-        "snow6hr": [11, 17, 23, 29, 35, 41, 47, 53, 59, 65, 71, 83, 89, 95, 101, 107, 113, 119, 125, 131, 137, 143, 149, 155, 161],
-        "maxt": [18, 30, 42, 54, 66, 78, 90, 102, 114, 126, 138, 150, 162, 174],
-        "mint": [18, 30, 42, 54, 66, 78, 90, 102, 114, 126, 138, 150, 162, 174],
-        "precip6hr": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120],
-        "precip24hr": [24, 30, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168],
-        "rh": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120],
-    },
-    "nbm_exp": {
-        "wind": [5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65, 71, 83, 95, 107, 119, 131, 143, 155, 167],
-        "gust": [5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65, 71, 83, 95, 107, 119, 131, 143, 155, 167],
-        "snow24hr": [29, 35, 41, 47, 53, 59, 65, 71, 83, 89, 95, 101, 107, 113, 119, 125, 131, 137, 143, 149, 155, 161],
-        "snow48hr": [53, 59, 65, 71, 83, 89, 95, 101, 107, 113, 119, 125, 131, 137, 143, 149, 155, 161],
-        "snow72hr": [83, 89, 95, 101, 107, 113, 119, 125, 131, 137, 143, 149, 155, 161],
-        "snow6hr": [11, 17, 23, 29, 35, 41, 47, 53, 59, 65, 71, 83, 89, 95, 101, 107, 113, 119, 125, 131, 137, 143, 149, 155, 161],
-    },
-    "nbmqmd": {
-        "precip24hr": [24, 30, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168],
-        "precip6hr": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120],
-        "maxt": [18, 30, 42, 54, 66, 78, 90, 102, 114, 126, 138, 150, 162, 174],
-        "mint": [18, 30, 42, 54, 66, 78, 90, 102, 114, 126, 138, 150, 162, 174],
-        "rh": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120],
-        "wind": [12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 84, 96, 108, 120, 132, 144, 156, 168],
-        "gust": [12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 84, 96, 108, 120, 132, 144, 156, 168],
-    },
-    "nbmqmd_exp": {
-        "precip24hr": [24, 30, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168],
-        "precip6hr": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120],
-        "maxt": [18, 30, 42, 54, 66, 78, 90, 102, 114, 126, 138, 150, 162, 174],
-        "mint": [18, 30, 42, 54, 66, 78, 90, 102, 114, 126, 138, 150, 162, 174],
-        "rh": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120],
-        "wind": [12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 84, 96, 108, 120, 132, 144, 156, 168],
-        "gust": [12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 84, 96, 108, 120, 132, 144, 156, 168],
-    },
-    "hrrr": {
-        "wind": [12, 18, 24, 30, 36, 42, 48],
-        "gust": [12, 18, 24, 30, 36, 42, 48],
-        "rh": [12, 18, 24, 30, 36, 42, 48],
-        "precip6hr": [0, 6, 12, 18, 24, 30, 36, 42, 48],
-        "snow6hr": [0, 6, 12, 18, 24, 30, 36, 42, 48],
-    },
-    "urma": {
-        "wind": [0],
-        "gust": [0],
-    },
-    # Add NDFD forecast hours here if your archive contains them.
-    "ndfd": {
-        "wind": [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51, 54, 57, 60, 63, 66, 69, 72, 78, 84, 90, 96, 102, 108, 114, 120, 126, 132, 138, 144, 150, 156, 162, 168],
-        "gust": [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51, 54, 57, 60, 63, 66, 69, 72],
-        "precip6hr": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72],
-        "snow6hr": [6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72],
-        "maxt": [12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156, 168],
-        "mint": [12, 24, 36, 48, 60, 72, 84, 96, 108, 120, 132, 144, 156],
-        "rh": [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51, 54, 57, 60, 63, 66, 69, 72, 78, 84, 90, 96, 102, 108, 114, 120, 126, 132, 138, 144, 150, 156, 162, 168],
-    },
-}
-
-
-# =============================================================================
 # Forecast projection groups
 # =============================================================================
-# These are approximate app-facing groupings. For elements with nonstandard
-# valid periods, you can tune this later.
+# Day labels are lead intervals, independent of model cadence or missing steps.
 
 FORECAST_PROJECTION_GROUPS = {
     "All": None,
@@ -252,68 +182,30 @@ FORECAST_PROJECTION_GROUPS = {
 }
 
 
+def get_projection_lead_bounds(start_projection, end_projection):
+    """Continuous lead range: Day 1=[0,24], Day 2=(24,48], etc."""
+    names=[name for name in FORECAST_PROJECTION_GROUPS if name != 'All']
+    if start_projection not in names or end_projection not in names:
+        raise ValueError('Unknown forecast projection day')
+    first,last=sorted([names.index(start_projection),names.index(end_projection)])
+    return first*24, (last+1)*24
+
+
 def get_forecast_hours(model: str, element: str, projection: str = "All") -> list[int]:
+    """Compatibility helper for integer day bounds, not model availability.
+
+    All returns the seven-day display range. Actual all-hours loading uses no
+    lead filter and determines its archive lookback from file metadata.
     """
-    Return forecast hours for a model/element/projection combination.
+    if projection == 'All':return list(range(169))
+    if projection not in FORECAST_PROJECTION_GROUPS:
+        raise ValueError(f'Unknown forecast projection: {projection}')
+    return list(FORECAST_PROJECTION_GROUPS[projection])
 
-    If projection == "All", return all configured forecast hours.
-    """
-    all_hours = FORECAST_HOURS_BY_MODEL_ELEMENT.get(model, {}).get(element, [])
 
-    if projection == "All":
-        return all_hours
-
-    hour_range = FORECAST_PROJECTION_GROUPS.get(projection)
-
-    if hour_range is None:
-        return all_hours
-
-    return [h for h in all_hours if h in hour_range]
-
-def get_forecast_hours_for_projection_range(
-    model: str,
-    element: str,
-    start_projection: str,
-    end_projection: str,
-) -> list[int]:
-    """
-    Return forecast hours for a contiguous range of forecast projection groups.
-
-    Example:
-        Day 1 through Day 3 -> all configured forecast hours from Day 1, Day 2, Day 3.
-    """
-
-    projection_names = [
-        name for name in FORECAST_PROJECTION_GROUPS.keys()
-        if name != "All"
-    ]
-
-    if start_projection not in projection_names:
-        raise ValueError(f"Unknown start projection: {start_projection}")
-
-    if end_projection not in projection_names:
-        raise ValueError(f"Unknown end projection: {end_projection}")
-
-    start_idx = projection_names.index(start_projection)
-    end_idx = projection_names.index(end_projection)
-
-    if end_idx < start_idx:
-        start_idx, end_idx = end_idx, start_idx
-
-    selected_projection_names = projection_names[start_idx:end_idx + 1]
-
-    selected_hours = []
-
-    for projection_name in selected_projection_names:
-        selected_hours.extend(
-            get_forecast_hours(
-                model=model,
-                element=element,
-                projection=projection_name,
-            )
-        )
-
-    return sorted(set(selected_hours))
+def get_forecast_hours_for_projection_range(model, element, start_projection, end_projection):
+    low,high=get_projection_lead_bounds(start_projection,end_projection)
+    return list(range(low if low==0 else low+1,high+1))
 
 # =============================================================================
 # Element display and standardized value columns

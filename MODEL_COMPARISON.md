@@ -20,6 +20,33 @@ May 31 18 UTC with a -6-hour offset. Their leads are 24 and 30 hours, and they
 receive exactly the same observation. The lead filter applies to Model A;
 Model B is not incorrectly restricted to Model A's forecast-hour list.
 
+## Available forecast projections and day boundaries
+
+The app no longer uses per-model archiver schedules as verification whitelists.
+Map Explorer and Aggregate Verification filter continuous lead intervals selected
+by the day controls. **Use all forecast hours** applies no lead filter. Every
+archived 3-hour step (and irregular steps such as NBM's 5/11-hour leads) is eligible;
+an absent increment simply contributes no row. Storm Specific likewise loads all
+projections of the chosen run within the selected event dates.
+
+Day 1 includes 0 through 24 hours. Day 2 is strictly greater than 24 through 48;
+Day 3 is >48 through 72; and Day 7 is >144 through 168. Thus hour 24 belongs to
+Day 1, hour 27 to Day 2, and hour 168 to Day 7, with no duplicated boundaries.
+These are lead intervals independent of the forecast accumulation duration.
+
+Model Comparison defaults to A leads 0–168 hours, with 3-hour adjustment steps.
+It scores only shared station/verification targets under the requested reference
+offset/tolerance. A 3-hourly A model and 6-hourly B model normally share the 6-hourly
+targets; intermediate A rows are counted as unmatched. No missing B forecasts are
+interpolated. Day-group charts use A's actual lead; B's actual lead is retained and
+can differ with the offset. Existing station/date/window matching is unchanged.
+
+All-hours queries derive the initialization-month lookback from cached Parquet
+forecast-hour footer maxima, invalidated by file size/mtime changes. When those
+statistics are absent, all eligible older archive months are included rather than
+assuming a seven-day horizon. Comparison's bounded lookback derives from A's lead
+limit plus the reference offset/tolerance and daily-target endpoint allowance.
+
 ## Reference-time matching
 
 Each distinct A station/reference/target is a verification

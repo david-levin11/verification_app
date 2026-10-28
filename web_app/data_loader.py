@@ -1,10 +1,9 @@
 import duckdb
 import pandas as pd
 from pathlib import Path
-from config import (get_obs_time_column, get_obs_filter_time_column, get_pairing_method,
-                    get_forecast_hours)
+from config import get_obs_time_column, get_obs_filter_time_column, get_pairing_method
 from forecast_targets import forecast_target_sql
-from archive_files import resolve_archive_paths, gust_observation_coverage
+from archive_files import resolve_archive_paths, gust_observation_coverage, forecast_archive_lookback
 from datetime import date, datetime
 
 WEB_APP_DIR = Path(__file__).resolve().parent
@@ -31,6 +30,7 @@ def fetch_data(
     element="wind",
     archive_root=LOCAL_ARCHIVE_ROOT,
     obs_time_tolerance="1h",
+    forecast_lead_range=None,
 ):
     """
     Connects to DuckDB, queries local parquet archives, and returns the raw
@@ -59,6 +59,10 @@ def fetch_data(
     if isinstance(end_date, date) and not isinstance(end_date, datetime):
         query_end += pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
     tolerance = pd.Timedelta(obs_time_tolerance)
+    if forecast_lead_range is not None:
+        low,high=map(float,forecast_lead_range)
+        if not (0<=low<=high<float('inf')):
+            raise ValueError('Invalid forecast lead range')
     if tolerance < pd.Timedelta(0):
         raise ValueError("Observation time tolerance must be non-negative")
     padding = tolerance if get_pairing_method(element) == "time" else pd.Timedelta(0)
@@ -89,8 +93,9 @@ def fetch_data(
             init_date = init_date.tz_convert('UTC').tz_localize(None)
         model_read_start = min(query_start, init_date)
     else:
-        hours = forecast_hours or get_forecast_hours(model, element, 'All') or [0]
-        model_read_start = query_start - pd.Timedelta(hours=max(hours))
+        horizon=(high if forecast_lead_range is not None else max(forecast_hours) if forecast_hours else
+                 forecast_archive_lookback(archive_root,model,element,query_start,model_read_end))
+        model_read_start = query_start - pd.Timedelta(hours=horizon)
     modelfiles, missing_modelfiles, source_warnings = resolve_archive_paths(
         archive_root, model, element, model_read_start, model_read_end)
     warnings.extend(source_warnings)
@@ -157,7 +162,16 @@ def fetch_data(
             model_params = [modelfiles] + query_stations + [storm_init_time, query_start, query_end]
 
     else:
-        if forecast_hours:
+        if forecast_lead_range is not None:
+            lower_operator='>=' if low==0 else '>'
+            modelquery=f"""
+            SELECT * FROM read_parquet(?, union_by_name=true)
+            WHERE station_id IN ({station_placeholders})
+              AND forecast_hour {lower_operator} ? AND forecast_hour <= ?
+              AND ({target_sql}) BETWEEN ? AND ?
+            """
+            model_params=[modelfiles]+query_stations+[low,high,query_start,query_end]
+        elif forecast_hours:
             hour_str = ", ".join(str(h) for h in forecast_hours)
 
             modelquery = f"""

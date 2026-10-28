@@ -76,6 +76,7 @@ if st.button("Run Aggregate Verification", type="primary"):
             end_date=end_date,
             station_list=station_list,
             forecast_hours=forecast_hours,
+            forecast_lead_range=controls["forecast_lead_range"],
             storm_init_time=None,
             percentile_col_dict={},
             percentile=percentile,

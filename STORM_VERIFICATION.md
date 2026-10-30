@@ -52,11 +52,17 @@ cohort requires a matched observation (and valid interval bounds, where availabl
 at every loaded forecast projection. Otherwise the station population can change
 with projection, and the counts make this visible.
 
-Station plumes show archived p5–p95, p10–p90 and p25–p75 bands when available,
-the selected point percentile and actual report timestamps. Invalid distributions
-are not shaded. Point errors use the selected percentile; median-error maps use
-p50. RH axes use 0–100%. Case tables retain the actual matched observation time and
-offset, with missing observations left missing and recorded zeros retained.
+Station detail shows archived forecast quantiles as box-and-whisker plots for all
+probabilistic elements: boxes span p25–p75, whiskers end at p5/p95, and the median
+line is p50. These are supplied forecast quantiles, not Tukey/sample whiskers or
+minimum–maximum values. Red points show the observation matched to each forecast
+period, including values outside the whiskers. Missing observations stay missing.
+Incomplete or crossing distributions have no box; valid tied/zero distributions
+are retained. No forecast distribution is pooled across dates or stations.
+Point-error scores still use the selected verification percentile; the box median
+and median-error map always use p50. RH axes use 0–100%. Case tables retain actual
+report times and offsets. Daily temperatures and precipitation retain a separate
+measurement-window strip; precipitation also shows forecast windows.
 
 Single-run forecasts are deduplicated by station/verification target, keeping the last row.
 NDFD references are reconstructed by the existing loader. Nearest-report matching
@@ -79,9 +85,8 @@ tolerance. Date duplicates follow the existing shared matching convention, keepi
 the last eligible archived row. Missing window metadata stays unknown and does not
 change the shared date match.
 
-The station temperature plot compares the selected forecast percentile (or deterministic
-forecast) and matched observed extreme on each forecast date. Available quantile
-intervals are vertical bands; temperatures are not connected as an instantaneous
+The station temperature plot compares the forecast distribution (or deterministic
+forecast) and matched observed extreme on each forecast date. Probabilistic forecasts use the quantile boxes described above; temperatures are not connected as an instantaneous
 time series. A separate strip shows the actual observation measurement windows in
 UTC, including windows ending the next day or month. No forecast interval is invented.
 Negative and zero temperatures remain valid. Minimum-temperature events default to
@@ -141,7 +146,9 @@ Storm Specific supports 6-hour and 24-hour precipitation across its map, evoluti
 and station-detail views. Snapshots select an accumulation endpoint and use common
 observation window-duration and endpoint-tolerance rules. The station plot shows
 individual forecast/observed totals as horizontal segments over their respective
-windows, with endpoint markers. A zero is a valid dry-period total; missing reports
+windows, with endpoint markers for deterministic forecasts. Probabilistic forecasts use
+quantile boxes at each endpoint and a separate window strip. A zero is a valid dry-period total; missing reports
 remain missing. The plot is not a running cumulative total. Sliding/overlapping
 24-hour windows remain separate, dependent cases. Probabilistic precipitation, when
 selected from NBMQMD, retains uncertainty maps and endpoint quantile intervals.
+

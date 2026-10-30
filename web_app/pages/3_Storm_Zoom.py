@@ -14,6 +14,7 @@ from station_selection import selected_station_ids
 from storm_analysis import build_storm_cases, available_intervals, interval_summary, evolution_summary, STORM_ELEMENTS
 from temperature_storm import plot_temperature_periods, temperature_snapshot_label
 from accumulation_storm import plot_accumulation_periods
+from station_distribution import plot_station_distribution
 from storm_visuals import (snapshot_map_data, render_storm_map, plot_evolution,
                            map_colorbar, map_description)
 
@@ -221,12 +222,15 @@ with detail:
     elif accumulation:
         st.write(f'The accumulation comparison answers the question: “How did forecast and observed {cfg["label"].lower()} totals compare over their measurement windows?”')
     else:
-        st.write('The station plume answers the question: “How did the forecast and its uncertainty compare with what happened at this station?”'
+        st.write('The station distribution answers the question: “How did the forecast and its uncertainty compare with what happened at this station?”'
                  if probabilistic else 'The station plot answers the question: “How did the forecast compare with what happened at this station?”')
     station=ui.selectbox('Station detail',station_options,
         index=station_options.index(saved['stations'][0]) if saved['stations'][0] in station_options else 0,
         key='storm_detail_station')
-    if daily:
+    if probabilistic:
+        fig=plot_station_distribution(cases,station,saved['model'],saved['element'],
+                                      saved['threshold'],saved['operator'])
+    elif daily:
         fig=plot_temperature_periods(cases,station,saved['model'],saved['element'],saved['percentile'],
                                      saved['threshold'],saved['operator'])
     elif accumulation:
@@ -245,9 +249,12 @@ with detail:
     if fig is not None:
         if saved['element']=='rh':fig.axes[0].set_ylim(0,100)
         st.pyplot(fig);plt.close(fig)
+    if probabilistic:
+        st.caption('Each box spans p25–p75; whiskers end at p5 and p95; the line inside is p50. Red points are matched observations, including those outside the whiskers. These are forecast quantiles, not sample-based whiskers or minimum–maximum values.')
     point=saved['percentile']
     st.caption((f'Point error uses p{point}; the median-error map always uses p50. ' if probabilistic else '')+
                ('Temperatures are compared by the configured forecast date. The window strip, when available, shows actual observed measurement periods; no forecast window is inferred from an archive timestamp.'
                 if daily else 'Each horizontal segment represents a separate accumulation total over its window; it is not a running cumulative total. Overlapping windows are not independent verification cases.'
-                if accumulation else 'The plume shows actual report timestamps; the case table records which report was matched to each forecast.'))
+                if accumulation else 'Observation points show the matched report at each forecast valid time; actual timestamps and offsets appear in the case table.' if probabilistic else 'The plot shows actual report timestamps; the case table records which report was matched to each forecast.'))
     st.dataframe(cases[cases.station_id.eq(station)],hide_index=True,use_container_width=True)
+

@@ -64,7 +64,7 @@ function tooltip({object}) {
   const times = object.forecast_date ? ['forecast_date', 'valid_time', 'obs_window_start', 'obs_window_end']
     : object.model_window_start ? ['model_window_start', 'model_window_end', 'obs_window_start', 'obs_window_end', 'obs_time_offset_minutes']
     : ['forecast_hour', 'obs_valid_time', 'obs_time_offset_minutes'];
-  for (const field of ['model_value', 'median_value', 'obs_value', 'rank_label', 'interval_bounds', ...times, 'mnet_id', 'elevation_ft']) {
+  for (const field of ['model_value', 'median_value', 'obs_value', 'rank_label', 'interval_bounds', 'n_available', 'n_expected', 'complete', 'probability_source', ...times, 'mnet_id', 'elevation_ft']) {
     if (object[field] != null) lines.push(`${field}: ${object[field]}`);
   }
   for (const field of ['n', 'bias', 'mae', 'rmse', 'pod', 'far', 'csi']) {
@@ -110,3 +110,4 @@ function render(event) {
 window.addEventListener('message', render);
 send('streamlit:componentReady', {apiVersion: 1});
 send('streamlit:setFrameHeight', {height: 520});
+

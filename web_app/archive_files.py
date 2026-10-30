@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 from config import get_element_config, get_percentile_columns, is_probabilistic
+from forecast_archive import refs_archive_root
 
 
 @lru_cache(maxsize=2048)
@@ -12,6 +13,7 @@ def _maximum_file_lead(path, size, modified_ns):
     """Footer statistics only; size/mtime invalidate cached metadata on append."""
     with pq.ParquetFile(path) as file:
         index=file.schema_arrow.get_field_index('forecast_hour')
+        if index<0:index=file.schema_arrow.get_field_index('ensemble_forecast_hour')
         if index<0 or not file.metadata.num_row_groups:return None
         maximum=0.
         for group in range(file.metadata.num_row_groups):
@@ -23,15 +25,16 @@ def _maximum_file_lead(path, size, modified_ns):
         return maximum
 
 
-def forecast_archive_lookback(root,model,element,start,end):
+def forecast_archive_lookback(root,model,element,start,end,refs_root=None):
     """Discover maximum archived lead without loading forecast rows.
 
     If any footer lacks lead statistics, include every eligible older archive
     month instead of guessing a horizon and silently losing long forecasts.
     """
     maximum=0.;earliest=None;unknown=False
-    for source in ([element,'wind'] if element=='gust' else [element]):
-        for path in (Path(root)/model/source).glob('*.parquet'):
+    for source in (['wind'] if model=='refs' and element=='gust' else [element,'wind'] if element=='gust' else [element]):
+        folder=refs_archive_root(root,refs_root)/source if model=='refs' else Path(root)/model/source
+        for path in folder.glob('*.parquet'):
             month=path.name[:7]
             if path.name not in [f'{month}_archive.parquet',f'{month}_{model}_{source}_archive.parquet']:continue
             try:month_start=pd.Timestamp(month.replace('_','-')+'-01')
@@ -47,7 +50,7 @@ def forecast_archive_lookback(root,model,element,start,end):
     return max(0.,maximum)
 
 
-def resolve_archive_paths(root, model, element, start, end, observation=False):
+def resolve_archive_paths(root, model, element, start, end, observation=False,refs_root=None):
     """Choose one source per month; a valid dedicated gust file takes priority.
 
     Validate gust schemas before falling back to wind files. Missing gusts in a
@@ -55,6 +58,13 @@ def resolve_archive_paths(root, model, element, start, end, observation=False):
     """
     files, missing, warnings, fallback = [], [], [], []
     cfg = get_element_config(element)
+    if model=='refs' and not observation:
+        folder=refs_archive_root(root,refs_root)/('wind' if element=='gust' else element)
+        files=[];missing=[]
+        for month in pd.period_range(pd.Timestamp(start).normalize(),pd.Timestamp(end).normalize(),freq='M'):
+            path=folder/f'{month.year}_{month.month:02d}_archive.parquet'
+            (files if path.is_file() else missing).append(str(path))
+        return files,missing,[]
     if observation:
         gust_columns = cfg.get('obs_value_candidates', [])
     elif is_probabilistic(model, element):
@@ -105,3 +115,4 @@ def gust_observation_coverage(frame):
     return (f'Gust observations: {missing:,} of {len(frame):,} loaded reports have missing/nonfinite gusts; '
             f'these are excluded from pairing. {zeros:,} recorded zeros are retained. '
             'Coverage reflects available gust reports, not all wind reports.')
+

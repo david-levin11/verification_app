@@ -5,7 +5,7 @@ from comparison import prepare_forecasts
 from config import (get_percentile_columns, is_probabilistic, get_element_config,
                     get_pairing_method, get_obs_time_column)
 from pairing import build_verification_pairs, get_obs_value_column
-from probability import forecast_probabilities, threshold_event
+from probability import forecast_probability_details, threshold_event
 
 INTERVALS = [('25', '75'), ('10', '90'), ('5', '95')]
 STORM_ELEMENTS = ['wind', 'gust', 'rh', 'maxt', 'mint', 'precip6hr', 'precip24hr']
@@ -113,7 +113,9 @@ def build_storm_cases(model_frame, observations, model, obs_source, element,
         # Rank validation must also apply when no observation is present.
         result['distribution_valid'] = [observed_percentile(row, [p for _, p in available], 0)[3]
             != 'Invalid/insufficient quantiles' for row in numeric.to_numpy()]
-        result['forecast_probability'] = forecast_probabilities(result, element, threshold, operator)
+        probabilities=forecast_probability_details(result,element,threshold,operator)
+        result['forecast_probability'] = probabilities.forecast_prob
+        result['probability_source'] = probabilities.probability_source
         result['median_value'] = np.nan
         if columns['50'] in result:
             result['median_value'] = pd.to_numeric(result[columns['50']], errors='coerce')
@@ -184,3 +186,4 @@ def evolution_summary(cases, balanced=False):
             row[f'coverage_{lo}_{hi}'] = 100*common[f'inside_{lo}_{hi}'].mean()
         rows.append(row)
     return pd.DataFrame(rows)
+

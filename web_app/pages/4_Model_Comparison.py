@@ -8,11 +8,13 @@ import matplotlib.pyplot as plt
 from config import (MODELS, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
                     get_available_obs_sources, get_element_config, is_probabilistic)
 from comparison_loader import load_comparison_data
+from forecast_archive import refs_root_control, probability_description
+from probability import forecast_probability_details
 from wind_verification import (filter_observed_speed, filter_observed_sector,
                                direction_cases, direction_scores)
 from wind_comparison_panel import render_direction_comparison
 from comparison import (comparison_cases, comparison_scores, grouped_scores,
-                        paired_mae_interval, METRIC_LABELS)
+                        paired_mae_interval, METRIC_LABELS, model_view)
 from comparison_plots import (plot_group_scores, plot_probability_comparison,
                               station_difference_map)
 
@@ -30,6 +32,7 @@ archive_root=ui.sidebar.text_input('Local Archive Root',st.session_state.get('ar
 a_col,b_col=ui.columns(2)
 model_a=a_col.selectbox('Model A (reference)',models,index=models.index('ndfd'),key='compare_model_a')
 model_b=b_col.selectbox('Model B',models,index=models.index('nbm'),key='compare_model_b')
+refs_root=refs_root_control(ui.sidebar,archive_root,'refs' in [model_a,model_b])
 common=[e for e in get_available_elements(model_a) if e in get_available_elements(model_b)]
 if not common:
     st.warning('These models have no configured elements in common.');st.stop()
@@ -131,7 +134,7 @@ context=dict(model_a=model_a,model_b=model_b,element=element,obs=obs,percentile_
     percentile_b=percentile_b,start=start,end=end,lead_min=lead_min,lead_max=lead_max,
     threshold=threshold,operator=operator,obs_minutes=obs_minutes,offset=offset,
     ref_tolerance=ref_tolerance,stations=stations,
-    archive_root=archive_root,use_dir=use_dir,dir_min=dir_min,dir_max=dir_max,
+    archive_root=archive_root,refs_root=refs_root,use_dir=use_dir,dir_min=dir_min,dir_max=dir_max,
     speed_minimum=speed_minimum,verify_direction=verify_direction,
     direction_min_speed=direction_min_speed,direction_error_threshold=direction_error_threshold)
 
@@ -143,7 +146,7 @@ if st.button('Run Model Comparison',type='primary',key='compare_run'):
         horizon=lead_max+abs(offset)+ref_tolerance+48
         with st.spinner('Loading forecasts and matching common verification cases...'):
             a,b,o,warnings=load_comparison_data(archive_root,model_a,model_b,obs,element,start,end,stations,
-                horizon,f'{obs_minutes}min')
+                horizon,f'{obs_minutes}min',refs_root=refs_root)
             pairs,diagnostics=comparison_cases(a,b,o,model_a,model_b,element,percentile_a,percentile_b,
                 obs_source=obs,obs_time_tolerance=f'{obs_minutes}min',offset_hours=offset,
                 reference_tolerance=f'{ref_tolerance}h',lead_min=lead_min,lead_max=lead_max,
@@ -158,6 +161,12 @@ if st.button('Run Model Comparison',type='primary',key='compare_run'):
                 direction_result = dict(cases=direction_data, diagnostics=direction_diagnostics,
                     scores=direction_scores(direction_data, direction_error_threshold))
             pairs = filter_observed_speed(base_cases, speed_minimum).reset_index(drop=True)
+            if 'refs' in [model_a,model_b] and not pairs.empty:
+                for side,prob in [('a',prob_a),('b',prob_b)]:
+                    if prob:
+                        info=forecast_probability_details(model_view(pairs,side),element,threshold,operator)
+                        pairs[f'{side}_forecast_probability']=info.forecast_prob
+                        pairs[f'{side}_probability_source']=info.probability_source
             diagnostics['cases_before_speed_filter'] = len(base_cases)
             diagnostics['cases_after_speed_filter'] = len(pairs)
             diagnostics['cases_excluded_by_speed_minimum'] = len(base_cases) - len(pairs)
@@ -272,7 +281,7 @@ with prob_tab:
         st.dataframe(pd.DataFrame(ptable),hide_index=True)
         fig=plot_probability_comparison(pairs,element,saved['threshold'],saved['operator'],'A: '+model_a.upper(),'B: '+model_b.upper(),prob_a,prob_b)
         st.pyplot(fig);plt.close(fig)
-        st.caption('Both probabilistic models use the intersection of valid probability cases. Quantile interpolation, tied-value handling, and tail approximations are shared with the other verification pages. Reliability error uses 10% probability bins.')
+        st.caption('Both probabilistic models use the intersection of valid probability cases. '+probability_description('refs' in [model_a,model_b])+' Reliability error uses 10% probability bins.')
     else:st.info('Neither selected model/element provides archived probability distributions.')
 with data_tab:
     st.json(diag)
@@ -280,6 +289,7 @@ with data_tab:
         'actual_offset_hours','reference_error_hours','a_model_value','b_model_value','obs_value',
         'a_forecast_direction','b_forecast_direction','observed_direction',
         'obs_valid_time','obs_time_offset_minutes','obs_window_start','obs_window_end']
+    columns += [side+'_'+name for side in ['a','b'] for name in ['n_available','n_expected','complete','statistics_config','forecast_probability','probability_source']]
     st.dataframe(pairs[[c for c in columns if c in pairs]].head(1000),hide_index=True,use_container_width=True)
     st.download_button('Download all paired cases (CSV)',pairs.to_csv(index=False),
                        file_name='model_comparison_cases.csv',mime='text/csv',key='compare_download')
@@ -290,3 +300,4 @@ with data_tab:
         st.write(f'Observation timing: median absolute offset {offsets.median():.1f} minutes; maximum {offsets.max():.1f} minutes.')
     st.write('Actual A reference hours (UTC):',sorted(pairs.a_init_time.dt.hour.unique().tolist()))
     st.write('Actual B reference hours (UTC):',sorted(pairs.b_init_time.dt.hour.unique().tolist()))
+

@@ -5,6 +5,7 @@ from config import get_obs_time_column, get_obs_filter_time_column, get_pairing_
 from forecast_targets import forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage, forecast_archive_lookback
 from datetime import date, datetime
+from forecast_archive import register_forecast_archive, archive_diagnostics
 
 WEB_APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WEB_APP_DIR.parent
@@ -31,6 +32,7 @@ def fetch_data(
     archive_root=LOCAL_ARCHIVE_ROOT,
     obs_time_tolerance="1h",
     forecast_lead_range=None,
+    refs_root=None,
 ):
     """
     Connects to DuckDB, queries local parquet archives, and returns the raw
@@ -94,10 +96,10 @@ def fetch_data(
         model_read_start = min(query_start, init_date)
     else:
         horizon=(high if forecast_lead_range is not None else max(forecast_hours) if forecast_hours else
-                 forecast_archive_lookback(archive_root,model,element,query_start,model_read_end))
+                 forecast_archive_lookback(archive_root,model,element,query_start,model_read_end,refs_root))
         model_read_start = query_start - pd.Timedelta(hours=horizon)
     modelfiles, missing_modelfiles, source_warnings = resolve_archive_paths(
-        archive_root, model, element, model_read_start, model_read_end)
+        archive_root, model, element, model_read_start, model_read_end,refs_root=refs_root)
     warnings.extend(source_warnings)
 
     if not modelfiles:
@@ -191,7 +193,11 @@ def fetch_data(
             model_params = [modelfiles] + query_stations + [query_start, query_end]
 
     try:
+        register_forecast_archive(con,modelfiles,model,element)
+        modelquery=modelquery.replace('read_parquet(?, union_by_name=true)','forecast_archive')
+        model_params=model_params[1:]
         modeldf = con.execute(modelquery, model_params).df()
+        warnings.extend(archive_diagnostics(modeldf,model))
 
     except Exception as e:
         error_msg = str(e)
@@ -336,3 +342,4 @@ def fetch_data(
     message = "\n\n".join(warnings) if warnings else None
 
     return modeldf, obdf, message
+

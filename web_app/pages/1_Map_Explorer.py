@@ -456,6 +456,7 @@ if st.button("Build Station Metric Map", type="primary"):
             percentile=percentile,
             element=element,
             archive_root=archive_root,
+            refs_root=controls['refs_root'],
             obs_time_tolerance=obs_time_tolerance,
         )
 
@@ -540,6 +541,8 @@ if st.button("Build Station Metric Map", type="primary"):
         st.session_state["station_metrics"] = station_metrics
         st.session_state["station_metrics_context"] = {
             "model": model,
+            "archive_root": archive_root,
+            "refs_root": controls["refs_root"],
             "element": element,
             "obs": obs,
             "percentile": percentile,
@@ -570,6 +573,8 @@ if "station_metrics" in st.session_state:
     result_context = st.session_state.get("station_metrics_context", {})
     current_context = {
             "model": model,
+            "archive_root": archive_root,
+            "refs_root": controls["refs_root"],
             "element": element,
             "obs": obs,
             "percentile": percentile,
@@ -623,4 +628,5 @@ if "station_metrics" in st.session_state:
         hide_index=True,
         column_config={'mnet_id': 'Synoptic Network ID', 'elevation_ft': 'Elevation (ft)'},
     )
+
 

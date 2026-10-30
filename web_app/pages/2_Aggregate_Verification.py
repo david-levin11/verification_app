@@ -9,6 +9,8 @@ ui = PageControls("aggregate")
 from config import CATEGORY_CONFIG, get_element_config, is_probabilistic
 
 from data_loader import fetch_data
+from forecast_archive import probability_description
+from probability import forecast_probability_details
 from wind_verification import filter_observed_speed
 from archive_files import gust_observation_coverage
 from pairing import build_verification_pairs, add_category_columns
@@ -82,6 +84,7 @@ if st.button("Run Aggregate Verification", type="primary"):
             percentile=percentile,
             element=element,
             archive_root=archive_root,
+            refs_root=controls['refs_root'],
             obs_time_tolerance=obs_time_tolerance,
         )
 
@@ -144,6 +147,8 @@ if st.button("Run Aggregate Verification", type="primary"):
         st.session_state["aggregate_summary"] = summary
         st.session_state["aggregate_context"] = {
             "model": model,
+            "archive_root": archive_root,
+            "refs_root": controls["refs_root"],
             "element": element,
             "obs": obs,
             "percentile": percentile,
@@ -170,6 +175,8 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
     result_context = st.session_state.get("aggregate_context", {})
     current_context = {
         "model": model,
+            "archive_root": archive_root,
+            "refs_root": controls["refs_root"],
         "element": element,
         "obs": obs,
         "percentile": percentile,
@@ -232,9 +239,12 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         p3.metric("Reliability error", f"{summary['reliability_error']:.4f}")
         st.caption("Lower is better for both scores. Reliability error is the weighted "
                    "squared calibration error in 10% probability bins. "
-                   "Sparse quantile tails use the nearest available percentile; "
-                   "all-equal quantiles are approximated as a point mass.")
+                   +probability_description(result_context.get('model')=='refs'))
 
+    if result_context.get('model')=='refs':
+        info=forecast_probability_details(merged,element,result_context['threshold'],result_context['threshold_operator'])
+        merged=merged.assign(forecast_probability=info.forecast_prob,probability_source=info.probability_source)
+        st.caption('Probability sources: '+', '.join(f'{name}: {count:,}' for name,count in info.probability_source.value_counts().items()))
     st.subheader("Paired Data Preview")
 
     preview_cols = [
@@ -250,6 +260,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         "obs_window_end",
     ]
 
+    preview_cols += ['n_available','n_expected','complete','statistics_config','forecast_probability','probability_source']
     available_preview_cols = [c for c in preview_cols if c in merged.columns]
 
     st.dataframe(
@@ -370,3 +381,4 @@ else:
         "Choose your settings and click **Run Aggregate Verification**. "
         "Station selections from the Map Explorer page will appear here automatically."
     )
+

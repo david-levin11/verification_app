@@ -8,6 +8,7 @@ quantiles are invalid, rather than silently reordered.
 """
 import numpy as np
 import pandas as pd
+import json
 from config import get_percentile_columns
 
 OPERATORS = (">=", ">", "<=", "<")
@@ -51,25 +52,52 @@ def quantile_probability(values, levels, threshold, operator=">="):
     return float(1 - cdf if operator in (">", ">=") else cdf)
 
 
-def forecast_probabilities(frame, element, threshold, operator=">="):
+def forecast_probability_details(frame, element, threshold, operator=">="):
+    """Use exact archived member events; approximate only unarchived events."""
+    if operator not in OPERATORS:raise ValueError(f'Unsupported threshold operator: {operator}')
     columns = get_percentile_columns(element)
     available = [(col, float(level) / 100)
                  for level, col in columns.items() if col in frame.columns]
-    if len(available) < 2:
-        return pd.Series(np.nan, index=frame.index, dtype=float)
-    cols, levels = zip(*available)
-    values = frame[list(cols)].apply(pd.to_numeric, errors="coerce")
-    return pd.Series(
-        [quantile_probability(row, levels, threshold, operator)
-         for row in values.to_numpy()], index=frame.index, dtype=float)
+    probability=pd.Series(np.nan,index=frame.index,dtype=float)
+    source=pd.Series('quantile approximation',index=frame.index,dtype=object)
+    if len(available)>=2:
+        cols, levels = zip(*available)
+        values = frame[list(cols)].apply(pd.to_numeric, errors="coerce")
+        probability[:]=[quantile_probability(row,levels,threshold,operator) for row in values.to_numpy()]
+    event_column=f'prob_{"gt" if operator==">" else "lt"}_{threshold:g}' if operator in ['>','<'] else None
+    if '_forecast_model' not in frame or not frame['_forecast_model'].eq('refs').any():
+        return pd.DataFrame({'forecast_prob':probability,'probability_source':source},index=frame.index)
+    for position,(_,row) in enumerate(frame.iterrows()):
+        if row.get('_forecast_model')!='refs':continue
+        eligible=row.get('ensemble_eligible',False)
+        if pd.isna(eligible) or not eligible:
+            probability.iloc[position]=np.nan;source.iloc[position]='incomplete ensemble';continue
+        configured=False
+        recipe=row.get('statistics_config')
+        if isinstance(recipe,str):
+            try:
+                settings=json.loads(recipe)
+                configured=settings.get('operator')==operator and any(
+                    float(t)==float(threshold) for t in settings.get('thresholds',[]))
+            except (ValueError,TypeError,AttributeError):
+                probability.iloc[position]=np.nan;source.iloc[position]='invalid probability recipe';continue
+        else:
+            configured=event_column in frame and row.get('probability_operator')==operator
+        if configured and event_column:
+            value=pd.to_numeric(pd.Series([row.get(event_column,np.nan)]),errors='coerce').iloc[0]
+            probability.iloc[position]=value if np.isfinite(value) and 0<=value<=1 else np.nan
+            source.iloc[position]='archived member probability'
+    return pd.DataFrame({'forecast_prob':probability,'probability_source':source},index=frame.index)
+
+
+def forecast_probabilities(frame, element, threshold, operator=">="):
+    return forecast_probability_details(frame,element,threshold,operator).forecast_prob
 
 
 def probability_cases(frame, element, threshold, operator=">=", obs_col="obs_value"):
     observed = pd.to_numeric(frame[obs_col], errors="coerce")
-    result = pd.DataFrame({
-        "forecast_prob": forecast_probabilities(frame, element, threshold, operator),
-        "observed_event": threshold_event(observed, threshold, operator).astype(float),
-    }, index=frame.index)
+    result = forecast_probability_details(frame,element,threshold,operator)
+    result['observed_event']=threshold_event(observed,threshold,operator).astype(float)
     result.loc[~np.isfinite(observed), "observed_event"] = np.nan
     return result.dropna()
 
@@ -97,3 +125,4 @@ def probability_scores(frame, element, threshold, operator=">=", obs_col="obs_va
         "reliability_error": np.average(
             (table.mean_forecast - table.observed_freq) ** 2, weights=table["count"]),
     }
+

@@ -4,6 +4,7 @@ import duckdb
 import pandas as pd
 from forecast_targets import forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage
+from forecast_archive import register_forecast_archive, archive_diagnostics
 from config import (get_model_pair_date_column, get_obs_filter_time_column,
                     get_obs_time_column, get_pairing_method)
 
@@ -24,7 +25,7 @@ def archive_paths(root, model, element, start, end):
 
 
 def load_comparison_data(root, model_a, model_b, obs, element, start, end,
-                         stations, lookback_hours=240, obs_time_tolerance='1h'):
+                         stations, lookback_hours=240, obs_time_tolerance='1h',refs_root=None):
     """Dates select forecast targets; look back for initialization-month files.
 
     Load observations once. Older source months are necessary when a target in
@@ -47,7 +48,7 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
             read_start = start - pd.Timedelta(hours=lookback_hours)
         read_end = hi + (pd.Timedelta(days=1) if not observation and element == "maxt" else pd.Timedelta(0))
         files, missing, source_warnings = resolve_archive_paths(
-            root, model, element, read_start, read_end, observation=observation)
+            root, model, element, read_start, read_end, observation=observation,refs_root=refs_root)
         warnings.extend(source_warnings)
         if not files:
             raise ValueError(f'No usable {model.upper()} {element} archive files were found under {root}. ' + ' '.join(source_warnings))
@@ -56,7 +57,12 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
         with duckdb.connect() as connection:
             # Both aware archive timestamps and naive selection bounds mean UTC.
             connection.execute("SET TimeZone = 'UTC'")
-            schema = connection.execute('SELECT * FROM read_parquet(?, union_by_name=true) LIMIT 0', [files]).df()
+            if not observation:
+                register_forecast_archive(connection,files,model,element)
+                source='forecast_archive';params=[]
+            else:
+                source='read_parquet(?, union_by_name=true)';params=[files]
+            schema = connection.execute(f'SELECT * FROM {source} LIMIT 0',params).df()
             station_column = 'station_id' if 'station_id' in schema else 'stid'
             time_column = (get_obs_filter_time_column(element) if observation else
                            get_model_pair_date_column(element) if get_pairing_method(element) == 'date' else 'valid_time')
@@ -64,10 +70,11 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
                 raise ValueError(f'{model.upper()} archive lacks station ID or {time_column}')
             time_expression = f'"{time_column}"' if observation else forecast_target_sql(model, element)
             # Identifiers come from fixed config/schema; values and paths are bound parameters.
-            statement = (f'SELECT * FROM read_parquet(?, union_by_name=true) '
+            statement = (f'SELECT * FROM {source} '
                          f'WHERE "{station_column}" IN (SELECT unnest(?)) '
                          f'AND ({time_expression}) BETWEEN ? AND ?')
-            frame = connection.execute(statement, [files, stations, lo.to_pydatetime(), hi.to_pydatetime(warn=False)]).df()
+            frame = connection.execute(statement, params+[stations, lo.to_pydatetime(), hi.to_pydatetime(warn=False)]).df()
+        if not observation:warnings.extend(archive_diagnostics(frame,model))
         if observation:
             time_column = get_obs_time_column(element)
             if time_column not in frame:
@@ -79,3 +86,4 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
                     warnings.append(coverage)
         return frame
     return query(model_a), query(model_b), query(obs, True), warnings
+

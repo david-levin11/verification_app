@@ -16,6 +16,9 @@ from temperature_storm import plot_temperature_periods, temperature_snapshot_lab
 from accumulation_storm import plot_accumulation_periods
 from station_distribution import plot_station_distribution
 from comparison_loader import load_comparison_data
+from forecast_archive import refs_root_control, probability_description
+from probability import forecast_probability_details
+from comparison import model_view
 from storm_comparison import (compare_storm_runs, storm_comparison_summary, forecast_label,
                               plot_comparison_evolution, plot_comparison_station)
 from storm_visuals import (snapshot_map_data, render_storm_map, plot_evolution,
@@ -63,6 +66,7 @@ if compare_enabled:
     offset_hours=ui.sidebar.number_input('B initialization offset (hours)',value=0.,step=1.,key='storm_offset_hours')
     reference_hours=ui.sidebar.number_input('Reference-time tolerance (hours)',min_value=0.,value=1.,step=.25,key='storm_reference_hours')
     st.sidebar.caption('B initialization = A initialization + offset. A negative offset uses an earlier B run. One nearest available B run is selected within tolerance. Scores use shared targets and the same matched observation.')
+refs_root=refs_root_control(ui.sidebar,archive_root,'refs' in [model,model_b])
 threshold = ui.sidebar.number_input(f'Event threshold ({cfg["units"]})', value=float(cfg['default_threshold']),
                                     key=f'storm_threshold_{element}')
 operators = ['>=','>','<=','<']
@@ -119,7 +123,7 @@ else:
 st.caption(f'{len(stations):,} stations requested. Maps require metadata coordinates; station plots and scores do not.')
 context=dict(model=model,element=element,obs=obs,percentile=percentile,threshold=threshold,
     operator=operator,minutes=minutes,init=init_text,start=start,end=end,stations=stations,
-    archive_root=archive_root,metadata_path=metadata_path,compare_enabled=compare_enabled,
+    archive_root=archive_root,refs_root=refs_root,metadata_path=metadata_path,compare_enabled=compare_enabled,
     model_b=model_b,percentile_b=percentile_b,offset_hours=offset_hours,reference_hours=reference_hours)
 
 if st.button('Generate Storm Timeseries',type='primary'):
@@ -130,7 +134,7 @@ if st.button('Generate Storm Timeseries',type='primary'):
         if pd.isna(init):raise ValueError('Enter a valid model initialization time.')
         with st.spinner(f'Loading one {model.upper()} run for {len(stations):,} station(s)...'):
             modeldf,obdf,message=fetch_data('Storm Specific Zoom',model,obs,start,end,stations,[],init,
-                {},percentile,element=element,archive_root=archive_root,obs_time_tolerance=f'{minutes}min')
+                {},percentile,element=element,archive_root=archive_root,obs_time_tolerance=f'{minutes}min',refs_root=refs_root)
             if modeldf.empty:raise ValueError(message or 'No model forecasts found for this run and event period.')
             cases=build_storm_cases(modeldf,obdf,model,obs,element,init,percentile,
                 f'{minutes}min',threshold,operator)
@@ -140,9 +144,15 @@ if st.button('Generate Storm Timeseries',type='primary'):
                 try:
                     lookback=max(0.,(pd.Timestamp(start)-init).total_seconds()/3600)+abs(offset_hours)+reference_hours+48
                     _,b_frame,_,comparison_warnings=load_comparison_data(archive_root,model,model_b,obs,element,
-                        start,end,stations,lookback_hours=lookback,obs_time_tolerance=f'{minutes}min')
+                        start,end,stations,lookback_hours=lookback,obs_time_tolerance=f'{minutes}min',refs_root=refs_root)
                     shared,comparison_diagnostics=compare_storm_runs(modeldf,b_frame,obdf,model,model_b,element,init,
                         percentile,percentile_b,offset_hours,f'{reference_hours}h',obs,f'{minutes}min')
+                    if 'refs' in [model,model_b] and not shared.empty:
+                        for side,name in [('a',model),('b',model_b)]:
+                            if is_probabilistic(name,element):
+                                info=forecast_probability_details(model_view(shared,side),element,threshold,operator)
+                                shared[f'{side}_forecast_probability']=info.forecast_prob
+                                shared[f'{side}_probability_source']=info.probability_source
                     # Retain the actual observation windows already resolved for A.
                     edges=[c for c in ['obs_window_start','obs_window_end'] if c in cases and c not in shared]
                     if not shared.empty and edges:
@@ -258,7 +268,7 @@ with spatial:
         st.pyplot(fig);plt.close(fig)
         if metric=='forecast_probability':
             st.caption('Outline: green = event observed; purple = event not observed; gray = no matched observation. Gold marks the selected station.')
-            st.caption('Probabilities are approximated from archived quantiles using the same interpolation and tail assumptions as the other verification pages.')
+            st.caption(probability_description(saved['model']=='refs'))
     if probabilistic:
         st.subheader('Forecast spread and observed coverage')
         st.write('Mean interval width answers the question: “How wide was the forecast uncertainty across these stations?” '
@@ -341,4 +351,5 @@ with detail:
     st.dataframe(cases[cases.station_id.eq(station)],hide_index=True,use_container_width=True)
     if comparing and not shared.empty:
         st.dataframe(shared[shared.station_id.eq(station)],hide_index=True,use_container_width=True)
+
 

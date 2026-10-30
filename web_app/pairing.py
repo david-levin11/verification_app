@@ -18,6 +18,7 @@ rather than element-specific names like wind_speed_kt, precip_accum_6hr, etc.
 from __future__ import annotations
 
 import pandas as pd
+from forecast_archive import ENSEMBLE_COLUMNS
 
 from config import (
     get_element_config,
@@ -287,6 +288,7 @@ def build_verification_pairs(
         "forecast_hour",
         model_col,
     ]
+    optional_model_cols.extend([c for c in modeldf if c in ENSEMBLE_COLUMNS or c.startswith('prob_')])
 
     required_obs_cols = [
         "station_id",
@@ -543,3 +545,4 @@ def add_category_columns(
     df[obs_category_col] = pd.to_numeric(df[obs_category_col], errors="coerce")
 
     return df
+

@@ -2,6 +2,7 @@
 import pandas as pd
 import streamlit as st
 from page_controls import PageControls
+from forecast_archive import refs_root_control
 from config import (MODELS, PERCENTILES, FORECAST_PROJECTION_GROUPS,
     get_available_elements, get_available_obs_sources, get_available_category_sets,
     get_element_config, get_projection_lead_bounds,
@@ -12,6 +13,7 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
     ui = PageControls(page_key).sidebar
     archive_root = ui.text_input('Local Archive Root', '../model', key='ui_archive_root')
     model = ui.selectbox('Model', MODELS, key='ui_model')
+    refs_root=refs_root_control(ui,archive_root,model=='refs')
     elements = get_available_elements(model)
     if not elements:
         st.sidebar.error(f'No elements configured for {model}'); st.stop()
@@ -69,10 +71,11 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
         categories = get_available_category_sets(element)
         if categories:
             category_set = ui.selectbox('Category Set', categories, key=f'ui_category_set_{element}')
-    return dict(archive_root=archive_root, model=model, element=element, obs=obs,
+    return dict(archive_root=archive_root,refs_root=refs_root, model=model, element=element, obs=obs,
         element_cfg=element_cfg, model_is_probabilistic=model_is_probabilistic, percentile=percentile,
         forecast_projection=forecast_projection, forecast_projection_start=forecast_projection_start,
         forecast_projection_end=forecast_projection_end, forecast_hours=forecast_hours, forecast_lead_range=forecast_lead_range,
         start_date=start_date, end_date=end_date, threshold=threshold,
         threshold_operator=threshold_operator, obs_time_tolerance=obs_time_tolerance, category_set=category_set,
         minimum_observed_speed=minimum_observed_speed)
+

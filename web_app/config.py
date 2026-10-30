@@ -17,6 +17,8 @@ MODELS = [
     "hrrr",
     "ndfd",
     "urma",
+    "rrfs",
+    "refs",
 ]
 
 OBS_SOURCES = [
@@ -45,6 +47,8 @@ ELEMENTS = [
 # Based on archiver_config AVAILABLE_FIELDS, but normalized to lowercase names.
 
 AVAILABLE_ELEMENTS_BY_MODEL = {
+    "rrfs": ["wind", "gust", "rh", "precip6hr"],
+    "refs": ["wind", "gust", "rh", "precip6hr"],
     "nbm": [
         "wind",
         "gust",
@@ -113,6 +117,8 @@ AVAILABLE_ELEMENTS_BY_MODEL = {
 # NBMQMD and NBMQMD_EXP retain their separately archived quantile distributions.
 
 PROBABILISTIC_ELEMENTS_BY_MODEL = {
+    "rrfs": [],
+    "refs": ["wind", "gust", "rh", "precip6hr"],
     "nbm": [
         "snow6hr",
         "snow24hr",
@@ -251,7 +257,7 @@ ELEMENT_CONFIG = {
         "units": "in",
         "available_obs_sources": ["obs"],
         "obs_time_column": "end_time",
-        "model_value_candidates": ["precip_accum_6hr", "precip_accum", "precip6hr"],
+        "model_value_candidates": ["verification_precip_6h", "precip_6h", "precip_accum_6hr", "precip6hr", "precip_accum"],
         "obs_value_candidates": [
             "precip_total",
             "precip_6h",
@@ -623,3 +629,4 @@ def get_map_metrics(model: str, element: str) -> list[str]:
         return PROBABILISTIC_MAP_METRICS
 
     return DETERMINISTIC_MAP_METRICS
+

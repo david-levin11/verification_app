@@ -1,5 +1,44 @@
 # Storm verification: wind, gust, RH, and maximum/minimum temperature
 
+## Comparing two models within a storm
+
+Enable **Compare another model** to compare the primary run (A) with one B run.
+Choose B from models supporting the selected element, its fixed verification
+percentile when probabilistic (default p50), an initialization offset, and a
+reference-time tolerance. B's requested initialization is A's plus the offset;
+negative offsets select older guidance. The nearest available B initialization
+within tolerance is chosen once for the entire storm, with earlier runs winning
+equal-distance ties. Missing projections never borrow a different B run.
+The selected initialization and requested offset are displayed explicitly.
+
+Matching reuses Model Comparison's station/target/reference and observation
+rules. Scores use only cases with both forecasts and the identical matched
+observation. Point fields match shared valid times, daily extrema use the shared
+forecast-date convention, and precipitation requires the correct accumulation
+duration plus endpoint tolerance. No temporal interpolation is performed. The
+selected percentiles remain fixed across the event; boxes still show the full
+available distribution. All archived lead hours are eligible.
+
+The spatial tab adds **Model absolute-error difference**: absolute error of A
+minus absolute error of B. Negative values favor A, positive favor B, and zero
+is a tie. Its color bar is symmetric around zero and only shared matched stations
+are plotted. Other map options and single-model uncertainty diagnostics keep
+their original coverage and are labeled separately.
+
+Evolution adds shared-case bias/MAE curves for both models and shared station
+counts. Targets without shared cases remain empty, breaking the score curves.
+The fixed-station option requires shared matches at every A target for this
+comparison. Existing primary-model evolution/uncertainty plots remain available.
+
+Station detail overlays A (blue), B (orange), and the shared observation (red).
+Probabilistic forecasts have p25–p75 boxes, p5–p95 whiskers, p50 median lines,
+and a marker for the percentile used in scoring. Deterministic guidance has
+distinct point symbols. Both probabilistic and both deterministic comparisons
+are supported. Temperature observation windows and precipitation forecast/obs
+windows remain visible. Full shared cases, references, leads, observation timing,
+and point errors can be downloaded as CSV. If no B run or shared cases exist,
+diagnostics explain the empty comparison and the primary results remain usable.
+
 Storm Specific Zoom explores one archived model initialization. Choose the element,
 event dates, observation tolerance, and either the shared Map Explorer selection
 or metadata filters. Network and elevation filters have

@@ -11,7 +11,7 @@ from storm_analysis import available_intervals
 
 
 def map_colormap(metric):
-    return plt.get_cmap('RdBu_r' if metric in ['observed_percentile','error','median_error'] else 'viridis')
+    return plt.get_cmap('RdBu_r' if metric in ['observed_percentile','error','median_error','absolute_error_difference'] else 'viridis')
 
 
 def map_colorbar(metric, limits, label, units):
@@ -77,7 +77,7 @@ def snapshot_map_data(snapshot, metadata, metric):
         return data, None, None
     if metric in ['observed_percentile','forecast_probability']:
         low, high = (0.,100.) if metric=='observed_percentile' else (0.,1.)
-    elif metric in ['error','median_error']:
+    elif metric in ['error','median_error','absolute_error_difference']:
         bound = max(float(data[metric].abs().max()), 1e-6)
         low, high = -bound, bound
     elif metric in ['model_value','obs_value']:
@@ -154,3 +154,4 @@ def plot_evolution(summary, intervals, units, date_based=False):
     if date_based:fig.autofmt_xdate()
     fig.tight_layout()
     return fig
+

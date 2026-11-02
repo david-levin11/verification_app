@@ -314,14 +314,18 @@ with detail:
     station=ui.selectbox('Station detail',station_options,
         index=station_options.index(saved['stations'][0]) if saved['stations'][0] in station_options else 0,
         key='storm_detail_station')
+    refs_plume=saved['element'] in ['wind','gust'] and (
+        saved['model']=='refs' or (comparing and saved.get('model_b')=='refs'))
+    plume_options=(dict(observations=result['obdf'],plot_start=saved['start'],plot_end=saved['end'])
+                   if refs_plume else {})
     if comparing and not shared.empty:
         fig=plot_comparison_station(shared,station,saved['model'],saved['model_b'],saved['element'],
-            saved['percentile'],saved['percentile_b'],saved['threshold'],saved['operator'])
+            saved['percentile'],saved['percentile_b'],saved['threshold'],saved['operator'],**plume_options)
         st.caption('Comparison overlay uses shared matched periods. Blue = A; orange = B; red points = the shared observations. Boxes span p25–p75, whiskers p5–p95, and median lines p50. Symbols mark the fixed percentile used for scoring, or the deterministic forecast. No interpolation fills missing forecast steps.')
         if fig is None:st.info('This station has no shared matched periods. Select another station; its primary-model cases remain in the table below.')
     elif probabilistic:
         fig=plot_station_distribution(cases,station,saved['model'],saved['element'],
-                                      saved['threshold'],saved['operator'])
+                                      saved['threshold'],saved['operator'],**plume_options)
     elif daily:
         fig=plot_temperature_periods(cases,station,saved['model'],saved['element'],saved['percentile'],
                                      saved['threshold'],saved['operator'])
@@ -341,6 +345,8 @@ with detail:
     if fig is not None:
         if saved['element']=='rh':fig.axes[0].set_ylim(0,100)
         st.pyplot(fig);plt.close(fig)
+    if refs_plume:
+        st.caption('The REFS station plume answers the question: “How did the forecast distribution compare with all observed reports during the requested period?” Small red points show every available report at its actual UTC timestamp; larger red points identify observations used for verification. Boxes span p25–p75, whiskers p5–p95, and median lines p50. Reports between forecast projections provide visual context; matching, scores, and ensemble completeness rules are unchanged.')
     if probabilistic and not (comparing and not shared.empty):
         st.caption('Each box spans p25–p75; whiskers end at p5 and p95; the line inside is p50. Red points are matched observations, including those outside the whiskers. These are forecast quantiles, not sample-based whiskers or minimum–maximum values.')
     point=saved['percentile']
@@ -351,5 +357,6 @@ with detail:
     st.dataframe(cases[cases.station_id.eq(station)],hide_index=True,use_container_width=True)
     if comparing and not shared.empty:
         st.dataframe(shared[shared.station_id.eq(station)],hide_index=True,use_container_width=True)
+
 
 

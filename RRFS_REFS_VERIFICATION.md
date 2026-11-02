@@ -80,8 +80,27 @@ use the same observation and shared targets, with existing reference offsets.
 
 ## Validation
 
+### Storm station wind/gust plumes
+
+REFS Station detail places the p25–p75 boxes, p5–p95 whiskers and p50 medians on
+an actual UTC time axis. Small red points show every finite observation for the
+selected station within the requested plot dates, including reports between
+forecast steps. Larger red markers identify observations used for verification
+and use their archived report timestamps when available. Date selections include
+the entire end date; reporting-tolerance padding outside that range is not shown.
+Zeros remain valid, other stations are excluded, and missing reports stay missing.
+No hourly aggregation or resampling removes reports.
+
+This overlay also applies to the shared-case comparison plot when REFS is A or B.
+The comparison's forecast boxes and score markers still use shared matched cases;
+the extra observed points provide event context only. Matching tolerances,
+completeness, scores and downloaded verification cases are unchanged. Non-REFS
+plots and precipitation/temperature measurement-window displays retain their
+existing behavior.
+
 Synthetic Parquet tests exercise both loaders, all four pages and all four elements,
 separate wind/gust rows, custom roots, initialization-month boundaries, scheduled
 departures versus missing members, strict versus inclusive events, probability
 source/missingness, and legacy/mixed precipitation schemas. Production files remain
 unchanged; a production smoke test should use the actual archive paths and dates.
+

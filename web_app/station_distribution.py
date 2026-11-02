@@ -6,9 +6,11 @@ import matplotlib.dates as mdates
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from config import get_element_config, get_percentile_columns
+from station_observations import plume_positions,add_report_overlay,format_plume_axis
 
 
-def plot_station_distribution(cases, station, model, element, threshold, operator='>='):
+def plot_station_distribution(cases, station, model, element, threshold, operator='>=',
+                              observations=None,plot_start=None,plot_end=None):
     """Draw supplied quantiles directly; whiskers are p5/p95, not Tukey fences."""
     data = cases[cases.station_id.eq(station)].sort_values('target_time').copy()
     if data.empty:
@@ -30,6 +32,9 @@ def plot_station_distribution(cases, station, model, element, threshold, operato
         fig, ax = plt.subplots(figsize=(11, 6))
         window_ax = None
     positions = np.arange(len(data), dtype=float)
+    plume=observations is not None and element in ['wind','gust']
+    spacing=1.
+    if plume:positions,spacing=plume_positions(data.target_time)
     columns = get_percentile_columns(element)
     required = [columns[p] for p in ['5', '25', '50', '75', '95']]
     values = data.reindex(columns=required).apply(pd.to_numeric, errors='coerce').to_numpy()
@@ -39,14 +44,21 @@ def plot_station_distribution(cases, station, model, element, threshold, operato
     statistics = [dict(whislo=q[0], q1=q[1], med=q[2], q3=q[3], whishi=q[4], fliers=[])
                   for q in values[valid]]
     if statistics:
-        ax.bxp(statistics, positions=positions[valid], widths=.5, manage_ticks=False,
+        ax.bxp(statistics, positions=positions[valid], widths=.5*spacing, manage_ticks=False,
             showfliers=False, patch_artist=True,
             boxprops={'facecolor': '#99ccff', 'edgecolor': '#003399'},
             medianprops={'color': '#000066', 'linewidth': 2},
             whiskerprops={'color': '#003399'}, capprops={'color': '#003399'})
     observed = pd.to_numeric(data.obs_value, errors='coerce').to_numpy(dtype=float)
     matched = np.isfinite(observed)
-    ax.scatter(positions[matched], observed[matched], color='#cc0000', edgecolors='white',
+    matched_positions=positions.copy()
+    if plume:
+        add_report_overlay(ax,observations,station,element,plot_start,plot_end)
+        if 'obs_valid_time' in data:
+            times=pd.to_datetime(data.obs_valid_time,utc=True,errors='coerce').dt.tz_convert(None)
+            known=times.notna().to_numpy()
+            matched_positions[known]=mdates.date2num(times[known].to_numpy())
+    ax.scatter(matched_positions[matched], observed[matched], color='#cc0000', edgecolors='white',
                linewidths=.6, s=45, zorder=4, label='Matched observation')
     ax.axhline(threshold, color='#666666', linestyle=':', linewidth=1,
                label=f'Event threshold: {operator} {threshold:g} {cfg["units"]}')
@@ -60,6 +72,7 @@ def plot_station_distribution(cases, station, model, element, threshold, operato
     ax.set_xticks(positions, labels, rotation=30, ha='right')
     ax.set_xlim(-.6, len(data)-.4)
     ax.set_xlabel('Forecast date used for verification' if daily else 'Forecast valid time (UTC) and projection')
+    if plume:format_plume_axis(ax,positions,spacing,plot_start,plot_end)
     ax.set_ylabel(f'{cfg["label"]} ({"°F" if daily else cfg["units"]})')
     ax.set_title(f'{model.upper()} {cfg["label"]} at {station}\nInitialized {data.init_time.iloc[0]:%Y-%m-%d %H:%M} UTC')
     handles, legend_labels = ax.get_legend_handles_labels()
@@ -94,3 +107,4 @@ def plot_station_distribution(cases, station, model, element, threshold, operato
         window_ax.legend(fontsize=8)
     fig.tight_layout()
     return fig
+

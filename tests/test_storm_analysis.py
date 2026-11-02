@@ -161,6 +161,9 @@ def test_storm_page_load_snapshots_evolution_and_station_detail(tmp_path,monkeyp
     from streamlit.testing.v1 import AppTest
     import storm_visuals
     m,o=frames(element,probabilistic)
+    if model=='nbm':
+        m['init_time']+=pd.Timedelta(hours=1)
+        m['forecast_hour']-=1
     for name,frame in [(model,m),('obs',o)]:
         folder=tmp_path/name/element;folder.mkdir(parents=True,exist_ok=True)
         frame.to_parquet(folder/'2026_05_archive.parquet',index=False)
@@ -176,7 +179,9 @@ def test_storm_page_load_snapshots_evolution_and_station_detail(tmp_path,monkeyp
     app.text_input(key='storm_metadata').set_value(str(meta))
     app.selectbox(key='storm_Model').set_value(model).run()
     app.selectbox(key='storm_Element').set_value(element).run()
-    app.text_input(key='storm_Model Init Time (YYYY-MM-DD HH:MM:SS)').set_value('2026-05-01 00:00:00')
+    _selected_init=m.init_time.iloc[0]
+    app.date_input(key='storm_init_date').set_value(_selected_init.date())
+    app.selectbox(key='storm_init_hour').set_value(_selected_init.hour)
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,5,1))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,5,2))
     app.session_state['selected_station_list']=['A','B']
@@ -199,3 +204,4 @@ def test_storm_page_load_snapshots_evolution_and_station_detail(tmp_path,monkeyp
     app.sidebar.number_input(key=f'storm_threshold_{element}').set_value(99.).run()
     assert app.session_state['storm_result']['context']['threshold']!=99
     assert any('Controls have changed' in x.value for x in app.info)
+

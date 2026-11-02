@@ -97,11 +97,14 @@ def test_refs_page_passes_full_observations_and_requested_bounds(tmp_path,monkey
     app.text_input(key='storm_metadata').set_value(str(meta))
     app.selectbox(key='storm_Model').set_value('refs').run()
     app.text_input(key='storm_refs_root').set_value(str(derived))
-    app.text_input(key='storm_Model Init Time (YYYY-MM-DD HH:MM:SS)').set_value(str(init))
+    _selected_init=pd.Timestamp(str(init))
+    app.date_input(key='storm_init_date').set_value(_selected_init.date())
+    app.selectbox(key='storm_init_hour').set_value(_selected_init.hour)
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,10,1))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,10,3))
     next(b for b in app.button if b.label=='Generate Storm Timeseries').click().run(timeout=30)
     assert not app.exception and not app.error,[x.value for x in app.exception]+[x.value for x in app.error]
     assert calls and len(calls[-1]['observations'])>len(app.session_state['storm_result']['cases'])
+    assert calls[-1]['style']=='plume'
     assert calls[-1]['plot_start']==date(2026,10,1) and calls[-1]['plot_end']==date(2026,10,3)
     assert any('Small red points show every available report' in x.value for x in app.caption)

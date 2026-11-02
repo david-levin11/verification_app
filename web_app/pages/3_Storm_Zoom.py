@@ -15,6 +15,7 @@ from storm_analysis import build_storm_cases, available_intervals, interval_summ
 from temperature_storm import plot_temperature_periods, temperature_snapshot_label
 from accumulation_storm import plot_accumulation_periods
 from station_distribution import plot_station_distribution
+from storm_initialization import initialization_controls
 from comparison_loader import load_comparison_data
 from forecast_archive import refs_root_control, probability_description
 from probability import forecast_probability_details
@@ -94,7 +95,7 @@ except Exception as exc:
     st.warning(f'Could not read metadata: {exc}')
     metadata = pd.DataFrame()
 
-init_text = ui.text_input('Model Init Time (YYYY-MM-DD HH:MM:SS)','2026-02-21 00:00:00')
+init_text = initialization_controls(ui,model,element).strftime('%Y-%m-%d %H:%M:%S')
 left,right = ui.columns(2)
 start = left.date_input('Plot Start Date',pd.Timestamp('2026-02-21'))
 end = right.date_input('Plot End Date',pd.Timestamp('2026-02-24'))
@@ -314,14 +315,18 @@ with detail:
     station=ui.selectbox('Station detail',station_options,
         index=station_options.index(saved['stations'][0]) if saved['stations'][0] in station_options else 0,
         key='storm_detail_station')
-    refs_plume=saved['element'] in ['wind','gust'] and (
-        saved['model']=='refs' or (comparing and saved.get('model_b')=='refs'))
-    plume_options=(dict(observations=result['obdf'],plot_start=saved['start'],plot_end=saved['end'])
-                   if refs_plume else {})
+    report_plume=saved['element'] in ['wind','gust'] and (
+        probabilistic or (comparing and is_probabilistic(saved.get('model_b'),saved['element'])))
+    plume_options=dict(style='box' if daily else 'plume')
+    if report_plume:
+        plume_options.update(observations=result['obdf'],plot_start=saved['start'],plot_end=saved['end'])
     if comparing and not shared.empty:
         fig=plot_comparison_station(shared,station,saved['model'],saved['model_b'],saved['element'],
             saved['percentile'],saved['percentile_b'],saved['threshold'],saved['operator'],**plume_options)
-        st.caption('Comparison overlay uses shared matched periods. Blue = A; orange = B; red points = the shared observations. Boxes span p25–p75, whiskers p5–p95, and median lines p50. Symbols mark the fixed percentile used for scoring, or the deterministic forecast. No interpolation fills missing forecast steps.')
+        st.caption('Comparison overlay uses shared matched periods. Blue = A; orange = B; red points = the shared observations. '+
+                   ('Boxes span p25–p75, whiskers p5–p95, and median lines p50. ' if daily else
+                    'Darker shading spans p25–p75, lighter shading p5–p95, and the central line is p50. ')+
+                   'Symbols mark the fixed percentile used for scoring, or the deterministic forecast. Connecting archived forecast points is for display only; verification uses available matched cases.')
         if fig is None:st.info('This station has no shared matched periods. Select another station; its primary-model cases remain in the table below.')
     elif probabilistic:
         fig=plot_station_distribution(cases,station,saved['model'],saved['element'],
@@ -345,10 +350,11 @@ with detail:
     if fig is not None:
         if saved['element']=='rh':fig.axes[0].set_ylim(0,100)
         st.pyplot(fig);plt.close(fig)
-    if refs_plume:
-        st.caption('The REFS station plume answers the question: “How did the forecast distribution compare with all observed reports during the requested period?” Small red points show every available report at its actual UTC timestamp; larger red points identify observations used for verification. Boxes span p25–p75, whiskers p5–p95, and median lines p50. Reports between forecast projections provide visual context; matching, scores, and ensemble completeness rules are unchanged.')
+    if report_plume:
+        st.caption('The station plume answers the question: “How did the forecast distribution compare with all observed reports during the requested period?” Small red points show every available report at its actual UTC timestamp; larger red points identify observations used for verification. Darker shading spans p25–p75, lighter shading p5–p95, and the central line is p50. Reports between forecast projections provide visual context; matching, scores, and ensemble completeness rules are unchanged.')
     if probabilistic and not (comparing and not shared.empty):
-        st.caption('Each box spans p25–p75; whiskers end at p5 and p95; the line inside is p50. Red points are matched observations, including those outside the whiskers. These are forecast quantiles, not sample-based whiskers or minimum–maximum values.')
+        st.caption('Each box spans p25–p75; whiskers end at p5 and p95; the line inside is p50. Red points are matched observations.' if daily else
+                   'Darker shading spans p25–p75; lighter shading spans p5–p95; the central line is p50. Red points are matched observations. Lines connect archived forecast points for display; verification uses the original cases.')
     point=saved['percentile']
     st.caption((f'Point error uses p{point}; the median-error map always uses p50. ' if probabilistic else '')+
                ('Temperatures are compared by the configured forecast date. The window strip, when available, shows actual observed measurement periods; no forecast window is inferred from an archive timestamp.'

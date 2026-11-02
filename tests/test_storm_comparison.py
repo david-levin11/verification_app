@@ -132,7 +132,9 @@ def test_storm_comparison_page_and_saved_request(tmp_path,monkeypatch,element):
     app.checkbox(key='storm_compare_enabled').set_value(True).run()
     app.selectbox(key='storm_model_b').set_value('nbm').run()
     app.selectbox(key=f'storm_percentile_{element}').set_value('50')
-    app.text_input(key='storm_Model Init Time (YYYY-MM-DD HH:MM:SS)').set_value('2026-06-29')
+    _selected_init=pd.Timestamp('2026-06-29')
+    app.date_input(key='storm_init_date').set_value(_selected_init.date())
+    app.selectbox(key='storm_init_hour').set_value(_selected_init.hour)
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,6,30))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,7,1))
     next(b for b in app.button if b.label=='Generate Storm Timeseries').click().run(timeout=30)
@@ -150,3 +152,4 @@ def test_storm_comparison_page_and_saved_request(tmp_path,monkeypatch,element):
     assert not app.exception and not app.error
     assert app.session_state['storm_result']['shared'].empty
     assert any('No shared verification cases' in x.value for x in app.warning)
+

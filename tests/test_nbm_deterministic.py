@@ -114,7 +114,9 @@ def test_nbm_runs_all_four_pages_without_percentile_controls(tmp_path,monkeypatc
     app.selectbox(key='storm_Model').set_value('nbm').run()
     app.selectbox(key='storm_Element').set_value(element).run()
     assert not any(s.label=='Verification Percentile' for s in app.selectbox)
-    app.text_input(key='storm_Model Init Time (YYYY-MM-DD HH:MM:SS)').set_value(str(m.init_time.iloc[0]))
+    _selected_init=pd.Timestamp(str(m.init_time.iloc[0]))
+    app.date_input(key='storm_init_date').set_value(_selected_init.date())
+    app.selectbox(key='storm_init_hour').set_value(_selected_init.hour)
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,6,30))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,7,1))
     next(b for b in app.button if b.label=='Generate Storm Timeseries').click().run(timeout=30)
@@ -165,3 +167,4 @@ def test_accumulation_storm_windows_zeros_missing_obs_and_duration_filter(elemen
     fig=plot_accumulation_periods(probabilistic,'A','nbmqmd',element,'50')
     assert any('p25–p75'==collection.get_label() for collection in fig.axes[0].collections)
     plt.close(fig)
+

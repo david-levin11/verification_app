@@ -153,7 +153,9 @@ def test_temperature_storm_page_period_selector_plots_and_threshold_direction(tm
     app.selectbox(key='storm_Element').set_value(element).run()
     assert not any(n.label=='Observation tolerance (minutes)' for n in app.number_input)
     assert app.selectbox(key=f'storm_operator_{element}').value==('<=' if element=='mint' else '>=')
-    app.text_input(key='storm_Model Init Time (YYYY-MM-DD HH:MM:SS)').set_value('2026-06-29')
+    _selected_init=pd.Timestamp('2026-06-29')
+    app.date_input(key='storm_init_date').set_value(_selected_init.date())
+    app.selectbox(key='storm_init_hour').set_value(_selected_init.hour)
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,6,30))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,7,1))
     next(b for b in app.button if b.label=='Generate Storm Timeseries').click().run(timeout=30)
@@ -164,3 +166,4 @@ def test_temperature_storm_page_period_selector_plots_and_threshold_direction(tm
     assert renders and renders[-1]['records'][0]['obs_window_start']
     assert not any('observation tolerance ±' in x.value for x in app.caption)
     assert any('Observed measurement periods' in x.value or 'actual observed measurement periods' in x.value for x in app.caption)
+

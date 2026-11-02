@@ -179,7 +179,9 @@ def test_models_run_all_four_pages(tmp_path,monkeypatch,element,model):
     app.selectbox(key='storm_model_b').set_value('refs' if model=='rrfs' else 'rrfs').run()
     app.text_input(key='storm_refs_root').set_value(str(derived))
     if model=='refs':app.selectbox(key=f'storm_percentile_{element}').set_value('50')
-    app.text_input(key='storm_Model Init Time (YYYY-MM-DD HH:MM:SS)').set_value(str(init))
+    _selected_init=pd.Timestamp(str(init))
+    app.date_input(key='storm_init_date').set_value(_selected_init.date())
+    app.selectbox(key='storm_init_hour').set_value(_selected_init.hour)
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,10,1))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,10,3))
     next(b for b in app.button if b.label=='Generate Storm Timeseries').click().run(timeout=30)
@@ -200,3 +202,4 @@ def test_models_run_all_four_pages(tmp_path,monkeypatch,element,model):
     assert not app.exception and not app.error,[e.value for e in app.exception]+[e.value for e in app.error]
     result=app.session_state['comparison_result']
     assert len(result['cases'])==9 and result['summary_a']['n_prob']==9
+

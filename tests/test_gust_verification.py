@@ -231,11 +231,14 @@ def test_gust_page_flows_and_minimum_filters(tmp_path, monkeypatch):
         return original(*args, **kwargs)
     monkeypatch.setattr(plots, 'plot_storm_timeseries', capture)
     app.switch_page('pages/3_Storm_Zoom.py').run()
+    app.selectbox(key='storm_Model').set_value('hrrr').run()
     app.text_input(key='storm_Local Archive Root').set_value(str(tmp_path))
     app.selectbox(key='storm_Element').set_value('gust').run()
     app.session_state['selected_station_list']=['A']
     app.radio(key='storm_station_scope').set_value('Map Explorer selections').run()
-    app.text_input(key='storm_Model Init Time (YYYY-MM-DD HH:MM:SS)').set_value('2026-05-01 00:00:00')
+    _selected_init=pd.Timestamp('2026-05-01 00:00:00')
+    app.date_input(key='storm_init_date').set_value(_selected_init.date())
+    app.selectbox(key='storm_init_hour').set_value(_selected_init.hour)
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,5,2))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,5,2))
     next(b for b in app.button if b.label=='Generate Storm Timeseries').click().run(timeout=30)
@@ -252,3 +255,4 @@ def test_loader_handles_archive_paths_with_quotes(tmp_path):
         date(2026,5,2),date(2026,5,2),['A'],None,None,{},None,element='gust',archive_root=root)
     assert len(model)==3 and len(observations)==3
     assert 'Database error' not in (message or '')
+

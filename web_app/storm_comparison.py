@@ -7,6 +7,7 @@ from matplotlib.patches import Patch
 from comparison import prepare_forecasts, comparison_cases
 from config import get_element_config, get_percentile_columns, is_probabilistic
 from station_observations import plume_positions,add_report_overlay,format_plume_axis
+from quantile_plume import draw_quantile_plume
 
 
 def compare_storm_runs(a, b, observations, model_a, model_b, element, init,
@@ -85,7 +86,7 @@ def plot_comparison_evolution(summary, label_a, label_b, units):
 
 def plot_comparison_station(shared, station, model_a, model_b, element,
                             percentile_a, percentile_b, threshold, operator='>=',
-                            observations=None,plot_start=None,plot_end=None):
+                            observations=None,plot_start=None,plot_end=None,style='box'):
     data = shared[shared.station_id.eq(station)].sort_values('target_time')
     if data.empty:
         return None
@@ -108,8 +109,9 @@ def plot_comparison_station(shared, station, model_a, model_b, element,
         fig, ax = plt.subplots(figsize=(11,6)); wax=None
     positions = np.arange(len(data),dtype=float)
     plume=observations is not None and element in ['wind','gust']
+    shaded=style=='plume'
     spacing=1.
-    if plume:positions,spacing=plume_positions(data.target_time)
+    if plume or shaded:positions,spacing=plume_positions(data.target_time)
     handles = []
     columns = get_percentile_columns(element)
     for side, model, percentile, offset, color, marker in [
@@ -126,30 +128,32 @@ def plot_comparison_station(shared, station, model_a, model_b, element,
             for i, row in enumerate(full):
                 valid[i] &= (np.diff(row[np.isfinite(row)])>=0).all()
             stats = [dict(whislo=q[0],q1=q[1],med=q[2],q3=q[3],whishi=q[4],fliers=[]) for q in values[valid]]
-            if stats:
+            if shaded:
+                draw_quantile_plume(ax,positions,values,valid,color,f'{side.upper()}: {model.upper()}')
+            elif stats:
                 ax.bxp(stats,positions=positions[valid]+offset*spacing,widths=.25*spacing,manage_ticks=False,
                     showfliers=False,patch_artist=True,
                     boxprops={'facecolor':color,'edgecolor':color,'alpha':.25},
                     medianprops={'color':color,'linewidth':2},
                     whiskerprops={'color':color},capprops={'color':color})
             if (~valid).any():
-                ax.text(.01,.99-(.05 if side=='b' else 0),f'{side.upper()}: {(~valid).sum()} incomplete/invalid box(es) omitted.',
+                ax.text(.01,.99-(.05 if side=='b' else 0),f'{side.upper()}: {(~valid).sum()} incomplete/invalid '+('band(s) omitted.' if shaded else 'box(es) omitted.'),
                         transform=ax.transAxes,va='top',fontsize=8)
-            handles.append(Patch(facecolor=color,alpha=.25,label=f'{side.upper()}: {model.upper()} p25–p75 box; p5–p95 whiskers; p50 line'))
-        ax.scatter(positions+offset*spacing,data[f'{side}_model_value'],marker=marker,color=color,s=25,zorder=4,label=label)
+            if not shaded:handles.append(Patch(facecolor=color,alpha=.25,label=f'{side.upper()}: {model.upper()} p25–p75 box; p5–p95 whiskers; p50 line'))
+        ax.scatter(positions+(0 if shaded else offset*spacing),data[f'{side}_model_value'],marker=marker,color=color,s=25,zorder=4,label=label)
     matched_positions=positions.copy()
     if plume:
         add_report_overlay(ax,observations,station,element,plot_start,plot_end)
-        if 'obs_valid_time' in data:
-            times=pd.to_datetime(data.obs_valid_time,utc=True,errors='coerce').dt.tz_convert(None)
-            known=times.notna().to_numpy()
-            matched_positions[known]=mdates.date2num(times[known].to_numpy())
+    if (plume or shaded) and 'obs_valid_time' in data:
+        times=pd.to_datetime(data.obs_valid_time,utc=True,errors='coerce').dt.tz_convert(None)
+        known=times.notna().to_numpy()
+        matched_positions[known]=mdates.date2num(times[known].to_numpy())
     ax.scatter(matched_positions,data.obs_value,color='#cc0000',edgecolors='white',s=48,zorder=5,label='Shared matched observation')
     ax.axhline(threshold,color='#666666',linestyle=':',label=f'Threshold: {operator} {threshold:g} {cfg["units"]}')
     labels = [pd.Timestamp(t).strftime('%Y-%m-%d' if daily else '%m-%d\n%H:%M') for t in data.target_time]
     ax.set_xticks(positions,labels,rotation=30,ha='right'); ax.set_xlim(-.6,len(data)-.4)
     ax.set_xlabel('Forecast date used for verification' if daily else 'Forecast valid time (UTC)')
-    if plume:format_plume_axis(ax,positions,spacing,plot_start,plot_end)
+    if plume or shaded:format_plume_axis(ax,positions,spacing,plot_start,plot_end)
     ax.set_ylabel(f'{cfg["label"]} ({"°F" if daily else cfg["units"]})')
     ax.set_title(f'{cfg["label"]} at {station}\nA: {model_a.upper()} initialized {data.a_init_time.iloc[0]:%Y-%m-%d %H:%M} UTC; '
                  f'B: {model_b.upper()} initialized {data.b_init_time.iloc[0]:%Y-%m-%d %H:%M} UTC')
@@ -158,12 +162,13 @@ def plot_comparison_station(shared, station, model_a, model_b, element,
     if element=='rh':ax.set_ylim(0,100)
     elif duration:ax.set_ylim(bottom=-.03*max(ax.get_ylim()[1],.01))
     if wax is not None:
+        window_positions=np.arange(len(data),dtype=float)
         for i,(label,start,end,color) in enumerate(windows):
             good = start.notna() & end.notna() & end.gt(start)
-            wax.hlines(positions[good]+(i-(len(windows)-1)/2)*.18,
+            wax.hlines(window_positions[good]+(i-(len(windows)-1)/2)*.18,
                 mdates.date2num(pd.to_datetime(start[good]).to_numpy()),
                 mdates.date2num(pd.to_datetime(end[good]).to_numpy()),color=color,linewidth=3,label=label)
-        wax.set_yticks(positions,labels);wax.invert_yaxis();wax.xaxis_date()
+        wax.set_yticks(window_positions,labels);wax.invert_yaxis();wax.xaxis_date()
         wax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d\n%H:%M'))
         wax.set_xlabel('Observed measurement windows (UTC)' if daily else 'Forecast and observed accumulation windows (UTC)')
         wax.grid(alpha=.25);wax.legend(fontsize=8)

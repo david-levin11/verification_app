@@ -16,7 +16,7 @@ rules. Scores use only cases with both forecasts and the identical matched
 observation. Point fields match shared valid times, daily extrema use the shared
 forecast-date convention, and precipitation requires the correct accumulation
 duration plus endpoint tolerance. No temporal interpolation is performed. The
-selected percentiles remain fixed across the event; boxes still show the full
+selected percentiles remain fixed across the event; intervals still show the full
 available distribution. All archived lead hours are eligible.
 
 The spatial tab adds **Model absolute-error difference**: absolute error of A
@@ -31,7 +31,7 @@ The fixed-station option requires shared matches at every A target for this
 comparison. Existing primary-model evolution/uncertainty plots remain available.
 
 Station detail overlays A (blue), B (orange), and the shared observation (red).
-Probabilistic forecasts have p25–p75 boxes, p5–p95 whiskers, p50 median lines,
+Probabilistic time series have p25–p75 and p5–p95 shaded bands, percentile boundary lines, p50 median lines,
 and a marker for the percentile used in scoring. Deterministic guidance has
 distinct point symbols. Both probabilistic and both deterministic comparisons
 are supported. Temperature observation windows and precipitation forecast/obs
@@ -91,17 +91,22 @@ cohort requires a matched observation (and valid interval bounds, where availabl
 at every loaded forecast projection. Otherwise the station population can change
 with projection, and the counts make this visible.
 
-Station detail shows archived forecast quantiles as box-and-whisker plots for all
-probabilistic elements: boxes span p25–p75, whiskers end at p5/p95, and the median
-line is p50. These are supplied forecast quantiles, not Tukey/sample whiskers or
-minimum–maximum values. Red points show the observation matched to each forecast
-period, including values outside the whiskers. Missing observations stay missing.
-Incomplete or crossing distributions have no box; valid tied/zero distributions
-are retained. No forecast distribution is pooled across dates or stations.
-Point-error scores still use the selected verification percentile; the box median
-and median-error map always use p50. RH axes use 0–100%. Case tables retain actual
-report times and offsets. Daily temperatures and precipitation retain a separate
-measurement-window strip; precipitation also shows forecast windows.
+Station detail uses the same shaded plume style for REFS, NBMQMD and other
+probabilistic time series. Darker shading spans p25–p75; lighter shading spans
+p5–p95, with percentile boundary lines and a p50 median line. Lines connect
+archived forecast values for display only; they do not add verification cases.
+Missing/invalid quantile rows break the shading. A single available projection
+uses vertical percentile ranges rather than inventing a time interval.
+Daily temperature extrema retain discrete boxes and observation windows because
+they represent separate forecast dates.
+
+Wind/gust plumes show every finite observation in the requested date range at its
+actual UTC report time. Small red points provide event context and larger markers
+identify matched observations used for verification. Other stations and reports
+outside the selected dates are excluded from the full-report overlay; zeros remain
+valid. Comparison curves and forecasts still use shared matched periods.
+Point-error scores use the selected percentile; the central forecast line is p50.
+RH axes use 0–100%. Temperature and precipitation retain measurement-window strips.
 
 Single-run forecasts are deduplicated by station/verification target, keeping the last row.
 NDFD references are reconstructed by the existing loader. Nearest-report matching
@@ -186,8 +191,21 @@ and station-detail views. Snapshots select an accumulation endpoint and use comm
 observation window-duration and endpoint-tolerance rules. The station plot shows
 individual forecast/observed totals as horizontal segments over their respective
 windows, with endpoint markers for deterministic forecasts. Probabilistic forecasts use
-quantile boxes at each endpoint and a separate window strip. A zero is a valid dry-period total; missing reports
+quantile bands across archived endpoints and a separate window strip. A zero is a valid dry-period total; missing reports
 remain missing. The plot is not a running cumulative total. Sliding/overlapping
 24-hour windows remain separate, dependent cases. Probabilistic precipitation, when
 selected from NBMQMD, retains uncertainty maps and endpoint quantile intervals.
 
+
+
+## Initialization date and UTC hour
+
+Select **Model Init Date** from the calendar and **Model Init Hour (UTC)** from
+the model-dependent dropdown. NBM/NBM_EXP core products use 01/07/13/19Z;
+NBMQMD, NBMQMD_EXP, HRRR, RRFS and REFS offer 00/06/12/18Z. Deterministic NBM
+MaxT/MinT/precipitation use their QMD source hours. URMA offers three-hour cycles;
+NDFD offers all UTC hours because its archive reference hours are not restricted
+to the other models' cycle schedules. These are selection controls, not a new
+forecast-hour filter or a guarantee that every offered run is in the archive.
+Changing the model/element resets an incompatible hour while keeping the date.
+Existing saved dates/hours survive page navigation.

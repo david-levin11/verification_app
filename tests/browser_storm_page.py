@@ -47,7 +47,8 @@ def main():
         app=base/'storm_app.py'
         defaults={'storm_Local Archive Root':str(base),'storm_Model':model,'storm_Element':element,
             'storm_metadata':str(base/'stations.parquet'),
-            'storm_Model Init Time (YYYY-MM-DD HH:MM:SS)':str(m.init_time.iloc[0]),
+            'storm_init_date':m.init_time.iloc[0].date(),
+            'storm_init_hour':int(m.init_time.iloc[0].hour),
             'storm_Plot Start Date':o.date.min().date() if daily else m.valid_time.min().date(),
             'storm_Plot End Date':o.date.max().date() if daily else m.valid_time.max().date(),
             'storm_station_scope':'Map Explorer selections','selected_station_list':['A','B']}
@@ -168,3 +169,4 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
 
 
 if __name__=='__main__':main()
+

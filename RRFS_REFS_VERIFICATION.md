@@ -60,8 +60,8 @@ NBMQMD's existing probability approximations remain available.
 
 Select the event definition explicitly: REFS archives usually use `>` for wind,
 gust and precipitation and `<` for low RH; the UI can retain a previously selected
-operator. Point scores use the fixed selected percentile. REFS p25–p75 boxes and
-p5–p95 whiskers still show the distribution, and deterministic RRFS uses points.
+operator. Point scores use the fixed selected percentile. REFS p25–p75 and p5–p95 shaded bands
+still show the distribution, and deterministic RRFS uses points.
 
 ## Six-hour precipitation
 
@@ -82,21 +82,21 @@ use the same observation and shared targets, with existing reference offsets.
 
 ### Storm station wind/gust plumes
 
-REFS Station detail places the p25–p75 boxes, p5–p95 whiskers and p50 medians on
+REFS Station detail places p25–p75 and p5–p95 shaded bands, boundary lines and p50 medians on
 an actual UTC time axis. Small red points show every finite observation for the
 selected station within the requested plot dates, including reports between
 forecast steps. Larger red markers identify observations used for verification
 and use their archived report timestamps when available. Date selections include
-the entire end date; reporting-tolerance padding outside that range is not shown.
+the entire end date; the full-report overlay excludes reporting-tolerance padding.
 Zeros remain valid, other stations are excluded, and missing reports stay missing.
 No hourly aggregation or resampling removes reports.
 
 This overlay also applies to the shared-case comparison plot when REFS is A or B.
-The comparison's forecast boxes and score markers still use shared matched cases;
+The comparison's forecast bands and score markers still use shared matched cases;
 the extra observed points provide event context only. Matching tolerances,
-completeness, scores and downloaded verification cases are unchanged. Non-REFS
-plots and precipitation/temperature measurement-window displays retain their
-existing behavior.
+completeness, scores and downloaded verification cases are unchanged. NBMQMD
+uses the same shaded style and full wind/gust report overlay. Precipitation and
+temperature measurement windows remain visible in their separate strips.
 
 Synthetic Parquet tests exercise both loaders, all four pages and all four elements,
 separate wind/gust rows, custom roots, initialization-month boundaries, scheduled

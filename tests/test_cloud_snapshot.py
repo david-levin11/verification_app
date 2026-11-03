@@ -263,3 +263,17 @@ cloud_runtime.cloud_context()
             process.terminate()
             try:process.wait(timeout=5)
             except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)
+
+
+def test_startup_does_not_scan_comparison_models(tmp_path,monkeypatch):
+    import cloud_snapshot
+    settings,download=snapshot(tmp_path)
+    original=cloud_snapshot.register_forecast_archive
+    scanned=[]
+    def register(con,files,model,element):
+        scanned.append(model)
+        assert model=='nbmqmd','Startup should stop after finding useful defaults'
+        return original(con,files,model,element)
+    monkeypatch.setattr(cloud_snapshot,'register_forecast_archive',register)
+    result=prepare_snapshot(settings,session=download)
+    assert scanned==['nbmqmd'] and result['comparison_model']=='nbm'

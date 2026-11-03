@@ -118,7 +118,7 @@ def inspect_snapshot(root,settings,progress=None):
     catalog={m:elements for m,elements in catalog.items() if elements}
     selected=None
     with duckdb.connect() as con:
-        con.execute("SET TimeZone='UTC'");con.execute("SET memory_limit='256MB'");con.execute('SET threads=2')
+        con.execute("SET TimeZone='UTC'");con.execute("SET memory_limit='128MB'");con.execute('SET threads=1');con.execute('SET preserve_insertion_order=false')
         coverage={}
         for element in ['wind','gust','rh','precip6hr','precip24hr','maxt','mint']:
             obsfiles=files('obs',element)
@@ -133,6 +133,7 @@ def inspect_snapshot(root,settings,progress=None):
             obsrange=con.execute(f'SELECT min("{time}"),max("{time}") FROM snapshot_obs WHERE isfinite(TRY_CAST("{value}" AS DOUBLE))').fetchone()
             if obsrange[0] is None:continue
             for model in ['nbmqmd','nbm','ndfd','rrfs','refs','hrrr','nbmqmd_exp','nbm_exp']:
+                if selected is not None:break
                 if element not in catalog.get(model,[]):continue
                 if progress:progress(f'Checking {model.upper()} {element} forecast coverage…')
                 register_forecast_archive(con,files(model,element),model,element)
@@ -169,9 +170,10 @@ def inspect_snapshot(root,settings,progress=None):
                         coverage_start=str(lo.date()),coverage_end=str(hi.date()))
             if selected:break
     if selected is None:raise SnapshotError('No supported model/observation cases overlap in this snapshot.')
-    other=next((m for m in ['ndfd','nbm','nbmqmd','rrfs','refs','hrrr'] if m!=selected['model'] and m in coverage
-                and max(coverage[m][0].date(),pd.Timestamp(selected['start_date']).date())<=
-                    min(coverage[m][1].date(),pd.Timestamp(selected['end_date']).date())),selected['model'])
+    # Choosing a comparison default does not require scanning its entire archive.
+    # Actual shared cases are checked when the user runs the comparison.
+    other=next((m for m in ['ndfd','nbm','nbmqmd','rrfs','refs','hrrr']
+                if m!=selected['model'] and selected['element'] in catalog.get(m,[])),selected['model'])
     selected.update(comparison_model=other,model_root=str(model_root),metadata_path=str(metadata),
         refs_root=str(refs_root),catalog=catalog)
     return selected

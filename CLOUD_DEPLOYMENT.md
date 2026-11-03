@@ -118,3 +118,8 @@ the new stage messages and the platform resource logs to identify the cause.
 
 Validation includes a real Streamlit server with a deliberately slow archive
 worker: repeated script-health checks return HTTP 200 before preparation finishes.
+
+Startup coverage discovery stops after finding the first usable model/observation
+selection. Other models remain available; their shared coverage is checked when
+a comparison is requested. Startup DuckDB queries use one thread and a 128 MB
+buffer limit (this is not a limit on total Python process memory).

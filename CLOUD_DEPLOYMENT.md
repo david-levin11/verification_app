@@ -139,3 +139,10 @@ The homepage always completes its normal script run, including before preparatio
 while waiting and on a preparation error. Archive-dependent verification pages
 still pause until the snapshot is ready. The welcome screen does not use an
 early `st.stop()` on the homepage.
+
+
+Cloud frontend diagnostics reproduced component failures with a two-row table
+and a two-point map without reading archives. The cloud branch now pins Streamlit
+1.66.0 instead of 1.56.0 as a controlled dependency/rebuild test. This does not
+establish that the old version caused the hosting HTTP 500 responses. Validate
+Deployment Check (Text only, Table, Map) before starting archive preparation.

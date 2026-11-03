@@ -116,7 +116,10 @@ def test_cloud_defaults_apply_on_direct_pages_and_do_not_override_user_edits(tmp
     import cloud_runtime,storm_visuals
     settings,download=snapshot(tmp_path)
     context=prepare_snapshot(settings,session=download)
-    monkeypatch.setattr(cloud_runtime,'_prepare_cached',lambda *args,**kwargs:context)
+    from concurrent.futures import Future
+    from types import SimpleNamespace
+    ready=Future();ready.set_result(context)
+    monkeypatch.setattr(cloud_runtime,'_snapshot_job',lambda *args,**kwargs:SimpleNamespace(future=ready))
     monkeypatch.setattr(storm_visuals,'_station_map',lambda **kwargs:None)
     app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'),default_timeout=20)
     app.secrets['cloud']={'enabled':True,'archive_url':settings['archive_url'],'archive_sha256':settings['archive_sha256']}
@@ -149,9 +152,114 @@ def test_disabled_cloud_leaves_existing_local_defaults_untouched(monkeypatch):
     from streamlit.testing.v1 import AppTest
     import cloud_runtime
     def forbidden(*args,**kwargs):raise AssertionError('Local mode must not download a snapshot')
-    monkeypatch.setattr(cloud_runtime,'_prepare_cached',forbidden)
+    monkeypatch.setattr(cloud_runtime,'_snapshot_job',forbidden)
     app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py')).run()
     assert not app.exception
     app.switch_page('pages/3_Storm_Zoom.py').run()
     assert app.text_input(key='storm_Local Archive Root').value=='../model'
     assert app.date_input(key='storm_Plot Start Date').value==date(2026,2,21)
+
+
+def test_background_preparation_does_not_block_page_and_resumes(tmp_path,monkeypatch):
+    from threading import Event
+    from streamlit.testing.v1 import AppTest
+    import cloud_runtime
+    settings,download=snapshot(tmp_path)
+    context=prepare_snapshot(settings,session=download)
+    release=Event();started=Event();calls=[]
+    def slow_prepare(settings,token=None,progress=None):
+        calls.append(settings);progress('Downloading archive: 32 MiB received')
+        started.set()
+        if not release.wait(10):raise RuntimeError('Test worker was not released')
+        return context
+    monkeypatch.setattr(cloud_runtime,'prepare_snapshot',slow_prepare)
+    cloud_runtime._snapshot_job.clear()
+    app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'),default_timeout=3)
+    app.secrets['cloud']={'enabled':True,'archive_url':'https://example.com/slow.zip'}
+    try:
+        app.run()
+        assert started.wait(1)
+        assert not app.exception and len(calls)==1
+        assert 'Preparing the test archive' in app.info[0].value
+        app.run()
+        assert len(calls)==1
+    finally:release.set()
+    identity=json.dumps(dict(app.secrets['cloud']),sort_keys=True,default=str)
+    cloud_runtime._snapshot_job(identity).future.result(timeout=3)
+    app.run()
+    assert not app.exception and 'Test snapshot:' in app.info[0].value
+    cloud_runtime._snapshot_job.clear()
+
+
+def test_background_failure_shows_retry_and_restarts(monkeypatch):
+    from concurrent.futures import Future
+    from types import SimpleNamespace
+    from streamlit.testing.v1 import AppTest
+    import cloud_runtime
+    failed=Future();failed.set_exception(SnapshotError('Digest mismatch'))
+    pending=Future()
+    class Jobs:
+        def __init__(self):self.cleared=False
+        def __call__(self,*args,**kwargs):
+            return SimpleNamespace(future=pending,status=lambda:'Downloading') if self.cleared else SimpleNamespace(future=failed)
+        def clear(self):self.cleared=True
+    jobs=Jobs();monkeypatch.setattr(cloud_runtime,'_snapshot_job',jobs)
+    app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'))
+    app.secrets['cloud']={'enabled':True}
+    app.run()
+    assert 'Digest mismatch' in app.error[0].value
+    app.button(key='cloud_retry').click().run()
+    assert jobs.cleared and not app.exception and not app.error
+    assert 'Preparing the test archive' in app.info[0].value
+
+
+def test_real_health_check_returns_before_snapshot_finishes(tmp_path):
+    """Exercise the same script-health endpoint used by Community Cloud."""
+    import os
+    import socket
+    import subprocess
+    import time
+    import requests
+    with socket.socket() as sock:
+        sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+    worker_started=tmp_path/'worker-started'
+    app=tmp_path/'slow_app.py'
+    app.write_text(f'''
+import sys,time
+from pathlib import Path
+sys.path.insert(0,{str(Path(__file__).parents[1]/'web_app')!r})
+import streamlit as st
+import cloud_runtime
+st.set_page_config(page_title='Startup test')
+def prepare(*args,**kwargs):
+    Path({str(worker_started)!r}).touch()
+    time.sleep(120)
+cloud_runtime.prepare_snapshot=prepare
+cloud_runtime.cloud_settings=lambda: {{'enabled':True,'archive_url':'https://example.com/slow.zip'}}
+cloud_runtime.cloud_context()
+''')
+    with (tmp_path/'server.log').open('w+') as log:
+        process=subprocess.Popen([sys.executable,'-m','streamlit','run',str(app),
+            '--server.headless=true','--server.fileWatcherType=none',f'--server.port={port}',
+            '--server.scriptHealthCheckEnabled=true','--browser.gatherUsageStats=false'],
+            stdout=log,stderr=subprocess.STDOUT,env=dict(os.environ))
+        try:
+            deadline=time.monotonic()+30
+            while True:
+                try:
+                    response=requests.get(f'http://127.0.0.1:{port}/_stcore/health',timeout=1)
+                    if response.ok:break
+                except requests.RequestException:pass
+                assert time.monotonic()<deadline,'Streamlit did not start'
+                time.sleep(.1)
+            before=time.monotonic()
+            response=requests.get(f'http://127.0.0.1:{port}/_stcore/script-health-check',timeout=20)
+            assert response.status_code==200,response.text
+            assert response.text=='ok' and worker_started.is_file()
+            assert time.monotonic()-before<20
+            # A second health-check session must reuse the ongoing preparation.
+            assert requests.get(f'http://127.0.0.1:{port}/_stcore/script-health-check',timeout=5).status_code==200
+        finally:
+            process.terminate()
+            try:process.wait(timeout=5)
+            except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)

@@ -30,7 +30,7 @@ def inside(root,relative):
     return root.joinpath(*path.parts)
 
 
-def extract_snapshot(archive,destination,max_bytes=20*1024**3):
+def extract_snapshot(archive,destination,max_bytes=20*1024**3,progress=None):
     """Reject escaping paths, links and duplicate files before extracting."""
     with zipfile.ZipFile(archive) as source:
         members=source.infolist()
@@ -42,14 +42,15 @@ def extract_snapshot(archive,destination,max_bytes=20*1024**3):
             if stat.S_ISLNK(item.external_attr>>16):raise SnapshotError('Snapshot ZIP must not contain symbolic links.')
             if not item.is_dir() and target in seen:raise SnapshotError('Snapshot ZIP contains duplicate file paths.')
             seen.add(target)
-        for item in members:
+        for index,item in enumerate(members):
+            if progress and index%100==0:progress(f'Extracting archive: {index:,} of {len(members):,} files')
             target=inside(destination,item.filename)
             if item.is_dir():target.mkdir(parents=True,exist_ok=True);continue
             target.parent.mkdir(parents=True,exist_ok=True)
             with source.open(item) as src,target.open('wb') as dst:shutil.copyfileobj(src,dst,1024**2)
 
 
-def download_snapshot(url,target,expected_sha256,token=None,session=None,max_bytes=4*1024**3):
+def download_snapshot(url,target,expected_sha256,token=None,session=None,max_bytes=4*1024**3,progress=None):
     if urlparse(url).scheme!='https':raise SnapshotError('The snapshot download URL must use HTTPS.')
     headers={'User-Agent':'alaska-verification-cloud-test'}
     if token:
@@ -57,7 +58,8 @@ def download_snapshot(url,target,expected_sha256,token=None,session=None,max_byt
             raise SnapshotError('Authenticated downloads require a GitHub release-asset API URL.')
         headers.update(Authorization=f'Bearer {token}',Accept='application/octet-stream')
     client=session or requests
-    digest=hashlib.sha256();size=0
+    digest=hashlib.sha256();size=0;reported=0
+    if progress:progress('Downloading the versioned archive…')
     # Stream to disk: the 1.5 GB ZIP must never be held in RAM.
     with client.get(url,headers=headers,stream=True,timeout=(20,120)) as response:
         response.raise_for_status()
@@ -67,6 +69,9 @@ def download_snapshot(url,target,expected_sha256,token=None,session=None,max_byt
                 size+=len(chunk)
                 if size>max_bytes:raise SnapshotError('Snapshot download exceeds the configured size limit.')
                 digest.update(chunk);output.write(chunk)
+                if progress and size-reported>=32*1024**2:
+                    progress(f'Downloading archive: {size/1024**2:,.0f} MiB received')
+                    reported=size
     if digest.hexdigest()!=expected_sha256.lower():raise SnapshotError('Snapshot SHA-256 does not match. Check the release asset and configured digest.')
 
 
@@ -95,7 +100,7 @@ def _utc(value):
     return pd.to_datetime(value,utc=True).tz_convert(None)
 
 
-def inspect_snapshot(root,settings):
+def inspect_snapshot(root,settings,progress=None):
     """Find useful real dates/runs using bounded column queries, not full frames."""
     model_root,metadata,refs_root=_find_layout(root,settings)
     meta=pd.read_parquet(metadata) if metadata.suffix.lower()=='.parquet' else pd.read_csv(metadata)
@@ -118,6 +123,7 @@ def inspect_snapshot(root,settings):
         for element in ['wind','gust','rh','precip6hr','precip24hr','maxt','mint']:
             obsfiles=files('obs',element)
             if not obsfiles:continue
+            if progress:progress(f'Checking {element} observation coverage…')
             con.from_parquet(obsfiles,union_by_name=True).create_view('snapshot_obs',replace=True)
             obs_schema=con.sql('SELECT * FROM snapshot_obs LIMIT 0').df()
             time=get_obs_filter_time_column(element)
@@ -128,6 +134,7 @@ def inspect_snapshot(root,settings):
             if obsrange[0] is None:continue
             for model in ['nbmqmd','nbm','ndfd','rrfs','refs','hrrr','nbmqmd_exp','nbm_exp']:
                 if element not in catalog.get(model,[]):continue
+                if progress:progress(f'Checking {model.upper()} {element} forecast coverage…')
                 register_forecast_archive(con,files(model,element),model,element)
                 schema=con.sql('SELECT * FROM forecast_archive LIMIT 0').df()
                 point=get_model_value_column(schema,model,element,'50')
@@ -170,7 +177,7 @@ def inspect_snapshot(root,settings):
     return selected
 
 
-def prepare_snapshot(settings,token=None,session=None):
+def prepare_snapshot(settings,token=None,session=None,progress=None):
     digest=str(settings.get('archive_sha256','')).lower()
     if not re.fullmatch('[0-9a-f]{64}',digest):raise SnapshotError('Set cloud.archive_sha256 to the release asset SHA-256.')
     url=str(settings.get('archive_url',''))
@@ -185,16 +192,22 @@ def prepare_snapshot(settings,token=None,session=None):
             saved=json.loads(marker.read_text())
             if (saved.get('archive_sha256')==digest and (destination/saved['model_relative']).is_dir()
                     and (destination/saved.get('metadata_relative','missing')).is_file()):
-                return inspect_snapshot(destination,settings)
+                if progress:progress('Checking cached archive coverage and default dates…')
+                return inspect_snapshot(destination,settings,progress=progress)
         with tempfile.TemporaryDirectory(prefix='snapshot-',dir=base) as temporary:
             temporary=Path(temporary);archive=temporary/'archive.zip';payload=temporary/'payload';payload.mkdir()
-            download_snapshot(url,archive,digest,token,session)
-            extract_snapshot(archive,payload,int(settings.get('max_extracted_bytes',20*1024**3)))
-            preview=inspect_snapshot(payload,settings)
+            download_snapshot(url,archive,digest,token,session,progress=progress)
+            extract_snapshot(archive,payload,int(settings.get('max_extracted_bytes',20*1024**3)),progress=progress)
+            if progress:progress('Checking archive coverage and selecting default dates…')
+            preview=inspect_snapshot(payload,settings,progress=progress)
             manifest={'archive_sha256':digest,'model_relative':str(Path(preview['model_root']).relative_to(payload)),
                       'metadata_relative':str(Path(preview['metadata_path']).relative_to(payload)),
                       'snapshot_id':str(settings.get('snapshot_id',fingerprint))}
             (payload/'snapshot-ready.json').write_text(json.dumps(manifest))
             if destination.exists():shutil.rmtree(destination)
             os.replace(payload,destination)
-        return inspect_snapshot(destination,settings)
+        # Coverage is already validated; only the three absolute paths moved.
+        for key in ['model_root','metadata_path','refs_root']:
+            preview[key]=str(destination/Path(preview[key]).relative_to(payload))
+        return preview
+

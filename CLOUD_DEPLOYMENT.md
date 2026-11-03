@@ -99,3 +99,22 @@ wrapped layouts, unsafe paths/links, concurrent startup, real date/run detection
 all four pages, and unchanged local defaults. The actual 1.53 GB production asset
 still needs its initial cloud smoke test; preparing this branch does not deploy
 the app or invite users automatically.
+
+
+## Archive preparation and startup health checks
+
+The first visit shows an archive preparation page while a shared background worker
+streams the ZIP to disk, verifies its digest, extracts it and checks coverage.
+The page refreshes its status every two seconds and opens the app when ready.
+Download progress and coverage stages also appear in the server logs. A failed
+preparation offers **Retry archive preparation** and logs the underlying error.
+The worker does not hold up Streamlit's script health check; concurrent visitors
+reuse the same job. The extracted archive is scanned once before publication.
+
+If an older deployment reports a 60-second `/script-health-check` timeout, deploy
+the latest `community-cloud-test` commit and reboot the app. That timeout alone
+does not prove a memory limit was exceeded. If the process still stops, inspect
+the new stage messages and the platform resource logs to identify the cause.
+
+Validation includes a real Streamlit server with a deliberately slow archive
+worker: repeated script-health checks return HTTP 200 before preparation finishes.

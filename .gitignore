@@ -9,3 +9,6 @@ settings.json
 *cpython*
 *.csv
 
+
+# Machine-specific Streamlit configuration
+**/.streamlit/secrets.toml

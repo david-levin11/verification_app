@@ -1,6 +1,22 @@
 """Page-local widget values that survive Streamlit's multipage widget cleanup."""
 import streamlit as st
 
+def local_path_defaults(page):
+    """Optional machine-specific paths; normal page/session edits take precedence."""
+    try:
+        paths=dict(st.secrets.get('local',{}))
+    except (FileNotFoundError,KeyError):
+        return {}
+    keys={
+        'map': {'archive_root':'map_ui_archive_root','metadata_path':'map_metadata_path','refs_root':'map_refs_root'},
+        'aggregate': {'archive_root':'aggregate_ui_archive_root','refs_root':'aggregate_refs_root'},
+        'storm': {'archive_root':'storm_Local Archive Root','metadata_path':'storm_metadata','refs_root':'storm_refs_root'},
+        'compare': {'archive_root':'compare_archive_root','metadata_path':'compare_metadata','refs_root':'compare_refs_root'},
+    }
+    return {key:paths[name] for name,key in keys.get(page,{}).items()
+            if isinstance(paths.get(name),str) and paths[name].strip()}
+
+
 _WIDGETS = {'text_input', 'selectbox', 'radio', 'checkbox', 'number_input',
             'date_input', 'multiselect', 'slider'}
 
@@ -22,6 +38,7 @@ class PageControls:
     def __init__(self, page, container=None):
         self.page = page
         self.container = st if container is None else container
+        self.defaults = local_path_defaults(page)
 
     @property
     def sidebar(self):
@@ -40,6 +57,9 @@ class PageControls:
             if not key.startswith(f'{self.page}_'):
                 key = f'{self.page}_{key}'
             values = st.session_state.get(f'_page_settings_{self.page}', {})
+            if name=='text_input' and key not in st.session_state and key not in values and key in self.defaults:
+                if args:args=(self.defaults[key],)+args[1:]
+                else:kwargs['value']=self.defaults[key]
             if key not in st.session_state and key in values:
                 st.session_state[key] = values[key]
             # Dependent model/element/filter options may have changed. Discard
@@ -57,3 +77,4 @@ class PageControls:
             remember_widget(self.page, key)
             return value
         return widget
+

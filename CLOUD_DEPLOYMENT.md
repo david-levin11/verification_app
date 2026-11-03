@@ -103,7 +103,7 @@ the app or invite users automatically.
 
 ## Archive preparation and startup health checks
 
-The first visit shows an archive preparation page while a shared background worker
+After clicking Prepare test archive, an archive preparation page shows progress while a shared background worker
 streams the ZIP to disk, verifies its digest, extracts it and checks coverage.
 The page refreshes its status every two seconds and opens the app when ready.
 Download progress and coverage stages also appear in the server logs. A failed
@@ -117,9 +117,20 @@ does not prove a memory limit was exceeded. If the process still stops, inspect
 the new stage messages and the platform resource logs to identify the cause.
 
 Validation includes a real Streamlit server with a deliberately slow archive
-worker: repeated script-health checks return HTTP 200 before preparation finishes.
+worker: repeated script-health checks return HTTP 200 without starting the worker.
 
 Startup coverage discovery stops after finding the first usable model/observation
 selection. Other models remain available; their shared coverage is checked when
 a comparison is requested. Startup DuckDB queries use one thread and a 128 MB
 buffer limit (this is not a limit on total Python process memory).
+
+
+## Browser-initiated archive preparation
+
+With cloud mode enabled, the initial page shows **Prepare test archive**. Click
+it to start (or reuse) the shared snapshot preparation worker. Deployment health
+checks render this landing screen without launching a download or a coverage scan.
+After preparation, the page opens the dashboard automatically; **Check archive
+status** provides a manual refresh if the automatic transition is delayed.
+Every new browser session clicks Prepare once; the disk/process caches still
+avoid duplicate downloads. Keep `[cloud] enabled = true` to use this workflow.

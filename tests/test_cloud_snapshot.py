@@ -124,6 +124,7 @@ def test_cloud_defaults_apply_on_direct_pages_and_do_not_override_user_edits(tmp
     app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'),default_timeout=20)
     app.secrets['cloud']={'enabled':True,'archive_url':settings['archive_url'],'archive_sha256':settings['archive_sha256']}
     app.run()
+    app.button(key='cloud_prepare').click().run()
     assert not app.exception
     for page in ['map','aggregate','storm','compare']:
         file={'map':'1_Map_Explorer','aggregate':'2_Aggregate_Verification','storm':'3_Storm_Zoom','compare':'4_Model_Comparison'}[page]
@@ -178,6 +179,8 @@ def test_background_preparation_does_not_block_page_and_resumes(tmp_path,monkeyp
     app.secrets['cloud']={'enabled':True,'archive_url':'https://example.com/slow.zip'}
     try:
         app.run()
+        assert not started.is_set() and not calls
+        app.button(key='cloud_prepare').click().run()
         assert started.wait(1)
         assert not app.exception and len(calls)==1
         assert 'Preparing the test archive' in app.info[0].value
@@ -207,6 +210,7 @@ def test_background_failure_shows_retry_and_restarts(monkeypatch):
     app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'))
     app.secrets['cloud']={'enabled':True}
     app.run()
+    app.button(key='cloud_prepare').click().run()
     assert 'Digest mismatch' in app.error[0].value
     app.button(key='cloud_retry').click().run()
     assert jobs.cleared and not app.exception and not app.error
@@ -255,10 +259,11 @@ cloud_runtime.cloud_context()
             before=time.monotonic()
             response=requests.get(f'http://127.0.0.1:{port}/_stcore/script-health-check',timeout=20)
             assert response.status_code==200,response.text
-            assert response.text=='ok' and worker_started.is_file()
+            assert response.text=='ok' and not worker_started.exists()
             assert time.monotonic()-before<20
-            # A second health-check session must reuse the ongoing preparation.
+            # Health-check sessions must never start archive preparation.
             assert requests.get(f'http://127.0.0.1:{port}/_stcore/script-health-check',timeout=5).status_code==200
+            assert not worker_started.exists()
         finally:
             process.terminate()
             try:process.wait(timeout=5)

@@ -57,6 +57,7 @@ def _preparation_status(job):
     st.info('Preparing the test archive. This can take several minutes on the first startup.')
     st.write(job.status())
     st.caption('This page updates automatically when the archive is ready.')
+    if st.button('Check archive status',key='cloud_check_status'):st.rerun()
 
 
 def cloud_context():
@@ -67,6 +68,16 @@ def cloud_context():
     saved=st.session_state.get('_cloud_snapshot_context')
     if saved and saved['identity']==identity and Path(saved['context']['metadata_path']).is_file():
         return saved['context']
+    # Deployment health checks execute the script too. Only a browser button
+    # starts preparation, after Streamlit has delivered the landing screen.
+    if st.session_state.get('_cloud_prepare_requested')!=identity:
+        st.title('Alaska Point Verification Dashboard')
+        st.info('The dashboard is ready to connect to the test archive.')
+        st.caption('Prepare the archive to open verification pages. The first preparation downloads the snapshot; later sessions reuse it.')
+        if st.button('Prepare test archive',key='cloud_prepare'):
+            st.session_state['_cloud_prepare_requested']=identity
+            st.rerun()
+        st.stop()
     job=_snapshot_job(identity,_token=token)
     if job.future.done() and not job.future.exception():
         if not Path(job.future.result()['metadata_path']).is_file():

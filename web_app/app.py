@@ -7,11 +7,10 @@ st.set_page_config(
     layout="wide",
 )
 
+st.title("Alaska Point Verification Dashboard")
+
 from cloud_runtime import show_cloud_snapshot
 show_cloud_snapshot()
-
-
-st.title("Alaska Point Verification Dashboard")
 
 st.markdown(
     """

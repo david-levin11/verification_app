@@ -60,7 +60,7 @@ def _preparation_status(job):
     if st.button('Check archive status',key='cloud_check_status'):st.rerun()
 
 
-def cloud_context():
+def cloud_context(landing=False):
     settings=cloud_settings()
     if settings.get('enabled') is not True:return None
     token=settings.pop('github_token',None)
@@ -71,12 +71,13 @@ def cloud_context():
     # Deployment health checks execute the script too. Only a browser button
     # starts preparation, after Streamlit has delivered the landing screen.
     if st.session_state.get('_cloud_prepare_requested')!=identity:
-        st.title('Alaska Point Verification Dashboard')
+        _LOGGER.info('Cloud homepage: waiting for Prepare test archive; no worker started')
         st.info('The dashboard is ready to connect to the test archive.')
         st.caption('Prepare the archive to open verification pages. The first preparation downloads the snapshot; later sessions reuse it.')
         if st.button('Prepare test archive',key='cloud_prepare'):
             st.session_state['_cloud_prepare_requested']=identity
             st.rerun()
+        if landing:return None
         st.stop()
     job=_snapshot_job(identity,_token=token)
     if job.future.done() and not job.future.exception():
@@ -85,6 +86,7 @@ def cloud_context():
             job=_snapshot_job(identity,_token=token)
     if not job.future.done():
         _preparation_status(job)
+        if landing:return None
         st.stop()
     try:
         context=dict(job.future.result())
@@ -94,6 +96,7 @@ def cloud_context():
         if st.button('Retry archive preparation',key='cloud_retry'):
             _snapshot_job.clear()
             st.rerun()
+        if landing:return None
         st.stop()
     context['snapshot_id']=str(settings.get('snapshot_id',settings.get('archive_sha256','')[:12]))
     st.session_state['_cloud_snapshot_context']={'identity':identity,'context':context}
@@ -128,8 +131,10 @@ def cloud_widget_defaults(page):
 
 
 def show_cloud_snapshot():
-    context=cloud_context()
-    if context is None:return
+    context=cloud_context(landing=True)
+    if context is None:
+        _LOGGER.info('Cloud homepage: continuing normal page rendering')
+        return
     st.info(f'Test snapshot: {context["snapshot_id"]}. Default {context["element"]} coverage: '
             f'{context["coverage_start"]} through {context["coverage_end"]} UTC. '
             f'The initial selection uses {context["start_date"]} through {context["end_date"]}. '

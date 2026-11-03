@@ -134,3 +134,8 @@ After preparation, the page opens the dashboard automatically; **Check archive
 status** provides a manual refresh if the automatic transition is delayed.
 Every new browser session clicks Prepare once; the disk/process caches still
 avoid duplicate downloads. Keep `[cloud] enabled = true` to use this workflow.
+
+The homepage always completes its normal script run, including before preparation,
+while waiting and on a preparation error. Archive-dependent verification pages
+still pause until the snapshot is ready. The welcome screen does not use an
+early `st.stop()` on the homepage.

@@ -240,7 +240,8 @@ def prepare(*args,**kwargs):
     time.sleep(120)
 cloud_runtime.prepare_snapshot=prepare
 cloud_runtime.cloud_settings=lambda: {{'enabled':True,'archive_url':'https://example.com/slow.zip'}}
-cloud_runtime.cloud_context()
+cloud_runtime.cloud_context(landing=True)
+st.write("Homepage completed")
 ''')
     with (tmp_path/'server.log').open('w+') as log:
         process=subprocess.Popen([sys.executable,'-m','streamlit','run',str(app),
@@ -282,3 +283,17 @@ def test_startup_does_not_scan_comparison_models(tmp_path,monkeypatch):
     monkeypatch.setattr(cloud_snapshot,'register_forecast_archive',register)
     result=prepare_snapshot(settings,session=download)
     assert scanned==['nbmqmd'] and result['comparison_model']=='nbm'
+
+
+def test_enabled_cloud_homepage_completes_before_prepare(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    import cloud_runtime
+    def forbidden(*args,**kwargs):raise AssertionError('Welcome page must not start a worker')
+    monkeypatch.setattr(cloud_runtime,'_snapshot_job',forbidden)
+    app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'))
+    app.secrets['cloud']={'enabled':True}
+    app.run()
+    assert not app.exception
+    assert app.button(key='cloud_prepare').label=='Prepare test archive'
+    assert 'Current workflow' in [item.value for item in app.subheader]
+    assert 'Standard paired verification format' in [item.value for item in app.subheader]

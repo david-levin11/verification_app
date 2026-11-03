@@ -1,5 +1,6 @@
 """Page-local widget values that survive Streamlit's multipage widget cleanup."""
 import streamlit as st
+from cloud_runtime import cloud_widget_defaults
 
 _WIDGETS = {'text_input', 'selectbox', 'radio', 'checkbox', 'number_input',
             'date_input', 'multiselect', 'slider'}
@@ -22,6 +23,7 @@ class PageControls:
     def __init__(self, page, container=None):
         self.page = page
         self.container = st if container is None else container
+        self.defaults = cloud_widget_defaults(page)
 
     @property
     def sidebar(self):
@@ -40,6 +42,14 @@ class PageControls:
             if not key.startswith(f'{self.page}_'):
                 key = f'{self.page}_{key}'
             values = st.session_state.get(f'_page_settings_{self.page}', {})
+            if key not in st.session_state and key not in values and key in self.defaults:
+                initial=self.defaults[key]
+                if name in {'text_input','date_input','checkbox'}:
+                    args=(initial,)+args[1:] if args else args
+                    if not args:kwargs['value']=initial
+                elif name=='selectbox':
+                    options=list(args[0] if args else kwargs['options'])
+                    if initial in options:kwargs['index']=options.index(initial)
             if key not in st.session_state and key in values:
                 st.session_state[key] = values[key]
             # Dependent model/element/filter options may have changed. Discard
@@ -57,3 +67,4 @@ class PageControls:
             remember_widget(self.page, key)
             return value
         return widget
+

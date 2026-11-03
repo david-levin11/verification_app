@@ -7,6 +7,9 @@ st.set_page_config(
     layout="wide",
 )
 
+from cloud_runtime import show_cloud_snapshot
+show_cloud_snapshot()
+
 
 st.title("Alaska Point Verification Dashboard")
 
@@ -114,3 +117,4 @@ st.caption(
     "The app is being refactored toward a model/element-aware verification "
     "workflow using config.py, pairing.py, metrics.py, maps.py, and plots.py."
 )
+

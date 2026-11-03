@@ -8,4 +8,8 @@ model_timestamp_backup_20*
 settings.json
 *cpython*
 *.csv
+.cloud_cache/
+.streamlit/secrets.toml
+*.zip
+
 

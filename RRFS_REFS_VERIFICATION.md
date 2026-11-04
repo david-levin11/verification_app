@@ -6,17 +6,18 @@ Model Comparison. Snow and instantaneous temperature are not enabled by this cha
 
 ## Archive locations
 
-The existing Local Archive Root contains `rrfs/{element}/YYYY_MM_archive.parquet`
+The administrator-configured `archive_root` contains `rrfs/{element}/YYYY_MM_archive.parquet`
 and the normal observation directories. RRFS gusts use the combined wind archive
 when no dedicated gust archive exists. Direction verification uses RRFS archived
 directions; REFS speed percentiles do not imply a forecast wind direction.
 
-When REFS is selected (including as comparison model B), **REFS Derived Archive
-Root** points at the directory containing its element directories. It defaults to
-`derived/refs` beside the model root. For example, model root `/data/model` implies
-`/data/derived/refs`, but any configured derived root can be selected independently
-on each page. Source/derived archives are read-only; no copying or reformatting is
-required.
+The administrator sets `refs_root` in the `[local]` section of
+`.streamlit/secrets.toml` to the directory containing the REFS element folders.
+If omitted, it defaults to `derived/refs` beside the model root. For example,
+model root `/data/model` implies `/data/derived/refs`. An independent derived
+location can be configured, and the same setting applies to every page; visitors
+cannot change paths in the sidebar. See [LOCAL_CONFIGURATION.md](LOCAL_CONFIGURATION.md).
+Source/derived archives are read-only inputs; no copying or reformatting is required.
 
 REFS wind and gust share `wind/YYYY_MM_archive.parquet`. Rows are filtered by
 `value_column` (`wind_speed_kt`, `wind_gust_kt`, `rh`, or `precip_6h`) before

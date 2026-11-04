@@ -1,8 +1,9 @@
 # Model Comparison
 
-Run the app as usual (`streamlit run web_app/app.py`, or `streamlit run app.py`
-from `web_app`) and choose **Model Comparison** in the sidebar. Set the archive
-root to the directory containing `ndfd/`, `nbm/`, `obs/`, etc.
+Launch from the repository root with `streamlit run web_app/app.py` and choose
+**Model Comparison** in the sidebar. The administrator configures `archive_root`,
+`refs_root`, and `metadata_path` in `.streamlit/secrets.toml`; these paths are not
+editable in the app. See [LOCAL_CONFIGURATION.md](LOCAL_CONFIGURATION.md).
 
 ## Suggested NDFD / NBM setup
 

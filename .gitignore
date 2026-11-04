@@ -1,8 +1,14 @@
 model/
+model_oldsource/
+derived/
 updates/
 metadata/
 archive_backups/
+model_timestamp_backup_20*
 settings.json
 *cpython*
 *.csv
 
+
+# Machine-specific Streamlit configuration
+**/.streamlit/secrets.toml

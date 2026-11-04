@@ -1,0 +1,548 @@
+"""
+Pairing utilities for the Alaska Point Verification Dashboard.
+
+Primary goal:
+    Convert any model/obs/element pair into a standardized dataframe:
+
+        station_id
+        valid_time
+        init_time
+        forecast_hour
+        model_value
+        obs_value
+
+The rest of the app should use model_value and obs_value whenever possible,
+rather than element-specific names like wind_speed_kt, precip_accum_6hr, etc.
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+from forecast_archive import ENSEMBLE_COLUMNS
+
+from config import (
+    get_element_config,
+    get_percentile_columns,
+    is_probabilistic,
+    get_pairing_method,
+    get_model_pair_date_column,
+    get_obs_pair_date_column,
+)
+
+
+# ---------------------------------------------------------------------
+# General helpers
+# ---------------------------------------------------------------------
+def _unique_preserve_order(cols: list[str]) -> list[str]:
+    """
+    Return unique column names while preserving original order.
+    """
+    seen = set()
+    out = []
+
+    for col in cols:
+        if col not in seen:
+            out.append(col)
+            seen.add(col)
+
+    return out
+
+
+def _first_existing_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    """
+    Return the first column from candidates that exists in df.
+    """
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+
+def _standardize_station_id(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Standardize station ID naming and dtype.
+
+    Synoptic obs commonly use 'stid', while model data usually use 'station_id'.
+    Force station_id to plain Python string/object dtype for merge_asof.
+    """
+    df = df.copy()
+
+    if "station_id" not in df.columns and "stid" in df.columns:
+        df = df.rename(columns={"stid": "station_id"})
+
+    if "station_id" in df.columns:
+        df["station_id"] = (
+            df["station_id"]
+            .astype(str)
+            .str.strip()
+        )
+
+    return df
+
+def _standardize_datetime(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert common time columns to timezone-naive datetime64[ns].
+    """
+    df = df.copy()
+
+    for col in ["valid_time", "init_time", "start_time", "end_time", "window_start", "window_end"]:
+        if col in df.columns:
+            df[col] = (
+                pd.to_datetime(df[col], errors="coerce", utc=True)
+                .dt.tz_convert(None)
+                .astype("datetime64[ns]")
+            )
+
+    return df
+
+def _prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply common station/time standardization.
+    """
+    df = _standardize_station_id(df)
+    df = _standardize_datetime(df)
+    return df
+
+
+# ---------------------------------------------------------------------
+# Column selection
+# ---------------------------------------------------------------------
+
+def get_model_value_column(
+    modeldf: pd.DataFrame,
+    model: str,
+    element: str,
+    percentile: str | None = None,
+) -> str:
+    """
+    Determine which model column should be used as the deterministic model value.
+
+    For probabilistic model/element combinations, this uses the selected
+    percentile column if available. For deterministic combinations, it uses
+    the configured model_value_candidates.
+    """
+    element_cfg = get_element_config(element)
+
+    # Probabilistic case: use selected percentile as the app's model_value.
+    if percentile is not None and is_probabilistic(model, element):
+        pct_cols = get_percentile_columns(element)
+        pct_col = pct_cols.get(str(percentile))
+
+        if pct_col in modeldf.columns:
+            return pct_col
+
+        # Fall back gracefully if the selected percentile column is missing.
+        # This can happen while archive column names are still being normalized.
+        default_pct = element_cfg.get("default_percentile")
+        default_pct_col = pct_cols.get(str(default_pct))
+
+        if default_pct_col in modeldf.columns:
+            return default_pct_col
+
+    # Deterministic case or fallback.
+    candidates = element_cfg.get("model_value_candidates", [])
+    model_col = _first_existing_column(modeldf, candidates)
+
+    if model_col is not None:
+        return model_col
+
+    raise ValueError(
+        f"Could not find a model value column for model={model}, element={element}. "
+        f"Tried: {candidates}. Available columns: {list(modeldf.columns)}"
+    )
+
+
+def get_obs_value_column(
+    obdf: pd.DataFrame,
+    element: str,
+) -> str:
+    """
+    Determine which observation column should be used as obs_value.
+    """
+    element_cfg = get_element_config(element)
+
+    candidates = element_cfg.get("obs_value_candidates", [])
+    obs_col = _first_existing_column(obdf, candidates)
+
+    if obs_col is not None:
+        return obs_col
+
+    raise ValueError(
+        f"Could not find an observation value column for element={element}. "
+        f"Tried: {candidates}. Available columns: {list(obdf.columns)}"
+    )
+
+
+def get_direction_column(
+    merged: pd.DataFrame,
+    element: str,
+) -> str | None:
+    """
+    Return an observed wind direction column if available.
+
+    This is only relevant for wind/gust workflows.
+    """
+    element_cfg = get_element_config(element)
+
+    direction_candidates = element_cfg.get("direction_candidates", [])
+    return _first_existing_column(merged, direction_candidates)
+
+
+# ---------------------------------------------------------------------
+# Main pairing function
+# ---------------------------------------------------------------------
+
+def build_verification_pairs(
+    modeldf: pd.DataFrame,
+    obdf: pd.DataFrame,
+    model: str,
+    obs: str,
+    element: str,
+    percentile: str | None = None,
+    obs_time_tolerance: str = "1h",
+) -> pd.DataFrame:
+    """
+    Build standardized verification pairs.
+
+    Returns dataframe with at least:
+
+        station_id
+        valid_time
+        init_time
+        forecast_hour
+        model_value
+        obs_value
+
+    Parameters
+    ----------
+    modeldf : pd.DataFrame
+        Forecast dataframe returned from fetch_data().
+    obdf : pd.DataFrame
+        Observation dataframe returned from fetch_data().
+    model : str
+        Model name, e.g. 'nbmqmd_exp', 'nbm', 'hrrr', 'ndfd'.
+    obs : str
+        Observation source, usually 'obs' or 'urma'.
+    element : str
+        Element name, e.g. 'wind', 'precip6hr', 'maxt'.
+    percentile : str | None
+        Selected percentile for probabilistic model/element combinations.
+    obs_time_tolerance : str
+        Tolerance for nearest-time matching when obs source is point observations.
+
+    Notes
+    -----
+    For obs == 'obs', this uses merge_asof with a time tolerance because
+    Synoptic observation times may not land exactly on model valid_time.
+
+    For obs == 'urma', this first attempts an exact match on station_id and
+    valid_time. If station_id is unavailable in the URMA dataframe, it falls
+    back to valid_time only.
+    """
+    if modeldf is None or modeldf.empty:
+        return pd.DataFrame()
+
+    if obdf is None or obdf.empty:
+        return pd.DataFrame()
+
+    modeldf = _prepare_dataframe(modeldf)
+    obdf = _prepare_dataframe(obdf)
+
+    model_col = get_model_value_column(
+        modeldf=modeldf,
+        model=model,
+        element=element,
+        percentile=percentile,
+    )
+
+    tolerance = pd.Timedelta(obs_time_tolerance)
+    if tolerance < pd.Timedelta(0):
+        raise ValueError("Observation time tolerance must be non-negative")
+
+    obs_col = get_obs_value_column(
+        obdf=obdf,
+        element=element,
+    )
+
+    # Preserve original column names for debugging / downstream plots.
+    modeldf = modeldf.copy()
+    obdf = obdf.copy()
+
+    modeldf["model_value"] = pd.to_numeric(modeldf[model_col], errors="coerce")
+    obdf["obs_value"] = pd.to_numeric(obdf[obs_col], errors="coerce")
+
+    if element == 'gust':
+        modeldf['model_value'] = modeldf['model_value'].replace([float('inf'), -float('inf')], float('nan'))
+        obdf['obs_value'] = obdf['obs_value'].replace([float('inf'), -float('inf')], float('nan'))
+
+    pairing_method = get_pairing_method(element)
+
+    required_model_cols = [
+        "station_id",
+        "valid_time",
+        "model_value",
+    ]
+
+    optional_model_cols = [
+        "init_time",
+        "forecast_hour",
+        model_col,
+    ]
+    optional_model_cols.extend([c for c in modeldf if c in ENSEMBLE_COLUMNS or c.startswith('prob_')])
+
+    required_obs_cols = [
+        "station_id",
+        "valid_time",
+        "obs_value",
+    ]
+
+    # Preserve the actual reporting time, rather than losing it in merge_asof.
+    obdf["obs_valid_time"] = obdf["valid_time"]
+    optional_obs_cols = [obs_col, "obs_valid_time"]
+    accum_hours = get_element_config(element).get("accum_hours")
+    if accum_hours is not None:
+        start_col = _first_existing_column(obdf, ["start_time", "window_start"])
+        end_col = _first_existing_column(obdf, ["end_time", "window_end"])
+        if start_col is None or end_col is None:
+            raise ValueError("Accumulation observations require start and end window columns")
+        obdf["obs_window_start"] = pd.to_datetime(obdf[start_col], utc=True).dt.tz_convert(None)
+        obdf["obs_window_end"] = pd.to_datetime(obdf[end_col], utc=True).dt.tz_convert(None)
+        duration = obdf["obs_window_end"] - obdf["obs_window_start"]
+        obdf = obdf.loc[duration.eq(pd.Timedelta(hours=accum_hours))].copy()
+        obdf["valid_time"] = obdf["obs_window_end"]
+        obdf["obs_valid_time"] = obdf["obs_window_end"]
+        modeldf["model_window_end"] = modeldf["valid_time"]
+        modeldf["model_window_start"] = modeldf["valid_time"] - pd.Timedelta(hours=accum_hours)
+        optional_model_cols.extend(["model_window_start", "model_window_end"])
+        optional_obs_cols.extend(["obs_window_start", "obs_window_end"])
+
+
+    # Preserve extra columns needed for date-based pairing.
+    if pairing_method == "date":
+        model_pair_col = get_model_pair_date_column(element)
+        obs_pair_col = get_obs_pair_date_column(element)
+
+        if model_pair_col not in required_model_cols and model_pair_col not in optional_model_cols:
+            optional_model_cols.append(model_pair_col)
+
+        if obs_pair_col not in required_obs_cols and obs_pair_col not in optional_obs_cols:
+            optional_obs_cols.append(obs_pair_col)
+
+        # Useful for diagnostics and for understanding extrema/accumulation windows.
+        for extra_col in ["date", "window_start", "window_end"]:
+            if extra_col not in required_obs_cols and extra_col not in optional_obs_cols:
+                optional_obs_cols.append(extra_col)
+    # Keep percentile columns if available. This allows reliability/rank
+    # histogram functions to continue using the probabilistic information.
+    if is_probabilistic(model, element):
+        pct_cols = list(get_percentile_columns(element).values())
+        optional_model_cols.extend([c for c in pct_cols if c in modeldf.columns])
+
+    # Keep wind direction if available for direction filtering.
+    element_cfg = get_element_config(element)
+    for direction_col in element_cfg.get("direction_candidates", []):
+        if direction_col in obdf.columns:
+            optional_obs_cols.append(direction_col)
+        if direction_col in modeldf.columns:
+            optional_model_cols.append(direction_col)
+
+    model_keep_cols = _unique_preserve_order(
+        [
+            c for c in required_model_cols + optional_model_cols
+            if c in modeldf.columns
+        ]
+    )
+
+    obs_keep_cols = _unique_preserve_order(
+        [
+            c for c in required_obs_cols + optional_obs_cols
+            if c in obdf.columns
+        ]
+    )
+
+    modeldf = modeldf[model_keep_cols].dropna(subset=["station_id", "valid_time", "model_value"])
+    obdf = obdf[obs_keep_cols].dropna(subset=["station_id", "valid_time", "obs_value"])
+
+    if modeldf.empty or obdf.empty:
+        return pd.DataFrame()
+
+    if pairing_method == "date":
+        model_pair_col = get_model_pair_date_column(element)
+        obs_pair_col = get_obs_pair_date_column(element)
+
+        if model_pair_col not in modeldf.columns:
+            raise ValueError(
+                f"Model pair date column '{model_pair_col}' not found for element={element}. "
+                f"Available model columns: {modeldf.columns.tolist()}"
+            )
+
+        if obs_pair_col not in obdf.columns:
+            raise ValueError(
+                f"Obs pair date column '{obs_pair_col}' not found for element={element}. "
+                f"Available obs columns: {obdf.columns.tolist()}"
+            )
+
+        from forecast_targets import forecast_target_time
+        modeldf["pair_date"] = forecast_target_time(modeldf, model, element).dt.date
+
+        obdf["pair_date"] = (
+            pd.to_datetime(obdf[obs_pair_col], errors="coerce", utc=True)
+            .dt.tz_convert(None)
+            .dt.date
+        )
+
+        modeldf = modeldf.dropna(subset=["station_id", "pair_date", "model_value"])
+        obdf = obdf.dropna(subset=["station_id", "pair_date", "obs_value"])
+
+        obdf = obdf.drop_duplicates(["station_id", "pair_date"], keep="last")
+        merged = pd.merge(
+            modeldf,
+            obdf,
+            on=["station_id", "pair_date"],
+            how="inner",
+            suffixes=("_model", "_obs"),
+        )
+
+        # For date-based daily extrema, keep the model valid_time as the
+        # standardized valid_time used by downstream metrics/plots.
+        if "valid_time_model" in merged.columns:
+            merged["valid_time"] = merged["valid_time_model"]
+        elif "valid_time" not in merged.columns and model_pair_col in merged.columns:
+            merged["valid_time"] = merged[model_pair_col]
+
+    elif obs == "obs":
+         # Nearest-time point observation matching.
+        
+        # Force merge key dtypes to match exactly before merge_asof.
+        modeldf["station_id"] = modeldf["station_id"].astype(str)
+        obdf["station_id"] = obdf["station_id"].astype(str)
+
+        modeldf["valid_time"] = (
+            pd.to_datetime(modeldf["valid_time"], errors="coerce", utc=True)
+            .dt.tz_convert(None)
+            .astype("datetime64[ns]")
+        )
+
+        obdf["valid_time"] = (
+            pd.to_datetime(obdf["valid_time"], errors="coerce", utc=True)
+            .dt.tz_convert(None)
+            .astype("datetime64[ns]")
+        )
+
+        modeldf = modeldf.dropna(subset=["station_id", "valid_time"])
+        obdf = obdf.dropna(subset=["station_id", "valid_time"])
+
+        modeldf = modeldf.sort_values(["valid_time", "station_id"])
+        obdf = obdf.drop_duplicates(["station_id", "valid_time"], keep="last")
+        obdf = obdf.sort_values(["valid_time", "station_id"])
+
+        merged = pd.merge_asof(
+            modeldf,
+            obdf,
+            on="valid_time",
+            by="station_id",
+            direction="nearest",
+            tolerance=tolerance,
+            suffixes=("_model", "_obs"),
+        )
+    else:
+        # your existing URMA/exact merge logic
+        # Analysis-style verification source, usually exact valid_time match.
+        if "station_id" in obdf.columns and "station_id" in modeldf.columns:
+            merged = pd.merge(
+                modeldf,
+                obdf,
+                on=["station_id", "valid_time"],
+                how="inner",
+                suffixes=("_model", "_obs"),
+            )
+        else:
+            merged = pd.merge(
+                modeldf,
+                obdf,
+                on="valid_time",
+                how="inner",
+                suffixes=("_model", "_obs"),
+            )
+
+    if merged.empty:
+        return merged
+
+    if "obs_valid_time" in merged:
+        merged["obs_time_offset_minutes"] = (
+            merged["obs_valid_time"] - merged["valid_time"]
+        ).dt.total_seconds() / 60
+    if accum_hours is not None:
+        # Matching endpoints within tolerance also matches starts because
+        # the durations were checked before choosing a nearest observation.
+        start_offset = (merged["obs_window_start"] - merged["model_window_start"]).abs()
+        merged = merged.loc[start_offset.le(tolerance)].copy()
+
+    # After merge, ensure standard columns exist and are numeric.
+    merged["model_value"] = pd.to_numeric(merged["model_value"], errors="coerce")
+    merged["obs_value"] = pd.to_numeric(merged["obs_value"], errors="coerce")
+
+    standard_cols = [
+        "station_id",
+        "valid_time",
+        "init_time",
+        "forecast_hour",
+        "model_value",
+        "obs_value",
+    ]
+
+    # Some edge cases may not have init_time/forecast_hour.
+    for col in standard_cols:
+        if col not in merged.columns:
+            merged[col] = pd.NA
+
+    merged = merged.dropna(subset=["station_id", "valid_time", "model_value", "obs_value"])
+
+    # Remove any duplicate columns that may have been introduced by merge logic.
+    merged = merged.loc[:, ~merged.columns.duplicated()].copy()
+
+    # Put standard columns first, keep everything else after.
+    remaining_cols = [c for c in merged.columns if c not in standard_cols]
+
+    return merged[standard_cols + remaining_cols]
+
+
+# ---------------------------------------------------------------------
+# Optional category helper
+# ---------------------------------------------------------------------
+
+def add_category_columns(
+    pairs: pd.DataFrame,
+    bins: list[float],
+    label_values: list[int],
+    model_category_col: str = "model_category",
+    obs_category_col: str = "obs_category",
+) -> pd.DataFrame:
+    """
+    Add categorical verification columns based on model_value and obs_value.
+
+    This replaces the old wind-specific category creation logic and works for
+    wind, precip, snow, temperature, etc., as long as the bins make sense.
+    """
+    if pairs.empty:
+        return pairs
+
+    df = pairs.copy()
+
+    df[model_category_col] = pd.cut(
+        df["model_value"],
+        bins=bins,
+        labels=label_values,
+    )
+
+    df[obs_category_col] = pd.cut(
+        df["obs_value"],
+        bins=bins,
+        labels=label_values,
+    )
+
+    df[model_category_col] = pd.to_numeric(df[model_category_col], errors="coerce")
+    df[obs_category_col] = pd.to_numeric(df[obs_category_col], errors="coerce")
+
+    return df
+

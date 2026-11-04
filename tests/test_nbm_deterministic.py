@@ -95,9 +95,9 @@ def test_nbm_runs_all_four_pages_without_percentile_controls(tmp_path,monkeypatc
     for page,button,result in [('map','Build Station Metric Map','station_metrics'),
             ('aggregate','Run Aggregate Verification','aggregate_summary')]:
         app.switch_page('pages/1_Map_Explorer.py' if page=='map' else 'pages/2_Aggregate_Verification.py').run()
-        if page=='map':app.text_input(key='map_metadata_path').set_value(str(meta)).run()
+        if page=='map':app.secrets.setdefault('local',{})['metadata_path']=str(meta);app.run()
         else:app.text_input(key='aggregate_station_ids_input').set_value('A,B')
-        app.text_input(key=f'{page}_ui_archive_root').set_value(str(tmp_path))
+        app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
         app.selectbox(key=f'{page}_ui_model').set_value('nbm').run()
         app.selectbox(key=f'{page}_ui_element').set_value(element).run()
         assert not any(s.label=='Verification Percentile' for s in app.selectbox)
@@ -109,8 +109,8 @@ def test_nbm_runs_all_four_pages_without_percentile_controls(tmp_path,monkeypatc
         score=app.session_state[result]
         assert (score.n.sum() if page=='map' else score['n'])==4
     app.switch_page('pages/3_Storm_Zoom.py').run()
-    app.text_input(key='storm_Local Archive Root').set_value(str(tmp_path))
-    app.text_input(key='storm_metadata').set_value(str(meta))
+    app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
+    app.secrets.setdefault('local',{})['metadata_path']=str(meta)
     app.selectbox(key='storm_Model').set_value('nbm').run()
     app.selectbox(key='storm_Element').set_value(element).run()
     assert not any(s.label=='Verification Percentile' for s in app.selectbox)
@@ -126,7 +126,7 @@ def test_nbm_runs_all_four_pages_without_percentile_controls(tmp_path,monkeypatc
     assert 'forecast_probability' not in cases and 'observed_percentile' not in cases
     assert set(app.selectbox(key=f'storm_map_display_{element}_False').options)=={'Forecast','Observation','Signed error','Absolute error'}
     app.switch_page('pages/4_Model_Comparison.py').run()
-    app.text_input(key='compare_archive_root').set_value(str(tmp_path))
+    app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
     app.text_input(key='compare_stations').set_value('A,B')
     app.selectbox(key='compare_model_a').set_value('nbmqmd').run()
     app.selectbox(key='compare_model_b').set_value('nbm').run()

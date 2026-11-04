@@ -79,7 +79,8 @@ def test_pages_apply_filters_independently_and_preserve_them(tmp_path, monkeypat
     monkeypatch.setattr(comparison_loader,'load_comparison_data',capture_comparison)
     app = AppTest.from_file(str(ROOT/'app.py'),default_timeout=15).run()
     app.switch_page('pages/1_Map_Explorer.py').run()
-    app.text_input(key='map_metadata_path').set_value(str(meta)).run()
+    app.secrets.setdefault('local',{})['metadata_path']=str(meta)
+    app.run()
     app.multiselect(key='map_networks').set_value(['332']).run()
     app.checkbox(key='map_filter_elevation').set_value(True).run()
     app.number_input(key='map_elevation_min').set_value(0.)
@@ -88,7 +89,8 @@ def test_pages_apply_filters_independently_and_preserve_them(tmp_path, monkeypat
     assert not app.exception
     assert requests[-1] == ['LOW']
     app.switch_page('pages/4_Model_Comparison.py').run()
-    app.text_input(key='compare_metadata').set_value(str(meta)).run()
+    app.secrets.setdefault('local',{})['metadata_path']=str(meta)
+    app.run()
     assert app.multiselect(key='compare_networks').value == []
     app.multiselect(key='compare_networks').set_value(['332']).run()
     app.checkbox(key='compare_filter_elevation').set_value(True).run()

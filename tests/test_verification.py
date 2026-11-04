@@ -113,7 +113,7 @@ def test_streamlit_aggregate_probability_controls(tmp_path):
     app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/2_Aggregate_Verification.py'), default_timeout=15).run()
     assert not app.exception
     app.selectbox(key='aggregate_ui_model').set_value('nbmqmd').run()
-    app.text_input(key='aggregate_ui_archive_root').set_value(str(tmp_path))
+    app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
     app.text_input(key='aggregate_station_ids_input').set_value('A')
     app.date_input(key='aggregate_ui_end_date').set_value(date(2025,10,1))
     app.number_input(key='aggregate_ui_obs_tolerance_minutes').set_value(15)
@@ -136,9 +136,10 @@ def test_streamlit_aggregate_probability_controls(tmp_path):
     pd.DataFrame({'station_id':['A'],'latitude':[58.3],'longitude':[-134.5],
                   'name':['Test station']}).to_parquet(metadata,index=False)
     map_app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/1_Map_Explorer.py'), default_timeout=15).run()
-    map_app.text_input(key='map_metadata_path').set_value(str(metadata)).run()
+    map_app.secrets.setdefault('local',{})['metadata_path']=str(metadata)
+    map_app.run()
     map_app.selectbox(key='map_ui_model').set_value('nbmqmd').run()
-    map_app.text_input(key='map_ui_archive_root').set_value(str(tmp_path))
+    map_app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
     map_app.date_input(key='map_ui_end_date').set_value(date(2025,10,1))
     map_app.number_input(key='map_ui_obs_tolerance_minutes').set_value(15)
     map_app.selectbox(key='map_ui_threshold_operator_wind').set_value('<')

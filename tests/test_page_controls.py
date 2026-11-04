@@ -21,7 +21,8 @@ def test_map_queries_every_filtered_station_without_a_cap(tmp_path, monkeypatch)
     monkeypatch.setattr(data_loader, 'fetch_data', capture_query)
     app = AppTest.from_file(str(ROOT / 'app.py'), default_timeout=15).run()
     app.switch_page('pages/1_Map_Explorer.py').run()
-    app.text_input(key='map_metadata_path').set_value(str(meta)).run()
+    app.secrets.setdefault('local',{})['metadata_path']=str(meta)
+    app.run()
     assert not app.exception
     assert not any(n.label == 'Maximum stations to query' for n in app.number_input)
     next(b for b in app.button if b.label == 'Build Station Metric Map').click().run()
@@ -68,7 +69,8 @@ def test_pages_keep_settings_and_receive_new_map_selection_automatically(tmp_pat
         'wfo_best':['AJK','AFC']}).to_parquet(meta)
     app = AppTest.from_file(str(ROOT / 'app.py'), default_timeout=15).run()
     app.switch_page('pages/1_Map_Explorer.py').run()
-    app.text_input(key='map_metadata_path').set_value(str(meta)).run()
+    app.secrets.setdefault('local',{})['metadata_path']=str(meta)
+    app.run()
     assert not app.exception
     assert len(app.get('component_instance')) == 0  # only a generated metric map can select stations
     app.selectbox(key='map_ui_model').set_value('nbmqmd').run()
@@ -94,7 +96,8 @@ def test_pages_keep_settings_and_receive_new_map_selection_automatically(tmp_pat
     assert app.text_input(key='aggregate_station_ids_input').value == 'CUSTOM'
 
     app.switch_page('pages/4_Model_Comparison.py').run()
-    app.text_input(key='compare_metadata').set_value(str(meta)).run()
+    app.secrets.setdefault('local',{})['metadata_path']=str(meta)
+    app.run()
     app.checkbox(key='compare_use_offset').set_value(True).run()
     app.number_input(key='compare_offset').set_value(-12.)
     assert not any(b.label == 'Use selected map stations' for b in app.button)

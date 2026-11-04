@@ -1,0 +1,9 @@
+streamlit==1.56.0
+pandas==2.2.3
+numpy==2.3.5
+duckdb==1.4.3
+pyarrow==22.0.0
+matplotlib==3.10.8
+seaborn==0.13.2
+pydeck==0.9.1
+scipy==1.17.0

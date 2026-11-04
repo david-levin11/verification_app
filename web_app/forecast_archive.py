@@ -1,5 +1,6 @@
 """Read-only adapters for deterministic RRFS and derived REFS archives."""
 from pathlib import Path
+from archive_paths import configured_paths
 import pandas as pd
 import pyarrow.parquet as pq
 from config import get_percentile_columns
@@ -17,9 +18,7 @@ def refs_archive_root(root, refs_root=None):
 
 def refs_root_control(ui, root, enabled):
     if not enabled:return None
-    value=ui.text_input('REFS Derived Archive Root',str(refs_archive_root(root)),key='refs_root')
-    ui.caption('REFS reads derived statistics here. Wind and gust share wind files. Completeness uses available/expected members at each lead, not a fixed ensemble size.')
-    return value
+    return configured_paths()['refs_root']
 
 
 def register_forecast_archive(connection, files, model, element):

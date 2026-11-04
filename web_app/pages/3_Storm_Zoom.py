@@ -1,4 +1,5 @@
 """Single-run spatial snapshots, uncertainty diagnostics, and station plumes."""
+from archive_paths import configured_paths
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,7 +44,7 @@ section.main { overflow-y: auto !important; }
 </style>''', unsafe_allow_html=True)
 st.title('Storm Specific Zoom')
 st.caption('Explore one model run across stations and forecast projections. All displayed times are UTC.')
-archive_root = ui.sidebar.text_input('Local Archive Root', '../model')
+archive_root = configured_paths()['archive_root']
 model = ui.sidebar.selectbox('Model', MODELS)
 available_elements = [e for e in get_available_elements(model) if e in STORM_ELEMENTS]
 element = ui.sidebar.selectbox('Element', available_elements)
@@ -88,7 +89,7 @@ def read_metadata(path):
         return pd.DataFrame()
     return normalize_station_metadata(pd.read_parquet(p) if p.suffix.lower()=='.parquet' else pd.read_csv(p))
 
-metadata_path = ui.sidebar.text_input('Station Metadata Path',st.session_state.get('metadata_path','../metadata/ak_station_metadata.parquet'),key='storm_metadata')
+metadata_path = configured_paths()['metadata_path']
 try:
     metadata = read_metadata(metadata_path)
 except Exception as exc:

@@ -175,8 +175,8 @@ def test_storm_page_load_snapshots_evolution_and_station_detail(tmp_path,monkeyp
     monkeypatch.setattr(storm_visuals,'_station_map',fake_map)
     app=AppTest.from_file(str(ROOT/'app.py'),default_timeout=15).run()
     app.switch_page('pages/3_Storm_Zoom.py').run()
-    app.text_input(key='storm_Local Archive Root').set_value(str(tmp_path))
-    app.text_input(key='storm_metadata').set_value(str(meta))
+    app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
+    app.secrets.setdefault('local',{})['metadata_path']=str(meta)
     app.selectbox(key='storm_Model').set_value(model).run()
     app.selectbox(key='storm_Element').set_value(element).run()
     _selected_init=m.init_time.iloc[0]

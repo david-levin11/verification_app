@@ -184,8 +184,9 @@ def test_gust_page_flows_and_minimum_filters(tmp_path, monkeypatch):
     _,_,metadata=fixture(tmp_path)
     app=AppTest.from_file(str(ROOT/'app.py'),default_timeout=15).run()
     app.switch_page('pages/1_Map_Explorer.py').run()
-    app.text_input(key='map_metadata_path').set_value(str(metadata)).run()
-    app.text_input(key='map_ui_archive_root').set_value(str(tmp_path))
+    app.secrets.setdefault('local',{})['metadata_path']=str(metadata)
+    app.run()
+    app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
     app.selectbox(key='map_ui_model').set_value('hrrr').run()
     app.selectbox(key='map_ui_element').set_value('gust').run()
     app.date_input(key='map_ui_start_date').set_value(date(2026,5,2))
@@ -199,7 +200,7 @@ def test_gust_page_flows_and_minimum_filters(tmp_path, monkeypatch):
     next(b for b in app.button if b.label=='Build Station Metric Map').click().run(timeout=30)
     assert not app.exception and app.session_state['station_metrics'].n.iloc[0]==1
     app.switch_page('pages/2_Aggregate_Verification.py').run()
-    app.text_input(key='aggregate_ui_archive_root').set_value(str(tmp_path))
+    app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
     app.text_input(key='aggregate_station_ids_input').set_value('A')
     app.selectbox(key='aggregate_ui_model').set_value('hrrr').run()
     app.selectbox(key='aggregate_ui_element').set_value('gust').run()
@@ -210,7 +211,7 @@ def test_gust_page_flows_and_minimum_filters(tmp_path, monkeypatch):
     next(b for b in app.button if b.label=='Run Aggregate Verification').click().run(timeout=30)
     assert not app.exception and app.session_state['aggregate_summary']['n']==1
     app.switch_page('pages/4_Model_Comparison.py').run()
-    app.text_input(key='compare_archive_root').set_value(str(tmp_path))
+    app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
     app.text_input(key='compare_stations').set_value('A')
     app.selectbox(key='compare_element').set_value('gust').run()
     app.date_input(key='compare_start').set_value(date(2026,5,2))
@@ -232,7 +233,7 @@ def test_gust_page_flows_and_minimum_filters(tmp_path, monkeypatch):
     monkeypatch.setattr(plots, 'plot_storm_timeseries', capture)
     app.switch_page('pages/3_Storm_Zoom.py').run()
     app.selectbox(key='storm_Model').set_value('hrrr').run()
-    app.text_input(key='storm_Local Archive Root').set_value(str(tmp_path))
+    app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
     app.selectbox(key='storm_Element').set_value('gust').run()
     app.session_state['selected_station_list']=['A']
     app.radio(key='storm_station_scope').set_value('Map Explorer selections').run()

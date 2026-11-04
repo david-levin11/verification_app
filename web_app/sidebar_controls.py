@@ -2,6 +2,7 @@
 import pandas as pd
 import streamlit as st
 from page_controls import PageControls
+from archive_paths import configured_paths
 from forecast_archive import refs_root_control
 from config import (MODELS, PERCENTILES, FORECAST_PROJECTION_GROUPS,
     get_available_elements, get_available_obs_sources, get_available_category_sets,
@@ -11,7 +12,7 @@ from config import (MODELS, PERCENTILES, FORECAST_PROJECTION_GROUPS,
 
 def shared_sidebar_controls(show_category_set=False, page_key='map'):
     ui = PageControls(page_key).sidebar
-    archive_root = ui.text_input('Local Archive Root', '../model', key='ui_archive_root')
+    archive_root = configured_paths()['archive_root']
     model = ui.selectbox('Model', MODELS, key='ui_model')
     refs_root=refs_root_control(ui,archive_root,model=='refs')
     elements = get_available_elements(model)

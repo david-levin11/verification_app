@@ -1,3 +1,4 @@
+from archive_paths import configured_paths
 import streamlit as st
 import pandas as pd
 from pathlib import Path
@@ -313,14 +314,7 @@ minimum_observed_speed = controls["minimum_observed_speed"]
 # Map-specific sidebar controls
 # ---------------------------------------------------------------------
 
-metadata_path = ui.sidebar.text_input(
-    "Station Metadata Path",
-    value=st.session_state.get(
-        "metadata_path",
-        "../metadata/ak_station_metadata.parquet",
-    ),
-    key="metadata_path",
-)
+metadata_path = configured_paths()['metadata_path']
 
 station_meta = load_station_metadata(metadata_path)
 

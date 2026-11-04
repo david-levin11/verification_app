@@ -1,3 +1,4 @@
+from archive_paths import configured_paths
 """Compare two forecasts on common targets and a single shared observation."""
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +29,7 @@ sync_map_selection('compare', 'compare_stations')
 st.title('Model Comparison')
 st.caption('Both forecasts are scored against the same observation on matched targets.')
 models=[m for m in MODELS if m!='urma']
-archive_root=ui.sidebar.text_input('Local Archive Root',st.session_state.get('archive_root','../model'),key='compare_archive_root')
+archive_root=configured_paths()['archive_root']
 a_col,b_col=ui.columns(2)
 model_a=a_col.selectbox('Model A (reference)',models,index=models.index('ndfd'),key='compare_model_a')
 model_b=b_col.selectbox('Model B',models,index=models.index('nbm'),key='compare_model_b')
@@ -79,7 +80,7 @@ def read_metadata(path):
         data['station_id']=data.station_id.astype(str).str.strip()
     return normalize_station_metadata(data)
 
-metadata_path=ui.sidebar.text_input('Station Metadata Path',st.session_state.get('metadata_path','../metadata/ak_station_metadata.parquet'),key='compare_metadata')
+metadata_path=configured_paths()['metadata_path']
 try:
     metadata=read_metadata(metadata_path)
 except Exception as exc:

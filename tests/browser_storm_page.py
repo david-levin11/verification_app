@@ -2,6 +2,7 @@
 from pathlib import Path
 from datetime import date
 import os
+import json
 import re
 import socket
 import subprocess
@@ -45,8 +46,9 @@ def main():
                 part.to_parquet(path/f'{month}_archive.parquet',index=False)
         metadata().to_parquet(base/'stations.parquet',index=False)
         app=base/'storm_app.py'
-        defaults={'storm_Local Archive Root':str(base),'storm_Model':model,'storm_Element':element,
-            'storm_metadata':str(base/'stations.parquet'),
+        (base/'.streamlit').mkdir()
+        (base/'.streamlit/secrets.toml').write_text('[local]\narchive_root = '+json.dumps(str(base))+'\nmetadata_path = '+json.dumps(str(base/'stations.parquet'))+'\n')
+        defaults={'storm_Model':model,'storm_Element':element,
             'storm_init_date':m.init_time.iloc[0].date(),
             'storm_init_hour':int(m.init_time.iloc[0].hour),
             'storm_Plot Start Date':o.date.min().date() if daily else m.valid_time.min().date(),
@@ -66,7 +68,7 @@ runpy.run_path({str(ROOT/'pages/3_Storm_Zoom.py')!r})
         log=(base/'server.log').open('w+')
         server=subprocess.Popen([sys.executable,'-m','streamlit','run',str(app),
             '--server.headless=true','--server.address=127.0.0.1',f'--server.port={port}',
-            '--browser.gatherUsageStats=false'],stdout=log,stderr=subprocess.STDOUT)
+            '--browser.gatherUsageStats=false'],stdout=log,stderr=subprocess.STDOUT,cwd=base)
         try:
             url=f'http://127.0.0.1:{port}'
             for _ in range(150):

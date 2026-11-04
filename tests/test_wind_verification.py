@@ -140,8 +140,8 @@ def comparison_page(tmp_path):
     app = AppTest.from_file(str(Path(__file__).parents[1]/'web_app/pages/4_Model_Comparison.py'), default_timeout=15).run()
     metadata = tmp_path/'stations.parquet'
     pd.DataFrame({'station_id':['A'],'latitude':[58.3],'longitude':[-134.5]}).to_parquet(metadata,index=False)
-    app.text_input(key='compare_metadata').set_value(str(metadata))
-    app.text_input(key='compare_archive_root').set_value(str(tmp_path))
+    app.secrets.setdefault('local',{})['metadata_path']=str(metadata)
+    app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
     app.text_input(key='compare_stations').set_value('A')
     app.date_input(key='compare_start').set_value(date(2026,6,2))
     app.date_input(key='compare_end').set_value(date(2026,6,2))

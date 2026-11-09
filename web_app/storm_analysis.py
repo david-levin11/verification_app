@@ -8,7 +8,7 @@ from pairing import build_verification_pairs, get_obs_value_column
 from probability import forecast_probability_details, threshold_event
 
 INTERVALS = [('25', '75'), ('10', '90'), ('5', '95')]
-STORM_ELEMENTS = ['wind', 'gust', 'rh', 'maxt', 'mint', 'precip6hr', 'precip24hr']
+STORM_ELEMENTS = ['wind', 'gust', 'rh', 'minrh', 'maxt', 'mint', 'precip6hr', 'precip24hr']
 
 
 def observed_percentile(values, levels, observed):
@@ -39,7 +39,7 @@ def observed_percentile(values, levels, observed):
 def build_storm_cases(model_frame, observations, model, obs_source, element,
                       init_time, percentile=None, tolerance='1h', threshold=25, operator='>='):
     if element not in STORM_ELEMENTS:
-        raise ValueError('Storm diagnostics support wind, gust, RH, daily temperatures, and 6/24-hour precipitation.')
+        raise ValueError('Storm diagnostics support wind, gust, RH/MinRH, daily temperatures, and 6/24-hour precipitation.')
     daily = get_pairing_method(element) == 'date'
     prepared = prepare_forecasts(model_frame, model, element, percentile)
     if prepared.empty:
@@ -68,6 +68,8 @@ def build_storm_cases(model_frame, observations, model, obs_source, element,
                'obs_time_offset_minutes']
     if accum_hours is not None and not pairs.empty:
         columns.extend(['obs_window_start', 'obs_window_end'])
+    if element=='minrh' and not pairs.empty:
+        columns.extend(c for c in ['coverage_ok','n_obs','max_gap_minutes','rh_sensor'] if c in pairs)
     if daily and not pairs.empty:
         for edge in ['start','end']:
             column = next((c for c in [f'obs_window_{edge}',f'window_{edge}_obs',f'window_{edge}'] if c in pairs), None)

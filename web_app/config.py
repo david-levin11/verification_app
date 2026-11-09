@@ -36,6 +36,7 @@ ELEMENTS = [
     "snow48hr",
     "snow72hr",
     "rh",
+    "minrh",
     "maxt",
     "mint",
 ]
@@ -61,6 +62,7 @@ AVAILABLE_ELEMENTS_BY_MODEL = {
         "mint",
         "maxt",
         "rh",
+        "minrh",
     ],
     "nbm_exp": [
         "wind",
@@ -102,6 +104,7 @@ AVAILABLE_ELEMENTS_BY_MODEL = {
         "maxt",
         "mint",
         "rh",
+        "minrh",
     ],
     "urma": [
         "wind",
@@ -367,6 +370,24 @@ ELEMENT_CONFIG = {
         "model_value_candidates": ["rh"],
         "obs_value_candidates": ["rh", "relative_humidity"],
         "percentile_prefix": "rh_p",
+        "default_percentile": "50",
+        "default_threshold": 30,
+        "threshold_operator": "<=",
+        "thresholds": [15, 20, 25, 30, 40, 50, 70, 80, 90],
+        "supports_direction_filter": False,
+        "category_sets": ["rh"],
+    },
+
+    "minrh": {
+        "label": "Minimum Relative Humidity",
+        "units": "%",
+        "accum_hours": 12,
+        "window_statistic": "minimum",
+        "available_obs_sources": ["obs"],
+        "obs_time_column": "window_end",
+        "model_value_candidates": ["minrh"],
+        "obs_value_candidates": ["minrh"],
+        "percentile_prefix": "minrh_p",
         "default_percentile": "50",
         "default_threshold": 30,
         "threshold_operator": "<=",

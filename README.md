@@ -17,7 +17,7 @@ new forecasts or observations.
 
 Model options include NBM, NBMQMD, NDFD, HRRR, RRFS, REFS, and configured
 experimental variants. URMA is available for supported verification combinations.
-Core workflows cover wind, gust, relative humidity, maximum/minimum temperature,
+Core workflows cover wind, gust, relative humidity, minimum RH, maximum/minimum temperature,
 and 6-/24-hour precipitation. Available elements and probability controls depend
 on the selected model and page; see [the configuration](web_app/config.py).
 Snow has separate archive/observation requirements and is not supported in Storm
@@ -170,6 +170,7 @@ lead ranges, reference offsets, and observation windows.
 - [Administrator paths and installation](LOCAL_CONFIGURATION.md)
 - [Model comparison and matching](MODEL_COMPARISON.md)
 - [Storm verification](STORM_VERIFICATION.md)
+- [Minimum relative humidity](MINRH_VERIFICATION.md)
 - [Wind gust verification](GUST_VERIFICATION.md)
 - [RRFS and derived REFS](RRFS_REFS_VERIFICATION.md)
 - [Verification changes and conventions](VERIFICATION_CHANGES.md)

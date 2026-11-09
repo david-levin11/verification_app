@@ -51,6 +51,9 @@ def map_description(metric,label,cfg,percentile,threshold,operator):
         questions['model_value']=f'What {element} did the {point} predict for this forecast date?'
         questions['obs_value']=f'What {element} was observed for this forecast date?'
         questions['error']=f'How many degrees too warm or too cold was the {point}?'
+    elif cfg.get('window_statistic')=='minimum':
+        questions['model_value']=f'What minimum RH did the {point} predict for the full 18Z–06Z UTC window?'
+        questions['obs_value']='What minimum RH was reported during the matching full 18Z–06Z UTC window, with adequate observation coverage?'
     elif cfg.get('accum_hours'):
         questions['obs_value']=f'What {element} total was observed over a matching accumulation window ending near this valid time?'
     if metric.startswith('width_'):

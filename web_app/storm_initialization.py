@@ -5,10 +5,11 @@ import streamlit as st
 # alaska_verification archiver_config.NBM_START_HOURS / HERBIE_CYCLES,
 # run_model_archiver cycle validation, and nbm_deterministic.source_model.
 # Source revision: 11da34de1c4e536a81bcbf173f29517b3d96cd66.
-QMD_NBM_ELEMENTS={'maxt','mint','precip6hr','precip24hr'}
+QMD_NBM_ELEMENTS={'maxt','mint','minrh','precip6hr','precip24hr'}
 
 
 def initialization_hours(model,element):
+    if model=='nbm' and element=='minrh':return [0,12]
     source='nbmqmd' if model=='nbm' and element in QMD_NBM_ELEMENTS else model
     if source in ['nbm','nbm_exp']:return [1,7,13,19]
     if source in ['nbmqmd','nbmqmd_exp','hrrr','rrfs','refs']:return [0,6,12,18]

@@ -67,7 +67,7 @@ def station_map_view(data):
                          zoom=float(np.clip(zoom, 1, 9)))
 
 
-def station_difference_map(table, metadata, metric, label_a, label_b, minimum_cases=1):
+def station_difference_map(table, metadata, metric, label_a, label_b, minimum_cases=1, limits=None):
     """Positive advantage consistently means A performs better."""
     import pydeck as pdk
     if metadata.empty or not {'station_id','latitude','longitude'}.issubset(metadata):
@@ -88,7 +88,7 @@ def station_difference_map(table, metadata, metric, label_a, label_b, minimum_ca
     data=data[data.latitude.between(-85,85) & data.longitude.between(-180,180)].copy()
     if data.empty:
         return None,data
-    span=max(float(data.advantage.abs().max()),1e-12)
+    span=float(limits[1]) if limits is not None else max(float(data.advantage.abs().max()),1e-12)
     def color(value):
         strength=min(abs(value)/span,1)
         target=np.array([33,102,172] if value>0 else [179,88,6])

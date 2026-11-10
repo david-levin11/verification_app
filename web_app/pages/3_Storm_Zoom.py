@@ -23,6 +23,7 @@ from probability import forecast_probability_details
 from comparison import model_view
 from storm_comparison import (compare_storm_runs, storm_comparison_summary, forecast_label,
                               plot_comparison_evolution, plot_comparison_station)
+from color_scales import scale_controls, clipping_caption
 from storm_visuals import (snapshot_map_data, render_storm_map, plot_evolution,
                            map_colorbar, map_description)
 
@@ -263,12 +264,15 @@ with spatial:
     if map_data.empty:
         st.info('No stations have both coordinates and a valid value for this map display. The tables and station plots remain available.')
     else:
+        limits = scale_controls(ui, map_data[metric], saved['element'], metric)
+        map_data,view,_ = snapshot_map_data(map_snapshot,result['metadata'],metric,limits)
+        clipping_caption(map_data[metric], limits)
         unit = ('percentile' if metric=='observed_percentile' else 'probability (0–1)' if metric=='forecast_probability'
                 else 'degrees' if metric=='angular_error' else spread_units
                 if metric in ['error','absolute_error','median_error','absolute_error_difference'] or metric.startswith('width_') else cfg['units'])
         st.caption(f'{len(map_data)} stations plotted. Click a station to populate Station detail.')
         render_storm_map(map_data,metric,view,result['generation'])
-        fig=map_colorbar(metric,limits,map_label,unit)
+        fig=map_colorbar(metric,limits,map_label,unit,map_data[metric])
         st.pyplot(fig);plt.close(fig)
         if metric=='forecast_probability':
             st.caption('Outline: green = event observed; purple = event not observed; gray = no matched observation. Gold marks the selected station.')

@@ -14,21 +14,24 @@ def map_colormap(metric):
     return plt.get_cmap('RdBu_r' if metric in ['observed_percentile','error','median_error','absolute_error_difference'] else 'viridis')
 
 
-def map_colorbar(metric, limits, label, units):
+def map_colorbar(metric, limits, label, units, values=()):
     """Use exactly the same normalization and colormap as the station markers."""
     from matplotlib.colorbar import ColorbarBase
     from matplotlib.colors import Normalize
     from matplotlib.ticker import PercentFormatter
+    from color_scales import clipped_counts
+    below,above=clipped_counts(values,limits)
+    extend='both' if below and above else 'min' if below else 'max' if above else 'neither'
     fig=plt.figure(figsize=(10,1.05))
     ax=fig.add_axes([.08,.55,.84,.23])
-    bar=ColorbarBase(ax,cmap=map_colormap(metric),norm=Normalize(*limits),orientation='horizontal')
+    bar=ColorbarBase(ax,cmap=map_colormap(metric),norm=Normalize(*limits),orientation='horizontal',extend=extend)
     if metric=='forecast_probability':
-        bar.set_ticks([0,.25,.5,.75,1])
+        bar.set_ticks([v for v in [0,.25,.5,.75,1] if limits[0]<=v<=limits[1]])
         bar.formatter=PercentFormatter(xmax=1,decimals=0)
         bar.update_ticks()
         bar.set_label(f'{label} (%)')
     else:
-        if metric=='observed_percentile':bar.set_ticks([0,25,50,75,100])
+        if metric=='observed_percentile':bar.set_ticks([v for v in [0,25,50,75,100] if limits[0]<=v<=limits[1]])
         bar.set_label(f'{label} ({units})')
     return fig
 
@@ -51,6 +54,9 @@ def map_description(metric,label,cfg,percentile,threshold,operator):
         questions['model_value']=f'What {element} did the {point} predict for this forecast date?'
         questions['obs_value']=f'What {element} was observed for this forecast date?'
         questions['error']=f'How many degrees too warm or too cold was the {point}?'
+    elif cfg.get('window_statistic')=='minimum':
+        questions['model_value']=f'What minimum RH did the {point} predict for the full 18Z–06Z UTC window?'
+        questions['obs_value']='What minimum RH was reported during the matching full 18Z–06Z UTC window, with adequate observation coverage?'
     elif cfg.get('accum_hours'):
         questions['obs_value']=f'What {element} total was observed over a matching accumulation window ending near this valid time?'
     if metric.startswith('width_'):
@@ -64,7 +70,7 @@ def map_description(metric,label,cfg,percentile,threshold,operator):
     return text
 
 
-def snapshot_map_data(snapshot, metadata, metric):
+def snapshot_map_data(snapshot, metadata, metric, limits=None):
     if metadata.empty or not {'station_id','latitude','longitude'}.issubset(metadata):
         return pd.DataFrame(), None, None
     context = [c for c in ['station_id','latitude','longitude','name','mnet_id','elevation_ft'] if c in metadata]
@@ -75,7 +81,9 @@ def snapshot_map_data(snapshot, metadata, metric):
                 data.longitude.between(-180,180)].copy()
     if data.empty:
         return data, None, None
-    if metric in ['observed_percentile','forecast_probability']:
+    if limits is not None:
+        low, high = limits
+    elif metric in ['observed_percentile','forecast_probability']:
         low, high = (0.,100.) if metric=='observed_percentile' else (0.,1.)
     elif metric in ['error','median_error','absolute_error_difference']:
         bound = max(float(data[metric].abs().max()), 1e-6)

@@ -2,6 +2,7 @@
 from datetime import date, datetime
 import duckdb
 import pandas as pd
+from minrh import prepare_minrh
 from forecast_targets import forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage
 from forecast_archive import register_forecast_archive, archive_diagnostics
@@ -74,6 +75,9 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
                          f'WHERE "{station_column}" IN (SELECT unnest(?)) '
                          f'AND ({time_expression}) BETWEEN ? AND ?')
             frame = connection.execute(statement, params+[stations, lo.to_pydatetime(), hi.to_pydatetime(warn=False)]).df()
+        if element=='minrh':
+            frame,notes=prepare_minrh(frame,None if observation else model)
+            warnings.extend(notes)
         if not observation:warnings.extend(archive_diagnostics(frame,model))
         if observation:
             time_column = get_obs_time_column(element)

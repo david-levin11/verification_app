@@ -23,6 +23,7 @@ from probability import forecast_probability_details
 from comparison import model_view
 from storm_comparison import (compare_storm_runs, storm_comparison_summary, forecast_label,
                               plot_comparison_evolution, plot_comparison_station)
+from color_scales import scale_controls, clipping_caption
 from storm_visuals import (snapshot_map_data, render_storm_map, plot_evolution,
                            map_colorbar, map_description)
 
@@ -79,7 +80,9 @@ if daily:
     st.sidebar.caption('Daily temperature observations match the forecast date. Reporting-time tolerance does not apply; the observed measurement windows appear in the results.')
 else:
     minutes = ui.sidebar.number_input('Observation tolerance (minutes)',0,180,60,step=5,key='storm_obs_minutes')
-    if cfg.get('accum_hours'):
+    if cfg.get('window_statistic')=='minimum':
+        st.sidebar.caption('MinRH verifies full 18Z–06Z UTC windows with adequate observed coverage. Shortened NDFD periods are excluded.')
+    elif cfg.get('accum_hours'):
         st.sidebar.caption('Accumulation durations must agree. Tolerance applies to the window endpoint.')
 
 @st.cache_data
@@ -183,7 +186,7 @@ cases=result['cases'];cfg=get_element_config(saved['element']).copy()
 daily=saved['element'] in ['maxt','mint']
 accumulation=cfg.get('accum_hours') is not None
 if daily:cfg['units']='°F'
-spread_units='percentage points' if saved['element']=='rh' else cfg['units']
+spread_units='percentage points' if saved['element'] in ['rh','minrh'] else cfg['units']
 probabilistic=is_probabilistic(saved['model'],saved['element'])
 for message in result['warnings']:st.warning(message)
 comparing=saved.get('compare_enabled',False)
@@ -261,12 +264,15 @@ with spatial:
     if map_data.empty:
         st.info('No stations have both coordinates and a valid value for this map display. The tables and station plots remain available.')
     else:
+        limits = scale_controls(ui, map_data[metric], saved['element'], metric)
+        map_data,view,_ = snapshot_map_data(map_snapshot,result['metadata'],metric,limits)
+        clipping_caption(map_data[metric], limits)
         unit = ('percentile' if metric=='observed_percentile' else 'probability (0–1)' if metric=='forecast_probability'
                 else 'degrees' if metric=='angular_error' else spread_units
                 if metric in ['error','absolute_error','median_error','absolute_error_difference'] or metric.startswith('width_') else cfg['units'])
         st.caption(f'{len(map_data)} stations plotted. Click a station to populate Station detail.')
         render_storm_map(map_data,metric,view,result['generation'])
-        fig=map_colorbar(metric,limits,map_label,unit)
+        fig=map_colorbar(metric,limits,map_label,unit,map_data[metric])
         st.pyplot(fig);plt.close(fig)
         if metric=='forecast_probability':
             st.caption('Outline: green = event observed; purple = event not observed; gray = no matched observation. Gold marks the selected station.')
@@ -308,6 +314,8 @@ with evolution:
 with detail:
     if daily:
         st.write(f'The temperature comparison answers the question: “How did forecast and observed {cfg["label"].lower()} compare for each forecast date?”')
+    elif saved['element']=='minrh':
+        st.write('The minimum-RH comparison answers the question: “How did the forecast and observed minimum RH compare over the same full 18Z–06Z UTC window?”')
     elif accumulation:
         st.write(f'The accumulation comparison answers the question: “How did forecast and observed {cfg["label"].lower()} totals compare over their measurement windows?”')
     else:
@@ -349,7 +357,7 @@ with detail:
             model=saved['model'],element=saved['element'],percentile=saved['percentile'],
             intervals=[('5','95'),('10','90'),('25','75')] if probabilistic else None)
     if fig is not None:
-        if saved['element']=='rh':fig.axes[0].set_ylim(0,100)
+        if saved['element'] in ['rh','minrh']:fig.axes[0].set_ylim(0,100)
         st.pyplot(fig);plt.close(fig)
     if report_plume:
         st.caption('The station plume answers the question: “How did the forecast distribution compare with all observed reports during the requested period?” Small red points show every available report at its actual UTC timestamp; larger red points identify observations used for verification. Darker shading spans p25–p75, lighter shading p5–p95, and the central line is p50. Reports between forecast projections provide visual context; matching, scores, and ensemble completeness rules are unchanged.')
@@ -359,7 +367,8 @@ with detail:
     point=saved['percentile']
     st.caption((f'Point error uses p{point}; the median-error map always uses p50. ' if probabilistic else '')+
                ('Temperatures are compared by the configured forecast date. The window strip, when available, shows actual observed measurement periods; no forecast window is inferred from an archive timestamp.'
-                if daily else 'Each horizontal segment represents a separate accumulation total over its window; it is not a running cumulative total. Overlapping windows are not independent verification cases.'
+                if daily else 'Each horizontal segment shows a minimum RH over its 18Z–06Z UTC window, not instantaneous RH. Sparse observations and shortened NDFD periods are excluded.'
+                if saved['element']=='minrh' else 'Each horizontal segment represents a separate accumulation total over its window; it is not a running cumulative total. Overlapping windows are not independent verification cases.'
                 if accumulation else 'Observation points show the matched report at each forecast valid time; actual timestamps and offsets appear in the case table.' if probabilistic or (comparing and not shared.empty) else 'The plot shows actual report timestamps; the case table records which report was matched to each forecast.'))
     st.dataframe(cases[cases.station_id.eq(station)],hide_index=True,use_container_width=True)
     if comparing and not shared.empty:

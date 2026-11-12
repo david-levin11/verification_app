@@ -36,6 +36,7 @@ ELEMENTS = [
     "snow48hr",
     "snow72hr",
     "rh",
+    "minrh",
     "maxt",
     "mint",
 ]
@@ -61,6 +62,7 @@ AVAILABLE_ELEMENTS_BY_MODEL = {
         "mint",
         "maxt",
         "rh",
+        "minrh",
     ],
     "nbm_exp": [
         "wind",
@@ -102,6 +104,7 @@ AVAILABLE_ELEMENTS_BY_MODEL = {
         "maxt",
         "mint",
         "rh",
+        "minrh",
     ],
     "urma": [
         "wind",
@@ -375,6 +378,24 @@ ELEMENT_CONFIG = {
         "category_sets": ["rh"],
     },
 
+    "minrh": {
+        "label": "Minimum Relative Humidity",
+        "units": "%",
+        "accum_hours": 12,
+        "window_statistic": "minimum",
+        "available_obs_sources": ["obs"],
+        "obs_time_column": "window_end",
+        "model_value_candidates": ["minrh"],
+        "obs_value_candidates": ["minrh"],
+        "percentile_prefix": "minrh_p",
+        "default_percentile": "50",
+        "default_threshold": 30,
+        "threshold_operator": "<=",
+        "thresholds": [15, 20, 25, 30, 40, 50, 70, 80, 90],
+        "supports_direction_filter": False,
+        "category_sets": ["rh"],
+    },
+
     "maxt": {
         "label": "Maximum Temperature",
         "units": "F",
@@ -491,6 +512,9 @@ def get_percentile_columns(element: str) -> dict[str, str]:
 # Category definitions
 # =============================================================================
 
+# Numeric non-wind labels follow pd.cut's (lower, upper] intervals.
+# Small negative first edges for nonnegative elements admit true zeros;
+# retain those bin edges while displaying the meaningful upper limit.
 CATEGORY_CONFIG = {
     "marine": {
         "label": "Marine Category",
@@ -526,53 +550,53 @@ CATEGORY_CONFIG = {
         "label": "Precipitation Category",
         "bins": [-0.001, 0.01, 0.10, 0.25, 0.50, 1.00, 2.00, float("inf")],
         "labels": {
-            0: "None/Trace",
-            1: "Very Light",
-            2: "Light",
-            3: "Moderate",
-            4: "Heavy",
-            5: "Very Heavy",
-            6: "Extreme",
+            0: "≤0.01 in",
+            1: "(0.01, 0.10] in",
+            2: "(0.10, 0.25] in",
+            3: "(0.25, 0.50] in",
+            4: "(0.50, 1.00] in",
+            5: "(1.00, 2.00] in",
+            6: ">2.00 in",
         },
     },
     "snow": {
         "label": "Snowfall Category",
         "bins": [-0.001, 0.1, 1.0, 2.0, 4.0, 6.0, 12.0, float("inf")],
         "labels": {
-            0: "None/Trace",
-            1: "Light",
-            2: "Moderate",
-            3: "Advisory",
-            4: "Heavy",
-            5: "Major",
-            6: "Extreme",
+            0: "≤0.1 in",
+            1: "(0.1, 1.0] in",
+            2: "(1.0, 2.0] in",
+            3: "(2.0, 4.0] in",
+            4: "(4.0, 6.0] in",
+            5: "(6.0, 12.0] in",
+            6: ">12.0 in",
         },
     },
     "temperature": {
         "label": "Temperature Category",
         "bins": [-100, 0, 20, 32, 50, 70, 85, 100, float("inf")],
         "labels": {
-            0: "Bitter Cold",
-            1: "Very Cold",
-            2: "Freezing",
-            3: "Cool",
-            4: "Mild",
-            5: "Warm",
-            6: "Hot",
-            7: "Very Hot",
+            0: "(-100, 0] °F",
+            1: "(0, 20] °F",
+            2: "(20, 32] °F",
+            3: "(32, 50] °F",
+            4: "(50, 70] °F",
+            5: "(70, 85] °F",
+            6: "(85, 100] °F",
+            7: ">100 °F",
         },
     },
     "rh": {
         "label": "Relative Humidity Category",
         "bins": [-0.1, 15, 25, 35, 50, 70, 90, 100],
         "labels": {
-            0: "Very Dry",
-            1: "Dry",
-            2: "Moderately Dry",
-            3: "Moderate",
-            4: "Humid",
-            5: "Very Humid",
-            6: "Near Saturation",
+            0: "≤15 %",
+            1: "(15, 25] %",
+            2: "(25, 35] %",
+            3: "(35, 50] %",
+            4: "(50, 70] %",
+            5: "(70, 90] %",
+            6: "(90, 100] %",
         },
     },
 }

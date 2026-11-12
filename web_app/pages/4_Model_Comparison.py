@@ -16,6 +16,7 @@ from wind_verification import (filter_observed_speed, filter_observed_sector,
 from wind_comparison_panel import render_direction_comparison
 from comparison import (comparison_cases, comparison_scores, grouped_scores,
                         paired_mae_interval, METRIC_LABELS, model_view)
+from color_scales import scale_controls, scale_units, clipping_caption, colorbar
 from comparison_plots import (plot_group_scores, plot_probability_comparison,
                               station_difference_map)
 
@@ -237,6 +238,12 @@ with map_tab:
     deck,map_data=station_difference_map(station_table,result['metadata'],metric,label_a,label_b,minimum)
     if deck is None:st.info('A station map needs matching metadata with latitude/longitude and enough shared cases.')
     else:
+        limits=scale_controls(ui,map_data.advantage,element,metric,difference=True)
+        deck,map_data=station_difference_map(station_table,result['metadata'],metric,label_a,label_b,minimum,limits)
+        fig=colorbar(limits,f'Advantage for A ({scale_units(element,metric,True)})',
+                     ['#b35806','#f5f5f5','#2166ac'],map_data.advantage)
+        st.pyplot(fig);plt.close(fig)
+        clipping_caption(map_data.advantage,limits)
         st.caption(f'Blue: {label_a} better. Orange: {label_b} better. White: similar. Bias compares distance from zero; frequency bias compares distance from one.')
         st.caption('Circle size reflects shared case counts. Marker sizes stay readable as you zoom.')
         st.pydeck_chart(deck,use_container_width=True)

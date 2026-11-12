@@ -1,5 +1,6 @@
 import duckdb
 import pandas as pd
+from minrh import prepare_minrh
 from pathlib import Path
 from config import get_obs_time_column, get_obs_filter_time_column, get_pairing_method
 from forecast_targets import forecast_target_sql
@@ -334,6 +335,10 @@ def fetch_data(
     # ------------------------------------------------------------------
     # 6. Return data and any non-fatal warnings
     # ------------------------------------------------------------------
+
+    if element=='minrh':
+        modeldf,notes=prepare_minrh(modeldf,model);warnings.extend(notes)
+        obdf,notes=prepare_minrh(obdf);warnings.extend(notes)
 
     if element == 'gust':
         coverage = gust_observation_coverage(obdf)

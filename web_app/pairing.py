@@ -18,6 +18,7 @@ rather than element-specific names like wind_speed_kt, precip_accum_6hr, etc.
 from __future__ import annotations
 
 import pandas as pd
+from minrh import prepare_minrh
 from forecast_archive import ENSEMBLE_COLUMNS
 
 from config import (
@@ -245,6 +246,11 @@ def build_verification_pairs(
     if obdf is None or obdf.empty:
         return pd.DataFrame()
 
+    if element=='minrh':
+        modeldf=prepare_minrh(modeldf,model)[0]
+        obdf=prepare_minrh(obdf)[0]
+        if modeldf.empty or obdf.empty:return pd.DataFrame()
+
     modeldf = _prepare_dataframe(modeldf)
     obdf = _prepare_dataframe(obdf)
 
@@ -299,6 +305,8 @@ def build_verification_pairs(
     # Preserve the actual reporting time, rather than losing it in merge_asof.
     obdf["obs_valid_time"] = obdf["valid_time"]
     optional_obs_cols = [obs_col, "obs_valid_time"]
+    if element=='minrh':
+        optional_obs_cols.extend(c for c in ['coverage_ok','n_obs','max_gap_minutes','first_report','last_report','rh_sensor'] if c in obdf)
     accum_hours = get_element_config(element).get("accum_hours")
     if accum_hours is not None:
         start_col = _first_existing_column(obdf, ["start_time", "window_start"])

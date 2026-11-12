@@ -6,6 +6,7 @@ from pairing import build_verification_pairs, get_model_value_column
 from metrics import compute_summary_metrics
 from probability import forecast_probabilities, probability_scores
 from forecast_targets import forecast_target_time
+from minrh import prepare_minrh
 
 POINT_METRICS = ['bias', 'mae', 'rmse', 'pod', 'far', 'csi', 'frequency_bias']
 PROB_METRICS = ['brier_score', 'reliability_error']
@@ -21,7 +22,7 @@ def utc_naive(values):
 
 
 def prepare_forecasts(frame, model, element, percentile=None):
-    result = frame.copy()
+    result = prepare_minrh(frame,model)[0] if element=='minrh' else frame.copy()
     if 'station_id' not in result and 'stid' in result:
         result = result.rename(columns={'stid':'station_id'})
     if result.empty:
@@ -142,6 +143,8 @@ def attach_shared_observations(matched, observations, model_a, element,
         return pd.DataFrame()
     obs_cols = ['station_id','init_time','valid_time','obs_value','obs_valid_time',
                 'obs_time_offset_minutes','obs_window_start','obs_window_end','pair_date']
+    if element=='minrh':
+        obs_cols.extend(c for c in ['coverage_ok','n_obs','max_gap_minutes','rh_sensor'] if c in paired)
     # Date extrema retain their existing configured anchor-date convention.
     for col in get_element_config(element).get('direction_candidates', []):
         observed_col = col + '_obs' if col + '_obs' in paired else col

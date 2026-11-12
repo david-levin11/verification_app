@@ -159,7 +159,7 @@ def plot_comparison_station(shared, station, model_a, model_b, element,
                  f'B: {model_b.upper()} initialized {data.b_init_time.iloc[0]:%Y-%m-%d %H:%M} UTC')
     ordinary, _ = ax.get_legend_handles_labels(); ax.legend(handles=handles+ordinary,fontsize=8,loc='best')
     ax.grid(axis='y',alpha=.25)
-    if element=='rh':ax.set_ylim(0,100)
+    if element in ['rh','minrh']:ax.set_ylim(0,100)
     elif duration:ax.set_ylim(bottom=-.03*max(ax.get_ylim()[1],.01))
     if wax is not None:
         window_positions=np.arange(len(data),dtype=float)
@@ -170,7 +170,7 @@ def plot_comparison_station(shared, station, model_a, model_b, element,
                 mdates.date2num(pd.to_datetime(end[good]).to_numpy()),color=color,linewidth=3,label=label)
         wax.set_yticks(window_positions,labels);wax.invert_yaxis();wax.xaxis_date()
         wax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d\n%H:%M'))
-        wax.set_xlabel('Observed measurement windows (UTC)' if daily else 'Forecast and observed accumulation windows (UTC)')
+        wax.set_xlabel('Observed measurement windows (UTC)' if daily else 'Forecast and observed minimum-RH windows (UTC)' if element=='minrh' else 'Forecast and observed accumulation windows (UTC)')
         wax.grid(alpha=.25);wax.legend(fontsize=8)
     fig.tight_layout()
     return fig

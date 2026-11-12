@@ -17,7 +17,7 @@ new forecasts or observations.
 
 Model options include NBM, NBMQMD, NDFD, HRRR, RRFS, REFS, and configured
 experimental variants. URMA is available for supported verification combinations.
-Core workflows cover wind, gust, relative humidity, maximum/minimum temperature,
+Core workflows cover wind, gust, relative humidity, minimum RH, maximum/minimum temperature,
 and 6-/24-hour precipitation. Available elements and probability controls depend
 on the selected model and page; see [the configuration](web_app/config.py).
 Snow has separate archive/observation requirements and is not supported in Storm
@@ -34,6 +34,38 @@ Each page has independent analysis controls. Map Explorer station selections
 propagate to the other analysis pages; manual station lists are also supported.
 All available archived forecast hours are eligible within the selected lead
 range, without inventing missing forecast increments.
+
+## Map color scales
+
+Map Explorer, Model Comparison station differences, and Storm Zoom spatial
+snapshots offer **Standard**, **Fit to data**, and **Custom** under **Map color
+scale**. Standard uses fixed ranges by element/metric; Fit to data uses robust
+95th-percentile limits (5th–95th for forecast/observed values). Custom accepts a
+symmetric ± limit for signed metrics and minimum/maximum limits otherwise.
+Settings are independent by page, element, and metric and survive page changes.
+These controls recolor existing results without rerunning archive queries.
+
+| Element | Standard bias/signed error | Standard MAE/RMSE/absolute error |
+| --- | --- | --- |
+| 6-hour precipitation | ±0.25 in | 0–0.50 in |
+| 24-hour precipitation | ±0.50 in | 0–1.00 in |
+| Maximum/minimum temperature | ±5°F | 0–10°F |
+| RH/minimum RH | ±10 percentage points | 0–20 percentage points |
+| Wind/gust | ±5 kt | 0–10 kt |
+
+Model Comparison maps show **advantage for A**, not the original scores; their
+standard signed limits use the element's bias limit for continuous metrics and
+±0.25 for probability/proportion-score differences. Positive advantage favors A;
+negative favors B. Bias compares distance from zero, and frequency bias compares
+distance from one. Standard POD/FAR/CSI/probability maps keep a 0–1 scale;
+percentiles use 0–100. Counts adapt to the data rather than use physical defaults.
+
+Values outside a color range use end colors and colorbar extension triangles;
+a caption reports how many plotted station values fall outside each limit.
+Tooltips, tables, scores, and selected stations retain their actual values.
+Fixed ranges are display defaults, not acceptable-error thresholds. Current
+limits and units appear inside the scale controls. Shared defaults live in
+[web_app/color_scales.py](web_app/color_scales.py).
 
 ## Quick start with conda
 
@@ -170,6 +202,7 @@ lead ranges, reference offsets, and observation windows.
 - [Administrator paths and installation](LOCAL_CONFIGURATION.md)
 - [Model comparison and matching](MODEL_COMPARISON.md)
 - [Storm verification](STORM_VERIFICATION.md)
+- [Minimum relative humidity](MINRH_VERIFICATION.md)
 - [Wind gust verification](GUST_VERIFICATION.md)
 - [RRFS and derived REFS](RRFS_REFS_VERIFICATION.md)
 - [Verification changes and conventions](VERIFICATION_CHANGES.md)

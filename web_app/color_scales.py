@@ -154,3 +154,10 @@ def colorbar(limits, label, colors, values=(), stepped=False):
         bar.dividers.set_color('#777777')
         bar.dividers.set_linewidth(.4)
     return fig
+
+
+def render_colorbar(fig):
+    """Center the compact legend in the same full-width container as the map."""
+    import streamlit as st
+    with st.container(horizontal=True, horizontal_alignment='center'):
+        st.pyplot(fig, width=600)

@@ -16,7 +16,7 @@ from wind_verification import (filter_observed_speed, filter_observed_sector,
 from wind_comparison_panel import render_direction_comparison
 from comparison import (comparison_cases, comparison_scores, grouped_scores,
                         paired_mae_interval, METRIC_LABELS, model_view)
-from color_scales import scale_controls, scale_units, clipping_caption, colorbar
+from color_scales import render_colorbar, scale_controls, scale_units, clipping_caption, colorbar
 from comparison_plots import (plot_group_scores, plot_probability_comparison,
                               station_difference_map)
 
@@ -245,7 +245,7 @@ with map_tab:
         st.pydeck_chart(deck,use_container_width=True)
         fig=colorbar(limits,f'Advantage for A ({scale_units(element,metric,True)})',
                      ['#b35806','#f5f5f5','#2166ac'],map_data.advantage)
-        st.pyplot(fig,width=600);plt.close(fig)
+        render_colorbar(fig);plt.close(fig)
         clipping_caption(map_data.advantage,limits)
     display_table=station_table[station_table.metric.eq(metric)]
     context=station_context_table(result['metadata'])

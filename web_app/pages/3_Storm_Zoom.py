@@ -23,7 +23,7 @@ from probability import forecast_probability_details
 from comparison import model_view
 from storm_comparison import (compare_storm_runs, storm_comparison_summary, forecast_label,
                               plot_comparison_evolution, plot_comparison_station)
-from color_scales import scale_controls, clipping_caption
+from color_scales import render_colorbar, scale_controls, clipping_caption
 from storm_visuals import (snapshot_map_data, render_storm_map, plot_evolution,
                            map_colorbar, map_description)
 
@@ -273,7 +273,7 @@ with spatial:
         st.caption(f'{len(map_data)} stations plotted. Click a station to populate Station detail.')
         render_storm_map(map_data,metric,view,result['generation'])
         fig=map_colorbar(metric,limits,map_label,unit,map_data[metric])
-        st.pyplot(fig,width=600);plt.close(fig)
+        render_colorbar(fig);plt.close(fig)
         if metric=='forecast_probability':
             st.caption('Outline: green = event observed; purple = event not observed; gray = no matched observation. Gold marks the selected station.')
             st.caption(probability_description(saved['model']=='refs'))

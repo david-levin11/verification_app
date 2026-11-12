@@ -204,7 +204,7 @@ def add_map_style_columns(df, metric, limits=None):
 def show_map_legend(station_metrics, selected_metric, limits=None, units=''):
     """The colorbar uses the same bounds and colors as the station markers."""
     import matplotlib.pyplot as plt
-    from color_scales import colorbar
+    from color_scales import colorbar, render_colorbar
     if station_metrics.empty or selected_metric not in station_metrics:
         return
     cfg = METRIC_COLOR_CONFIG.get(selected_metric, {'scale': 'sequential'})
@@ -214,7 +214,7 @@ def show_map_legend(station_metrics, selected_metric, limits=None, units=''):
     label = cfg.get('label', selected_metric) + (f' ({units})' if units else '')
     fig = colorbar(limits, label, colors, station_metrics[selected_metric],
                    stepped=cfg['scale']!='diverging_zero')
-    st.pyplot(fig, width=600)
+    render_colorbar(fig)
     plt.close(fig)
 
 

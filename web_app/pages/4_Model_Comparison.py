@@ -240,13 +240,13 @@ with map_tab:
     else:
         limits=scale_controls(ui,map_data.advantage,element,metric,difference=True)
         deck,map_data=station_difference_map(station_table,result['metadata'],metric,label_a,label_b,minimum,limits)
-        fig=colorbar(limits,f'Advantage for A ({scale_units(element,metric,True)})',
-                     ['#b35806','#f5f5f5','#2166ac'],map_data.advantage)
-        st.pyplot(fig);plt.close(fig)
-        clipping_caption(map_data.advantage,limits)
         st.caption(f'Blue: {label_a} better. Orange: {label_b} better. White: similar. Bias compares distance from zero; frequency bias compares distance from one.')
         st.caption('Circle size reflects shared case counts. Marker sizes stay readable as you zoom.')
         st.pydeck_chart(deck,use_container_width=True)
+        fig=colorbar(limits,f'Advantage for A ({scale_units(element,metric,True)})',
+                     ['#b35806','#f5f5f5','#2166ac'],map_data.advantage)
+        st.pyplot(fig,width=600);plt.close(fig)
+        clipping_caption(map_data.advantage,limits)
     display_table=station_table[station_table.metric.eq(metric)]
     context=station_context_table(result['metadata'])
     if 'station_id' in context:

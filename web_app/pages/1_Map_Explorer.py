@@ -601,10 +601,11 @@ if "station_metrics" in st.session_state:
         display_element = result_context.get('element', element)
         plotted_metrics = station_metrics.dropna(subset=[c for c in ['latitude','longitude',selected_metric] if c in station_metrics])
         limits = scale_controls(ui, plotted_metrics[selected_metric], display_element, selected_metric)
-        show_map_legend(plotted_metrics, selected_metric, limits, scale_units(display_element, selected_metric))
-        clipping_caption(plotted_metrics[selected_metric], limits)
     st.caption("Click a station to select it; click again to deselect. Selected stations have a gold outline.")
     plot_station_metric_map(station_metrics, selected_metric, limits)
+    if limits is not None:
+        show_map_legend(plotted_metrics, selected_metric, limits, scale_units(display_element, selected_metric))
+        clipping_caption(plotted_metrics[selected_metric], limits)
     show_selected_stations(station_meta)
 
     st.subheader("Station Metrics Table")

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import pytest
 sys.path.insert(0, str(Path(__file__).parents[1] / 'web_app'))
 from color_scales import (standard_bounds, fit_bounds, clipped_counts,
-                          scale_units, colorbar)
+                          scale_units, colorbar, color_mapping)
 from maps import add_map_style_columns
 from storm_visuals import snapshot_map_data, map_colorbar
 from comparison_plots import station_difference_map
@@ -79,7 +79,7 @@ def test_storm_custom_limits_bar_and_clipping_use_identical_normalization():
     assert fig.axes[0].get_xlim() == (.2,.8)
     plt.close(fig)
     fig = colorbar((0,.5), 'MAE (in)', ['white','blue'], [0,.2,4.])
-    assert fig.axes[0]._colorbar.extend == 'max'
+    assert fig.axes[0]._colorbar.extend == 'both'
     plt.close(fig)
 
 
@@ -114,3 +114,47 @@ st.session_state['limits']=scale_controls(ui,[-.1,.2,4.],element,metric)
     app.number_input(key=mode+'_high').set_value(3.).run()
     assert not app.error and not app.exception
     assert app.session_state['limits'] == (2.,3.)
+
+
+@pytest.mark.parametrize('metric', ['mae', 'pod', 'far'])
+def test_sequential_markers_match_compact_stepped_legend_including_boundaries(metric):
+    from maps import show_map_legend
+    import maps
+    from unittest.mock import patch
+    limits = (0., 1.)
+    values = [-1., .01, .19, .2, .39, .4, .6, .8, 1., 2.]
+    frame = pd.DataFrame({metric: values})
+    styled, _, _ = add_map_style_columns(frame, metric, limits)
+    captured = []
+    with patch.object(maps.st, 'pyplot', side_effect=lambda fig, **kw: captured.append((fig, kw))):
+        show_map_legend(frame, metric, limits)
+    fig, arguments = captured[0]
+    bar = fig.axes[0]._colorbar
+    assert arguments['width'] == 600
+    assert fig.get_size_inches().tolist() == [6., .8]
+    assert bar.extend == 'both' and bar.cmap.N == 5
+    assert bar.ax.xaxis.label.get_fontsize() == 8
+    assert all(t.get_fontsize() == 7 for t in bar.ax.get_xticklabels())
+    assert styled.fill_color.iloc[1] == styled.fill_color.iloc[2]
+    assert styled.fill_color.iloc[2] != styled.fill_color.iloc[3]
+    for value, marker in zip(values, styled.fill_color):
+        expected = (np.array(bar.cmap(bar.norm(value)))[:3]*255).astype(int).tolist()
+        assert marker[:3] == expected
+    assert styled.metric_value.tolist() == values
+
+
+def test_storm_steps_match_legend_and_signed_scales_remain_continuous():
+    metadata = pd.DataFrame({'station_id':['A','B','C'], 'latitude':[58.,59.,60.],
+                             'longitude':[-135.,-136.,-137.]})
+    snapshot = pd.DataFrame({'station_id':['A','B','C'], 'absolute_error':[.01,.19,.21]})
+    data, _, _ = snapshot_map_data(snapshot, metadata, 'absolute_error', (0.,1.))
+    fig = map_colorbar('absolute_error',(0.,1.),'Absolute error','in')
+    bar = fig.axes[0]._colorbar
+    assert data.fill_color.iloc[0] == data.fill_color.iloc[1]
+    assert data.fill_color.iloc[1] != data.fill_color.iloc[2]
+    for value, marker in zip(data.absolute_error, data.fill_color):
+        assert marker == (np.array(bar.cmap(bar.norm(value)))*255).astype(int).tolist()
+    plt.close(fig)
+    cmap, norm = color_mapping((-1.,1.), ['blue','white','red'])
+    assert norm(0) == .5
+    assert cmap(norm(.01)) != cmap(norm(.19))

@@ -14,25 +14,21 @@ def map_colormap(metric):
     return plt.get_cmap('RdBu_r' if metric in ['observed_percentile','error','median_error','absolute_error_difference'] else 'viridis')
 
 
+def map_is_stepped(metric):
+    return metric not in ['observed_percentile','error','median_error','absolute_error_difference']
+
+
 def map_colorbar(metric, limits, label, units, values=()):
-    """Use exactly the same normalization and colormap as the station markers."""
-    from matplotlib.colorbar import ColorbarBase
-    from matplotlib.colors import Normalize
+    """Use exactly the same bins, normalization and colormap as station markers."""
+    from color_scales import colorbar
     from matplotlib.ticker import PercentFormatter
-    from color_scales import clipped_counts
-    below,above=clipped_counts(values,limits)
-    extend='both' if below and above else 'min' if below else 'max' if above else 'neither'
-    fig=plt.figure(figsize=(10,1.05))
-    ax=fig.add_axes([.08,.55,.84,.23])
-    bar=ColorbarBase(ax,cmap=map_colormap(metric),norm=Normalize(*limits),orientation='horizontal',extend=extend)
-    if metric=='forecast_probability':
-        bar.set_ticks([v for v in [0,.25,.5,.75,1] if limits[0]<=v<=limits[1]])
-        bar.formatter=PercentFormatter(xmax=1,decimals=0)
+    fig = colorbar(limits, f'{label} ({units})', map_colormap(metric), values,
+                   stepped=map_is_stepped(metric))
+    bar = fig.axes[0]._colorbar
+    if metric == 'forecast_probability':
+        bar.formatter = PercentFormatter(xmax=1, decimals=0)
         bar.update_ticks()
-        bar.set_label(f'{label} (%)')
-    else:
-        if metric=='observed_percentile':bar.set_ticks([v for v in [0,25,50,75,100] if limits[0]<=v<=limits[1]])
-        bar.set_label(f'{label} ({units})')
+        bar.set_label(f'{label} (%)', fontsize=8, labelpad=3)
     return fig
 
 
@@ -95,8 +91,9 @@ def snapshot_map_data(snapshot, metadata, metric, limits=None):
         if low==high:high=low+1e-6
     else:
         low, high = 0., max(float(data[metric].max()), 1e-6)
-    cmap = map_colormap(metric)
-    data['fill_color'] = [list((np.array(cmap((value-low)/(high-low)))*255).astype(int)) for value in data[metric]]
+    from color_scales import color_mapping
+    cmap, norm = color_mapping((low,high), map_colormap(metric), map_is_stepped(metric))
+    data['fill_color'] = [list((np.array(cmap(norm(value)))*255).astype(int)) for value in data[metric]]
     data['point_radius'] = 7
     data['metric_value'] = data[metric]
     data['metric_value_text'] = (data.rank_label if metric=='observed_percentile' else

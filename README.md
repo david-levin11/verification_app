@@ -60,7 +60,10 @@ negative favors B. Bias compares distance from zero, and frequency bias compares
 distance from one. Standard POD/FAR/CSI/probability maps keep a 0–1 scale;
 percentiles use 0–100. Counts adapt to the data rather than use physical defaults.
 
-Values outside a color range use end colors and colorbar extension triangles;
+Colorbars sit below each map, use compact labels, and always have extensions at
+both ends. Sequential scales (including MAE and POD) use five discrete color bands
+with identical boundaries for markers and legends. Signed scales remain smooth.
+Values outside a color range use end colors;
 a caption reports how many plotted station values fall outside each limit.
 Tooltips, tables, scores, and selected stations retain their actual values.
 Fixed ranges are display defaults, not acceptable-error thresholds. Current

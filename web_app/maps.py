@@ -167,6 +167,10 @@ def add_map_style_columns(df, metric, limits=None):
 
     vmin, vmax = limits if limits is not None else _metric_bounds(out, metric)
 
+    from color_scales import color_mapping
+    palette = ['#e5f5f9', '#2c7fb8']
+    if scale == 'fixed_0_1_reversed': palette = palette[::-1]
+    cmap, norm = color_mapping((vmin, vmax), palette, stepped=True)
     colors = []
 
     for value in pd.to_numeric(out[metric], errors="coerce"):
@@ -178,18 +182,8 @@ def add_map_style_columns(df, metric, limits=None):
             t = _normalize(value, vmin, vmax)
             colors.append(_diverging_color(t))
 
-        elif scale == "fixed_0_1":
-            t = _normalize(value, vmin, vmax)
-            colors.append(_sequential_color(t))
-
-        elif scale == "fixed_0_1_reversed":
-            # Useful for FAR where lower is better.
-            t = 1.0 - _normalize(value, vmin, vmax)
-            colors.append(_sequential_color(t))
-
         else:
-            t = _normalize(value, vmin, vmax)
-            colors.append(_sequential_color(t))
+            colors.append([*list((np.asarray(cmap(norm(value)))[:3]*255).astype(int)),190])
 
     out["fill_color"] = colors
 
@@ -218,8 +212,9 @@ def show_map_legend(station_metrics, selected_metric, limits=None, units=''):
     colors = ['#3182bd', '#f5f5f5', '#cb181d'] if cfg['scale']=='diverging_zero' else ['#e5f5f9', '#2c7fb8']
     if cfg['scale']=='fixed_0_1_reversed': colors = colors[::-1]
     label = cfg.get('label', selected_metric) + (f' ({units})' if units else '')
-    fig = colorbar(limits, label, colors, station_metrics[selected_metric])
-    st.pyplot(fig)
+    fig = colorbar(limits, label, colors, station_metrics[selected_metric],
+                   stepped=cfg['scale']!='diverging_zero')
+    st.pyplot(fig, width=600)
     plt.close(fig)
 
 

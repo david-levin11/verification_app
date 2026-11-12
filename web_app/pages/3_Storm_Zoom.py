@@ -273,7 +273,7 @@ with spatial:
         st.caption(f'{len(map_data)} stations plotted. Click a station to populate Station detail.')
         render_storm_map(map_data,metric,view,result['generation'])
         fig=map_colorbar(metric,limits,map_label,unit,map_data[metric])
-        st.pyplot(fig);plt.close(fig)
+        st.pyplot(fig,width=600);plt.close(fig)
         if metric=='forecast_probability':
             st.caption('Outline: green = event observed; purple = event not observed; gray = no matched observation. Gold marks the selected station.')
             st.caption(probability_description(saved['model']=='refs'))

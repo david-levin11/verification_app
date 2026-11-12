@@ -122,16 +122,35 @@ def clipping_caption(values, limits):
                    'use the end colors. Tooltips and tables retain actual values.')
 
 
-def colorbar(limits, label, colors, values=()):
-    """End triangles identify values saturated beyond the displayed range."""
-    import matplotlib.pyplot as plt
-    from matplotlib.colors import LinearSegmentedColormap, Normalize
-    from matplotlib.colorbar import ColorbarBase
-    below, above = clipped_counts(values, limits)
-    extend = 'both' if below and above else 'min' if below else 'max' if above else 'neither'
+SEQUENTIAL_BANDS = 5
+
+
+def color_mapping(limits, colors, stepped=False):
+    """Share bin edges and palette between station markers and their colorbar."""
+    from matplotlib.colors import LinearSegmentedColormap, Normalize, BoundaryNorm
     cmap = LinearSegmentedColormap.from_list('station_scale', colors) if isinstance(colors, list) else colors
-    fig = plt.figure(figsize=(10, 1.05))
-    ax = fig.add_axes([.08, .55, .84, .23])
-    bar = ColorbarBase(ax, cmap=cmap, norm=Normalize(*limits), orientation='horizontal', extend=extend)
-    bar.set_label(label)
+    if stepped:
+        cmap = cmap.resampled(SEQUENTIAL_BANDS)
+        norm = BoundaryNorm(np.linspace(*limits, SEQUENTIAL_BANDS + 1), cmap.N, clip=True)
+    else:
+        norm = Normalize(*limits)
+    return cmap, norm
+
+
+def colorbar(limits, label, colors, values=(), stepped=False):
+    """Compact legend with both end caps; captions report actual clipped counts."""
+    import matplotlib.pyplot as plt
+    from matplotlib.colorbar import ColorbarBase
+    cmap, norm = color_mapping(limits, colors, stepped)
+    fig = plt.figure(figsize=(6, .8))
+    ax = fig.add_axes([.08, .58, .84, .20])
+    bar = ColorbarBase(ax, cmap=cmap, norm=norm, orientation='horizontal',
+                       extend='both', extendfrac=.045, drawedges=stepped)
+    bar.set_ticks(np.linspace(*limits, SEQUENTIAL_BANDS + 1 if stepped else 5))
+    bar.set_label(label, fontsize=8, labelpad=3)
+    bar.ax.tick_params(labelsize=7, length=2, pad=2)
+    bar.outline.set_linewidth(.5)
+    if stepped:
+        bar.dividers.set_color('#777777')
+        bar.dividers.set_linewidth(.4)
     return fig

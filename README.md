@@ -37,6 +37,30 @@ propagate to the other analysis pages; manual station lists are also supported.
 All available archived forecast hours are eligible within the selected lead
 range, without inventing missing forecast increments.
 
+## Dates, archive coverage, and downloads
+
+Analysis pages default to the latest calendar month with overlapping forecast
+and observation archive coverage, ending on the last available day. Model
+Comparison considers both models and observations. Untouched defaults follow a
+change of model or element; deliberately selected dates remain unchanged.
+Storm Zoom also defaults its initialization to the latest archived run whose
+initialization timestamps are available in the metadata.
+
+Before running, the controls show available UTC dates and explain partial
+coverage or gaps in plain language. A request with no archive overlap is disabled;
+a partial request can run using available data. Each monthly file is checked for
+an appropriate value field, so a temperature file misplaced in a precipitation
+folder is identified before querying. These checks read cached Parquet footer
+statistics, not full archives. Dates fall back to filename months with an explicit
+estimate notice if statistics are missing. Coverage describes archive dates;
+individual stations, runs, leads, observation windows, and valid values still
+require matching when an analysis runs.
+
+Results show maps, plots, and headline metrics. Detailed tables, station metadata,
+paired cases, scorecards, and technical diagnostics are available as CSV/JSON
+under **Downloads — tables and diagnostics**, rather than displayed inline.
+Archives and administrator-configured data paths are not changed by these controls.
+
 ## Map color scales
 
 Map Explorer, Model Comparison station differences, and Storm Zoom spatial

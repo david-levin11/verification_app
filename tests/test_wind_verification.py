@@ -163,7 +163,8 @@ def test_page_independent_speed_and_direction_filters_saved_context_and_empty_sp
     assert result['diagnostics']['cases_excluded_by_speed_minimum'] == 1
     assert len(result['direction_result']['cases']) == 1
     assert result['direction_result']['scores'].set_index('metric').loc['angular_mae','a'] == 20
-    assert any('Direction metric' in frame.value.columns for frame in app.dataframe)
+    assert not app.dataframe
+    assert any('direction scorecard' in button.proto.label.lower() for button in app.get('download_button'))
     app.number_input(key='compare_direction_min_cases').set_value(1)
     app.selectbox(key='compare_direction_display_metric').set_value('exceedance_percent').run()
     assert not app.exception

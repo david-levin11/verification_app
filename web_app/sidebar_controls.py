@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 from page_controls import PageControls
 from archive_paths import configured_paths
+from archive_availability import coverage, latest_dates, seed_dates, preflight
 from forecast_archive import refs_root_control
 from config import (MODELS, PERCENTILES, FORECAST_PROJECTION_GROUPS,
     get_available_elements, get_available_obs_sources, get_available_category_sets,
@@ -45,9 +46,14 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
         forecast_projection = f'{forecast_projection_start} through {forecast_projection_end}'
         low,high=forecast_lead_range
         st.sidebar.caption(f'Use all available leads {">" if low else "≥"}{low} through {high} h. Missing projections are skipped.')
+    sources=[coverage(archive_root,name,element,refs_root) for name in [model,obs]]
+    default_start,default_end=latest_dates(sources)
+    seed_dates(page_key,[f'{page_key}_ui_start_date',f'{page_key}_ui_end_date'],
+               [default_start,default_end],(model,element,obs,archive_root,refs_root))
     d1, d2 = ui.columns(2)
-    start_date = d1.date_input('Start Date', pd.Timestamp('2025-10-01').date(), key='ui_start_date')
-    end_date = d2.date_input('End Date', pd.Timestamp('2026-03-17').date(), key='ui_end_date')
+    start_date = d1.date_input('Start Date', default_start, key='ui_start_date')
+    end_date = d2.date_input('End Date', default_end, key='ui_end_date')
+    can_run=preflight(sources,start_date,end_date,st.sidebar)
     thresholds = element_cfg['thresholds']
     threshold = ui.selectbox(f"Threshold ({element_cfg['units']})", thresholds,
         index=thresholds.index(element_cfg['default_threshold']), key=f'ui_threshold_{element}')
@@ -72,7 +78,7 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
         categories = get_available_category_sets(element)
         if categories:
             category_set = ui.selectbox('Category Set', categories, key=f'ui_category_set_{element}')
-    return dict(archive_root=archive_root,refs_root=refs_root, model=model, element=element, obs=obs,
+    return dict(can_run=can_run,archive_root=archive_root,refs_root=refs_root, model=model, element=element, obs=obs,
         element_cfg=element_cfg, model_is_probabilistic=model_is_probabilistic, percentile=percentile,
         forecast_projection=forecast_projection, forecast_projection_start=forecast_projection_start,
         forecast_projection_end=forecast_projection_end, forecast_hours=forecast_hours, forecast_lead_range=forecast_lead_range,

@@ -1,3 +1,5 @@
+from data_downloads import DataDownloads
+downloads = DataDownloads('aggregate')
 import streamlit as st
 
 from sidebar_controls import shared_sidebar_controls
@@ -68,101 +70,104 @@ st.caption(f"{len(station_list)} stations selected.")
 # Fetch and compute
 # ---------------------------------------------------------------------
 
-if st.button("Run Aggregate Verification", type="primary"):
-    with st.spinner("Fetching and processing aggregate data..."):
-        modeldf, obdf, message = fetch_data(
-            analysis_mode="Aggregate Verification",
-            model=model,
-            obs=obs,
-            start_date=start_date,
-            end_date=end_date,
-            station_list=station_list,
-            forecast_hours=forecast_hours,
-            forecast_lead_range=controls["forecast_lead_range"],
-            storm_init_time=None,
-            percentile_col_dict={},
-            percentile=percentile,
-            element=element,
-            archive_root=archive_root,
-            refs_root=controls['refs_root'],
-            obs_time_tolerance=obs_time_tolerance,
-        )
+if st.button("Run Aggregate Verification", type="primary", disabled=not controls["can_run"]):
+    try:
+        with st.spinner("Fetching and processing aggregate data..."):
+            modeldf, obdf, message = fetch_data(
+                analysis_mode="Aggregate Verification",
+                model=model,
+                obs=obs,
+                start_date=start_date,
+                end_date=end_date,
+                station_list=station_list,
+                forecast_hours=forecast_hours,
+                forecast_lead_range=controls["forecast_lead_range"],
+                storm_init_time=None,
+                percentile_col_dict={},
+                percentile=percentile,
+                element=element,
+                archive_root=archive_root,
+                refs_root=controls['refs_root'],
+                obs_time_tolerance=obs_time_tolerance,
+            )
 
-        if message:
-            fatal_markers = [
-                "Data Missing",
-                "Database error",
-                "Observation Database error",
-                "Observation schema error",
-                "No model data",
-                "No observation data",
-                "No NDFD data",
-                "No stations",
-            ]
+            if message:
+                fatal_markers = [
+                    "Data Missing",
+                    "Database error",
+                    "Observation Database error",
+                    "Observation schema error",
+                    "No model data",
+                    "No observation data",
+                    "No NDFD data",
+                    "No stations",
+                ]
 
-            if any(message.startswith(marker) for marker in fatal_markers):
-                st.error(message)
-                st.stop()
-            else:
-                st.warning(message)
+                if any(message.startswith(marker) for marker in fatal_markers):
+                    downloads.issue(message, fatal=True)
+                    downloads.stop()
+                else:
+                    downloads.issue(message)
 
-        if modeldf.empty:
-            st.error("No model data returned.")
-            st.stop()
+            if modeldf.empty:
+                downloads.issue("No model data returned.", fatal=True)
+                downloads.stop()
 
-        if obdf.empty:
-            st.error("No observation data returned.")
-            st.stop()
+            if obdf.empty:
+                downloads.issue("No observation data returned.", fatal=True)
+                downloads.stop()
 
-        merged = build_verification_pairs(
-            modeldf=modeldf,
-            obdf=obdf,
-            model=model,
-            obs=obs,
-            element=element,
-            percentile=percentile,
-            obs_time_tolerance=obs_time_tolerance,
-        )
+            merged = build_verification_pairs(
+                modeldf=modeldf,
+                obdf=obdf,
+                model=model,
+                obs=obs,
+                element=element,
+                percentile=percentile,
+                obs_time_tolerance=obs_time_tolerance,
+            )
 
-        before_minimum = len(merged)
-        merged = filter_observed_speed(merged, minimum_observed_speed)
-        if minimum_observed_speed is not None:
-            st.caption(f'Observed gust ≥ {minimum_observed_speed:g} kt: {before_minimum-len(merged)} of {before_minimum} paired cases excluded.')
-        if merged.empty:
-            st.warning("No valid model/observation pairs were found.")
-            st.stop()
+            before_minimum = len(merged)
+            merged = filter_observed_speed(merged, minimum_observed_speed)
+            if minimum_observed_speed is not None:
+                st.caption(f'Observed gust ≥ {minimum_observed_speed:g} kt: {before_minimum-len(merged)} of {before_minimum} paired cases excluded.')
+            if merged.empty:
+                st.warning("No valid model/observation pairs were found.")
+                downloads.stop()
 
-        summary = compute_summary_metrics(
-            merged=merged,
-            threshold=threshold,
-            threshold_operator=threshold_operator,
-            element=element,
-            probabilistic=model_is_probabilistic,
-        )
+            summary = compute_summary_metrics(
+                merged=merged,
+                threshold=threshold,
+                threshold_operator=threshold_operator,
+                element=element,
+                probabilistic=model_is_probabilistic,
+            )
 
-        st.session_state['aggregate_minimum_counts'] = dict(before=before_minimum,
-            excluded=before_minimum-len(merged))
-        st.session_state['aggregate_gust_coverage'] = gust_observation_coverage(obdf) if element == 'gust' else None
-        st.session_state["aggregate_merged"] = merged
-        st.session_state["aggregate_summary"] = summary
-        st.session_state["aggregate_context"] = {
-            "model": model,
-            "archive_root": archive_root,
-            "refs_root": controls["refs_root"],
-            "element": element,
-            "obs": obs,
-            "percentile": percentile,
-            "forecast_projection": forecast_projection,
-            "start_date": start_date,
-            "end_date": end_date,
-            "threshold": threshold,
-            "threshold_operator": threshold_operator,
-            "obs_time_tolerance": obs_time_tolerance,
-            "minimum_observed_speed": minimum_observed_speed,
-            "category_set": category_set,
-            "group_name": group_name,
-            "station_list": station_list,
-        }
+            st.session_state['aggregate_minimum_counts'] = dict(before=before_minimum,
+                excluded=before_minimum-len(merged))
+            st.session_state['aggregate_gust_coverage'] = gust_observation_coverage(obdf) if element == 'gust' else None
+            st.session_state["aggregate_merged"] = merged
+            st.session_state["aggregate_summary"] = summary
+            st.session_state["aggregate_context"] = {
+                "model": model,
+                "archive_root": archive_root,
+                "refs_root": controls["refs_root"],
+                "element": element,
+                "obs": obs,
+                "percentile": percentile,
+                "forecast_projection": forecast_projection,
+                "start_date": start_date,
+                "end_date": end_date,
+                "threshold": threshold,
+                "threshold_operator": threshold_operator,
+                "obs_time_tolerance": obs_time_tolerance,
+                "minimum_observed_speed": minimum_observed_speed,
+                "category_set": category_set,
+                "group_name": group_name,
+                "station_list": station_list,
+            }
+    except Exception as exc:
+        downloads.issue(str(exc),fatal=True)
 
 # ---------------------------------------------------------------------
 # Display previous/current results
@@ -245,7 +250,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         info=forecast_probability_details(merged,element,result_context['threshold'],result_context['threshold_operator'])
         merged=merged.assign(forecast_probability=info.forecast_prob,probability_source=info.probability_source)
         st.caption('Probability sources: '+', '.join(f'{name}: {count:,}' for name,count in info.probability_source.value_counts().items()))
-    st.subheader("Paired Data Preview")
+    downloads.add(summary,name="Aggregate summary")
 
     preview_cols = [
         "station_id",
@@ -263,11 +268,10 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
     preview_cols += ['n_available','n_expected','complete','statistics_config','forecast_probability','probability_source']
     available_preview_cols = [c for c in preview_cols if c in merged.columns]
 
-    st.dataframe(
-        merged[available_preview_cols].head(500),
+    downloads.add(
+        merged,
         use_container_width=True,
-        hide_index=True,
-    )
+        hide_index=True, name='Paired cases')
 
     # -----------------------------------------------------------------
     # Categorical verification
@@ -334,16 +338,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         )
 
         col3, col4 = st.columns(2)
-        with st.expander("Probabilistic plot diagnostics", expanded=False):
-            prob_cols = [
-                c for c in merged.columns
-                if "_p" in c or c.endswith(("_p5", "_p10", "_p25", "_p50", "_p75", "_p90", "_p95"))
-            ]
-
-            st.write("Element:", element)
-            st.write("Available probabilistic columns:", prob_cols)
-            st.write("Merged columns:", merged.columns.tolist())
-            
+        downloads.add_json({'element':element,'columns':merged.columns.tolist()},name='Probability diagnostics')
         with col3:
             try:
                 fig_rel = plot_threshold_reliability(
@@ -360,7 +355,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
                 )
                 st.pyplot(fig_rel)
             except Exception as e:
-                st.warning(f"Could not create reliability plot yet: {e}")
+                downloads.issue(f"Reliability plot: {e}")
 
         with col4:
             try:
@@ -375,10 +370,13 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
                 )
                 st.pyplot(fig_rank)
             except Exception as e:
-                st.warning(f"Could not create rank histogram yet: {e}")
+                downloads.issue(f"Rank histogram: {e}")
 else:
     st.info(
         "Choose your settings and click **Run Aggregate Verification**. "
         "Station selections from the Map Explorer page will appear here automatically."
     )
 
+
+
+downloads.render()

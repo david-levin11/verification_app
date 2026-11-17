@@ -94,11 +94,11 @@ def plot_comparison_station(shared, station, model_a, model_b, element,
     daily = cfg.get('pairing_method') == 'date'
     duration = cfg.get('accum_hours')
     windows = []
-    if duration:
+    if duration and element!='precip6hr':
         for side, color in [('a','#003399'),('b','#d97706')]:
             windows.append((f'{side.upper()} forecast window', data[f'{side}_valid_time']-pd.Timedelta(hours=duration),
                             data[f'{side}_valid_time'], color))
-    if daily or duration:
+    if (daily or duration) and element!='precip6hr':
         if {'obs_window_start','obs_window_end'}.issubset(data):
             windows.append(('Observed window',data.obs_window_start,data.obs_window_end,'#cc0000'))
     windows = [(label, start, end, color) for label,start,end,color in windows

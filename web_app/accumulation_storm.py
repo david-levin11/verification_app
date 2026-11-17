@@ -1,4 +1,4 @@
-"""Storm interval statistics displayed over their measurement windows."""
+"""Station totals and minima at forecast/observation endpoints."""
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -14,19 +14,26 @@ def plot_accumulation_periods(cases, station, model, element, percentile=None, t
     minimum=cfg.get('window_statistic')=='minimum'
     probabilistic=is_probabilistic(model,element)
     label=f'{model.upper()} p{percentile or "50"}' if probabilistic else f'{model.upper()} forecast'
-    for value,start,end,color,name,marker in [
-        ('model_value','model_window_start','model_window_end','#000066',label,'s'),
-        ('obs_value','obs_window_start','obs_window_end','#cc0000','Matched observed minimum' if minimum else 'Matched observed total','o')]:
-        shown=False
-        for _,row in data.iterrows():
-            if pd.isna(row[value]) or pd.isna(row[start]) or pd.isna(row[end]):continue
-            ends=mdates.date2num([pd.Timestamp(row[start]).to_pydatetime(),pd.Timestamp(row[end]).to_pydatetime()])
-            ax.hlines(row[value],*ends,color=color,alpha=.65,
-                      linewidth=4 if value=='model_value' else 1.5,
-                      linestyles='solid' if value=='model_value' else 'dashed')
-            ax.plot(ends[-1],row[value],marker,color=color,
-                    markersize=6 if value=='model_value' else 4,label=None if shown else name)
-            shown=True
+    if element=='precip6hr':
+        ax.plot(data.valid_time,data.model_value,linestyle='None',marker='s',
+                color='#000066',markersize=6,label=label)
+        observed_times=data.get('obs_valid_time',data.get('obs_window_end',data.valid_time))
+        ax.plot(observed_times,data.obs_value,linestyle='None',marker='o',
+                color='#cc0000',markersize=4,label='Matched observed total')
+    else:
+        for value,start,end,color,name,marker in [
+            ('model_value','model_window_start','model_window_end','#000066',label,'s'),
+            ('obs_value','obs_window_start','obs_window_end','#cc0000','Matched observed minimum' if minimum else 'Matched observed total','o')]:
+            shown=False
+            for _,row in data.iterrows():
+                if pd.isna(row[value]) or pd.isna(row[start]) or pd.isna(row[end]):continue
+                ends=mdates.date2num([pd.Timestamp(row[start]).to_pydatetime(),pd.Timestamp(row[end]).to_pydatetime()])
+                ax.hlines(row[value],*ends,color=color,alpha=.65,
+                          linewidth=4 if value=='model_value' else 1.5,
+                          linestyles='solid' if value=='model_value' else 'dashed')
+                ax.plot(ends[-1],row[value],marker,color=color,
+                        markersize=6 if value=='model_value' else 4,label=None if shown else name)
+                shown=True
     if probabilistic:
         columns=get_percentile_columns(element)
         for lo,hi,width,color in [('5','95',8,'#cccccc'),('10','90',5,'#99ccff'),('25','75',2,'#003399')]:
@@ -37,7 +44,8 @@ def plot_accumulation_periods(cases, station, model, element, percentile=None, t
                       alpha=.65,label=f'p{lo}–p{hi}')
     ax.axhline(threshold,color='#666666',linestyle=':',label=f'Event threshold: {operator} {threshold:g} {cfg["units"]}')
     ax.set_ylabel(f'{cfg["label"]} ({cfg["units"]})')
-    ax.set_xlabel('Minimum-RH windows and endpoints (UTC)' if minimum else 'Accumulation windows and endpoints (UTC)')
+    ax.set_xlabel('Forecast valid times and actual observation report times (UTC)' if element=='precip6hr' else
+                  'Minimum-RH windows and endpoints (UTC)' if minimum else 'Accumulation windows and endpoints (UTC)')
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%d\n%H:%M'))
     ax.set_title(f'{model.upper()} {cfg["label"]} at {station}\nInitialized {data.init_time.iloc[0]:%Y-%m-%d %H:%M} UTC')
     # Leave room below the zero line so dry-period markers are fully visible.

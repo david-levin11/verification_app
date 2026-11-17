@@ -30,6 +30,7 @@ def test_mixed_models_use_identical_observations_and_point_scores(element,revers
     summary=storm_comparison_summary(shared,shared.target_time.drop_duplicates().sort_values())
     assert summary.n.tolist()==[2,2]
     figure=plot_comparison_station(shared,'A',ma,mb,element,pa,pb,1)
+    if element=='precip6hr':assert len(figure.axes)==1
     assert len(figure.axes[0].patches)==2
     assert len(figure.axes[0].collections[-1].get_offsets())==2
     plt.close(figure)

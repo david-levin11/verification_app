@@ -25,7 +25,9 @@ Specific Zoom.
 
 Features include bias, MAE/RMSE, categorical event verification, probabilistic
 diagnostics where available, wind-direction angular errors, and minimum observed
-wind-speed filters. Probabilistic station graphics show distribution information;
+wind-speed filters. Six-hour precipitation station graphics show endpoint markers
+for deterministic forecasts or a single probabilistic plume, without accumulation
+window bars or a lower window panel. Probabilistic station graphics show distribution information;
 deterministic guidance does not require percentile fields. REFS completeness is
 judged against the expected membership at each lead, including scheduled member
 departures.

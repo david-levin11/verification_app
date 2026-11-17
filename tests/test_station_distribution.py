@@ -64,9 +64,12 @@ def test_window_strip_retains_actual_measurement_periods(element):
         data['model_window_end']=data.valid_time
         data['model_window_start']=data.valid_time-pd.Timedelta(hours=24)
     fig=plot_station_distribution(data,'A','nbmqmd',element,32)
-    assert len(fig.axes)==2
-    assert 'windows (UTC)' in fig.axes[1].get_xlabel()
-    assert len(fig.axes[1].collections)==(2 if element.startswith('precip') else 1)
+    if element=='precip6hr':
+        assert len(fig.axes)==1
+    else:
+        assert len(fig.axes)==2
+        assert 'windows (UTC)' in fig.axes[1].get_xlabel()
+        assert len(fig.axes[1].collections)==(2 if element.startswith('precip') else 1)
     plt.close(fig)
 
 

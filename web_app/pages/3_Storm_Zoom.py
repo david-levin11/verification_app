@@ -368,7 +368,8 @@ with detail:
     st.caption((f'Point error uses p{point}; the median-error map always uses p50. ' if probabilistic else '')+
                ('Temperatures are compared by the configured forecast date. The window strip, when available, shows actual observed measurement periods; no forecast window is inferred from an archive timestamp.'
                 if daily else 'Each horizontal segment shows a minimum RH over its 18Z–06Z UTC window, not instantaneous RH. Sparse observations and shortened NDFD periods are excluded.'
-                if saved['element']=='minrh' else 'Each horizontal segment represents a separate accumulation total over its window; it is not a running cumulative total. Overlapping windows are not independent verification cases.'
+                if saved['element']=='minrh' else 'Markers show six-hour totals at forecast valid times and matched observation report times, not a running cumulative total. Overlapping periods are not independent verification cases.'
+                if saved['element']=='precip6hr' else 'Each horizontal segment represents a separate accumulation total over its window; it is not a running cumulative total. Overlapping windows are not independent verification cases.'
                 if accumulation else 'Observation points show the matched report at each forecast valid time; actual timestamps and offsets appear in the case table.' if probabilistic or (comparing and not shared.empty) else 'The plot shows actual report timestamps; the case table records which report was matched to each forecast.'))
     st.dataframe(cases[cases.station_id.eq(station)],hide_index=True,use_container_width=True)
     if comparing and not shared.empty:

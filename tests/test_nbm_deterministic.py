@@ -158,13 +158,41 @@ def test_accumulation_storm_windows_zeros_missing_obs_and_duration_filter(elemen
     assert (c.obs_window_end-c.obs_window_start).eq(pd.Timedelta(hours=hours)).all()
     for frame in [c,build_storm_cases(m,o.iloc[0:0],'nbm','obs',element,m.init_time.iloc[0])]:
         fig=plot_accumulation_periods(frame,'A','nbm',element)
-        assert 'Accumulation windows' in fig.axes[0].get_xlabel()
+        assert ('Forecast valid times' if element=='precip6hr' else 'Accumulation windows') in fig.axes[0].get_xlabel()
         assert 'in' in fig.axes[0].get_ylabel()
         forecast=next(line for line in fig.axes[0].lines if line.get_label()=='NBM forecast')
         assert forecast.get_ydata()[0]==0
+        if element=='precip6hr':
+            assert len(fig.axes)==1 and not fig.axes[0].collections
+            assert forecast.get_marker()=='s' and forecast.get_linestyle()=='None'
+            observed=next(line for line in fig.axes[0].lines if line.get_label()=='Matched observed total')
+            assert observed.get_marker()=='o' and observed.get_linestyle()=='None'
+            station=frame[frame.station_id.eq('A')].sort_values('valid_time')
+            np.testing.assert_array_equal(forecast.get_ydata(),station.model_value)
+            np.testing.assert_array_equal(observed.get_ydata(),station.obs_value)
+            np.testing.assert_array_equal(observed.get_xdata(),station.obs_valid_time)
         plt.close(fig)
     probabilistic=build_storm_cases(q,o,'nbmqmd','obs',element,q.init_time.iloc[0],'50')
     fig=plot_accumulation_periods(probabilistic,'A','nbmqmd',element,'50')
     assert any('p25–p75'==collection.get_label() for collection in fig.axes[0].collections)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize('model',['nbmqmd','refs'])
+def test_six_hour_precip_plume_keeps_quantiles_observations_and_windows_in_data_only(model):
+    from station_distribution import plot_station_distribution
+    from matplotlib.collections import PolyCollection, LineCollection
+    m,o,q=deterministic_frames('precip6hr')
+    data=build_storm_cases(q,o,'nbmqmd','obs','precip6hr',q.init_time.iloc[0],'50')
+    before=data.copy(deep=True)
+    fig=plot_station_distribution(data,'A',model,'precip6hr',.1,style='plume')
+    assert len(fig.axes)==1
+    ax=fig.axes[0]
+    assert len([c for c in ax.collections if isinstance(c,PolyCollection)])==2
+    assert not any(isinstance(c,LineCollection) for c in ax.collections)
+    obs=next(c for c in ax.collections if c.get_label()=='Matched observation')
+    station=data[data.station_id.eq('A')].sort_values('target_time')
+    np.testing.assert_array_equal(obs.get_offsets()[:,1],station.obs_value)
+    pd.testing.assert_frame_equal(data,before)
     plt.close(fig)
 

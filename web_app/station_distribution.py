@@ -22,7 +22,7 @@ def plot_station_distribution(cases, station, model, element, threshold, operato
     window_columns = [('obs_window_start', 'obs_window_end', '#cc0000', 'Observed window')]
     if cfg.get('accum_hours'):
         window_columns.insert(0, ('model_window_start', 'model_window_end', '#003399', 'Forecast window'))
-    has_windows = windowed and any(
+    has_windows = element!='precip6hr' and windowed and any(
         start in data and end in data and
         (data[end].notna() & data[start].notna() & data[end].gt(data[start])).any()
         for start, end, _, _ in window_columns)

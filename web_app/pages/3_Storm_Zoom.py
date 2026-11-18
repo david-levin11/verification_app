@@ -1,5 +1,8 @@
+from data_downloads import DataDownloads
+downloads = DataDownloads('storm')
 """Single-run spatial snapshots, uncertainty diagnostics, and station plumes."""
 from archive_paths import configured_paths
+from archive_availability import coverage, latest_dates, seed_dates, preflight
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
@@ -96,13 +99,20 @@ metadata_path = configured_paths()['metadata_path']
 try:
     metadata = read_metadata(metadata_path)
 except Exception as exc:
-    st.warning(f'Could not read metadata: {exc}')
+    downloads.add_json({'details':str(exc)},name='Station metadata error')
+    st.warning('Station metadata could not be opened. Ask the administrator to check the metadata file, or use stations selected from Map Explorer.')
     metadata = pd.DataFrame()
 
-init_text = initialization_controls(ui,model,element).strftime('%Y-%m-%d %H:%M:%S')
+sources=[coverage(archive_root,name,element,refs_root) for name in [model,obs]+([model_b] if model_b else [])]
+default_start,default_end=latest_dates(sources)
+default_init=sources[0].last_init or pd.Timestamp(default_start)
+seed_dates('storm',['storm_Plot Start Date','storm_Plot End Date','storm_init_date'],
+           [default_start,default_end,pd.Timestamp(default_init).date()],(model,model_b,obs,element,archive_root,refs_root))
+init_text = initialization_controls(ui,model,element,default_init).strftime('%Y-%m-%d %H:%M:%S')
 left,right = ui.columns(2)
-start = left.date_input('Plot Start Date',pd.Timestamp('2026-02-21'))
-end = right.date_input('Plot End Date',pd.Timestamp('2026-02-24'))
+start = left.date_input('Plot Start Date',default_start)
+end = right.date_input('Plot End Date',default_end)
+can_run=preflight(sources,start,end)
 scope = ui.radio('Stations to load',['Filtered metadata stations','Map Explorer selections'],
                  key='storm_station_scope',horizontal=True)
 filtered = metadata.copy()
@@ -118,10 +128,10 @@ if scope=='Filtered metadata stations':
                     chosen=widget.selectbox(label,options,key=f'storm_filter_{field}')
                     if chosen!='All':filtered=filtered[filtered[field].astype(str).eq(chosen)]
             filtered=network_elevation_controls(filtered,ui,'storm')
-            st.dataframe(station_context_table(filtered),hide_index=True,use_container_width=True)
+            downloads.add(station_context_table(filtered),hide_index=True,use_container_width=True, name='Matching stations')
 if scope=='Map Explorer selections':
     stations=selected_station_ids()
-    if stations:st.caption('Selected in Map Explorer: '+', '.join(stations))
+    if stations:st.caption(f'{len(stations):,} stations selected in Map Explorer.')
     else:st.info('Select stations on the Map Explorer map; they will appear here automatically.')
 else:
     stations=filtered.station_id.dropna().unique().tolist() if 'station_id' in filtered else []
@@ -131,7 +141,7 @@ context=dict(model=model,element=element,obs=obs,percentile=percentile,threshold
     archive_root=archive_root,refs_root=refs_root,metadata_path=metadata_path,compare_enabled=compare_enabled,
     model_b=model_b,percentile_b=percentile_b,offset_hours=offset_hours,reference_hours=reference_hours)
 
-if st.button('Generate Storm Timeseries',type='primary'):
+if st.button('Generate Storm Timeseries',type='primary',disabled=not can_run):
     try:
         if start>end:raise ValueError('Plot start date must not be after end date.')
         if not stations:raise ValueError('Choose at least one station.')
@@ -173,12 +183,12 @@ if st.button('Generate Storm Timeseries',type='primary'):
             st.session_state['storm_result'].update(shared=shared,comparison_diagnostics=comparison_diagnostics,
                                                     comparison_warnings=comparison_warnings)
     except Exception as exc:
-        st.error(f'Storm analysis could not run: {exc}')
+        downloads.issue(f'Storm analysis could not run: {exc}', fatal=True)
 
 result=st.session_state.get('storm_result')
 if result is None:
     st.info('Choose a run, event period, and station set, then generate the storm analysis.')
-    st.stop()
+    downloads.stop()
 saved=result['context']
 if saved!=context:
     st.info('Controls have changed. Generate again to refresh the results; the displays below still use the saved request.')
@@ -188,7 +198,7 @@ accumulation=cfg.get('accum_hours') is not None
 if daily:cfg['units']='°F'
 spread_units='percentage points' if saved['element'] in ['rh','minrh'] else cfg['units']
 probabilistic=is_probabilistic(saved['model'],saved['element'])
-for message in result['warnings']:st.warning(message)
+for message in result['warnings']:downloads.issue(message)
 comparing=saved.get('compare_enabled',False)
 shared=result.get('shared',pd.DataFrame())
 if comparing:
@@ -199,20 +209,20 @@ if comparing:
     selected_b=diagnostics.get('selected_b_init')
     st.caption(f'A initialized {result["init"]} UTC; B initialized {selected_b if selected_b is not None else "unavailable"}. '
                f'Requested B offset {saved["offset_hours"]:+g} h; reference tolerance ±{saved["reference_hours"]:g} h. All run times are UTC.')
-    for message in result.get('comparison_warnings',[]):st.warning(message)
+    for message in result.get('comparison_warnings',[]):downloads.issue(message)
     cols=st.columns(3)
     cols[0].metric('Shared matched cases',len(shared))
     cols[1].metric('A forecasts without B match',diagnostics.get('a_unmatched',len(cases)))
     cols[2].metric('Matched forecasts without obs',diagnostics.get('missing_observations',0))
     if shared.empty:
         st.warning('No shared verification cases for this comparison. Check B run availability, offset/tolerance, shared forecast targets, and observation windows. The primary-model displays remain available.')
-        with st.expander('Comparison diagnostics'):st.write(diagnostics)
+        downloads.add_json(diagnostics,name='Storm comparison diagnostics')
     else:
         st.caption('Comparison scores and overlays use only shared matched cases; primary-model maps and uncertainty diagnostics below retain their original station coverage.')
-        st.dataframe(pd.DataFrame([dict(model=label_a,n=len(shared),bias=shared.a_error.mean(),mae=shared.a_error.abs().mean()),
+        downloads.add(pd.DataFrame([dict(model=label_a,n=len(shared),bias=shared.a_error.mean(),mae=shared.a_error.abs().mean()),
                                   dict(model=label_b,n=len(shared),bias=shared.b_error.mean(),mae=shared.b_error.abs().mean())]),
-                     hide_index=True,use_container_width=True)
-        st.download_button('Download shared storm cases (CSV)',shared.to_csv(index=False),
+                     hide_index=True,use_container_width=True, name='Storm comparison scores')
+        downloads.file('Download shared storm cases (CSV)',shared.to_csv(index=False),
             file_name=f'storm_comparison_{saved["model"]}_{saved["model_b"]}_{saved["element"]}.csv',mime='text/csv')
 matching_label='matched by forecast date' if daily else f'observation tolerance ±{saved["minutes"]} min'
 st.caption(f"{saved['model'].upper()} {cfg['label']} — initialized {result['init']} UTC. "
@@ -282,7 +292,7 @@ with spatial:
         st.write('Mean interval width answers the question: “How wide was the forecast uncertainty across these stations?” '
                  'Observed coverage answers the question: “How often did the observations fall inside each forecast interval?”')
         summary=interval_summary(snapshot)
-        st.dataframe(summary,hide_index=True,use_container_width=True)
+        downloads.add(summary,hide_index=True,use_container_width=True, name='Snapshot interval summary')
         st.caption(f'Widths are in {spread_units}. Every interval uses the same matched stations with valid bounds for all displayed intervals. '
                    'Coverage includes interval endpoints. This storm snapshot is descriptive, not a long-term calibration assessment.')
         st.caption('Observed percentiles are interpolated between archived quantiles. Ties show an archived percentile range; '
@@ -290,8 +300,8 @@ with spatial:
                    'p5–p95 is not a minimum–maximum range.')
         invalid=int((~snapshot.distribution_valid).sum())
         if invalid:st.warning(f'{invalid} forecasts have insufficient or crossing quantiles; their percentile/spread diagnostics are excluded.')
-    st.dataframe(snapshot,hide_index=True,use_container_width=True)
-    st.download_button('Download snapshot cases (CSV)',snapshot.to_csv(index=False),
+    downloads.add(snapshot,hide_index=True,use_container_width=True, name='Snapshot cases')
+    downloads.file('Download snapshot cases (CSV)',snapshot.to_csv(index=False),
         file_name=f'storm_{saved["model"]}_{saved["element"]}_{pd.Timestamp(valid):%Y%m%d%H}.csv',mime='text/csv')
 with evolution:
     across='from one forecast date to the next' if daily else 'across forecast projections'
@@ -303,14 +313,14 @@ with evolution:
         comparison_summary=storm_comparison_summary(shared,valid_times,balanced)
         fig=plot_comparison_evolution(comparison_summary,label_a,label_b,cfg['units'])
         st.pyplot(fig);plt.close(fig)
-        st.dataframe(comparison_summary,hide_index=True,use_container_width=True)
+        downloads.add(comparison_summary,hide_index=True,use_container_width=True, name='Comparison evolution')
     summary=evolution_summary(cases,balanced)
     period='forecast date' if daily else 'projection'
     st.caption(f'Each {period} uses its available stations unless the fixed-station option is enabled. Counts are shown explicitly; '
                f'interval widths and coverage use the same eligible stations within each {period}.')
     fig=plot_evolution(summary,available_intervals(cases),spread_units,date_based=daily)
     st.pyplot(fig);plt.close(fig)
-    st.dataframe(summary,hide_index=True,use_container_width=True)
+    downloads.add(summary,hide_index=True,use_container_width=True, name='Storm evolution')
 with detail:
     if daily:
         st.write(f'The temperature comparison answers the question: “How did forecast and observed {cfg["label"].lower()} compare for each forecast date?”')
@@ -371,9 +381,12 @@ with detail:
                 if saved['element']=='minrh' else 'Markers show six-hour totals at forecast valid times and matched observation report times, not a running cumulative total. Overlapping periods are not independent verification cases.'
                 if saved['element']=='precip6hr' else 'Each horizontal segment represents a separate accumulation total over its window; it is not a running cumulative total. Overlapping windows are not independent verification cases.'
                 if accumulation else 'Observation points show the matched report at each forecast valid time; actual timestamps and offsets appear in the case table.' if probabilistic or (comparing and not shared.empty) else 'The plot shows actual report timestamps; the case table records which report was matched to each forecast.'))
-    st.dataframe(cases[cases.station_id.eq(station)],hide_index=True,use_container_width=True)
+    downloads.add(cases[cases.station_id.eq(station)],hide_index=True,use_container_width=True, name='Station cases')
     if comparing and not shared.empty:
-        st.dataframe(shared[shared.station_id.eq(station)],hide_index=True,use_container_width=True)
+        downloads.add(shared[shared.station_id.eq(station)],hide_index=True,use_container_width=True, name='Station comparison cases')
 
 
 
+
+
+downloads.render()

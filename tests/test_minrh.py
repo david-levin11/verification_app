@@ -101,6 +101,8 @@ def test_all_pages_score_minrh_without_percentiles(tmp_path,monkeypatch):
         assert not any(s.label=='Verification Percentile' for s in app.selectbox)
         next(b for b in app.button if b.label==button).click().run(timeout=30)
         assert not app.exception and not app.error,[e.value for e in app.exception]+[e.value for e in app.error]
+        assert not app.dataframe and not app.json
+        assert app.get('download_button')
         score=app.session_state[result]
         assert (score.n.sum() if page=='map' else score['n'])==4
     app.switch_page('pages/3_Storm_Zoom.py').run()
@@ -112,6 +114,8 @@ def test_all_pages_score_minrh_without_percentiles(tmp_path,monkeypatch):
     app.date_input(key='storm_Plot End Date').set_value(date(2026,6,1))
     next(b for b in app.button if b.label=='Generate Storm Timeseries').click().run(timeout=30)
     assert not app.exception and not app.error,[e.value for e in app.exception]+[e.value for e in app.error]
+    assert not app.dataframe and not app.json
+    assert app.get('download_button')
     assert app.session_state['storm_result']['cases'].obs_value.notna().sum()==4
     app.switch_page('pages/4_Model_Comparison.py').run()
     app.selectbox(key='compare_model_a').set_value('ndfd').run()
@@ -122,6 +126,8 @@ def test_all_pages_score_minrh_without_percentiles(tmp_path,monkeypatch):
     app.date_input(key='compare_end').set_value(date(2026,6,1))
     next(b for b in app.button if b.label=='Run Model Comparison').click().run(timeout=30)
     assert not app.exception and not app.error,[e.value for e in app.exception]+[e.value for e in app.error]
+    assert not app.dataframe and not app.json
+    assert app.get('download_button')
     assert len(app.session_state['comparison_result']['cases'])==4
 
 

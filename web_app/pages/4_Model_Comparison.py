@@ -1,3 +1,5 @@
+from data_downloads import DataDownloads
+downloads = DataDownloads('compare')
 from archive_paths import configured_paths
 """Compare two forecasts on common targets and a single shared observation."""
 from datetime import datetime, timezone
@@ -20,6 +22,7 @@ from color_scales import render_colorbar, scale_controls, scale_units, clipping_
 from comparison_plots import (plot_group_scores, plot_probability_comparison,
                               station_difference_map)
 
+from archive_availability import coverage, latest_dates, seed_dates, preflight
 from page_controls import PageControls
 from station_selection import station_ids_input, parse_station_ids, sync_map_selection
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
@@ -37,7 +40,7 @@ model_b=b_col.selectbox('Model B',models,index=models.index('nbm'),key='compare_
 refs_root=refs_root_control(ui.sidebar,archive_root,'refs' in [model_a,model_b])
 common=[e for e in get_available_elements(model_a) if e in get_available_elements(model_b)]
 if not common:
-    st.warning('These models have no configured elements in common.');st.stop()
+    st.warning('These models have no configured elements in common.');downloads.stop()
 element=ui.sidebar.selectbox('Shared element',common,key='compare_element')
 cfg=get_element_config(element)
 obs=ui.sidebar.selectbox('Verification Source',get_available_obs_sources(element),key=f'compare_obs_{element}')
@@ -49,9 +52,14 @@ label_b=f'B: {model_b.upper()}' + (f' p{percentile_b}' if prob_b else '')
 if model_a==model_b and percentile_a==percentile_b:
     st.info('The models and point forecasts are identical; an offset can still compare different runs.')
 
+sources=[coverage(archive_root,name,element,refs_root) for name in [model_a,model_b,obs]]
+default_start,default_end=latest_dates(sources)
+seed_dates('compare',['compare_start','compare_end'],[default_start,default_end],
+           (model_a,model_b,obs,element,archive_root,refs_root))
 d1,d2=ui.sidebar.columns(2)
-start=d1.date_input('Start Date',pd.Timestamp('2025-10-01').date(),key='compare_start')
-end=d2.date_input('End Date',datetime.now(timezone.utc).date(),key='compare_end')
+start=d1.date_input('Start Date',default_start,key='compare_start')
+end=d2.date_input('End Date',default_end,key='compare_end')
+can_run=preflight(sources,start,end,st.sidebar)
 l1,l2=ui.sidebar.columns(2)
 lead_min=l1.number_input('A minimum lead (h)',0,240,0,step=3,key='compare_lead_min')
 lead_max=l2.number_input('A maximum lead (h)',0,240,168,step=3,key='compare_lead_max')
@@ -85,7 +93,8 @@ metadata_path=configured_paths()['metadata_path']
 try:
     metadata=read_metadata(metadata_path)
 except Exception as exc:
-    st.warning(f'Could not read station metadata: {exc}');metadata=pd.DataFrame()
+    downloads.add_json({'details':str(exc)},name='Station metadata error')
+    st.warning('Station metadata could not be opened. Enter station IDs directly or ask the administrator to check the metadata file.');metadata=pd.DataFrame()
 filtered_meta=metadata.copy()
 if not metadata.empty:
     with st.expander('Station filters'):
@@ -97,8 +106,7 @@ if not metadata.empty:
                 if chosen!='All':filtered_meta=filtered_meta[filtered_meta[field].astype(str).eq(chosen)]
         filtered_meta=network_elevation_controls(filtered_meta, ui, 'compare')
         use_filtered=ui.checkbox('Use all stations matching these filters',key='compare_filtered_stations')
-        st.caption('Click a column heading to sort the matching station list.')
-        st.dataframe(station_context_table(filtered_meta),hide_index=True,use_container_width=True)
+        downloads.add(station_context_table(filtered_meta),hide_index=True,use_container_width=True, name='Matching stations')
 else:
     use_filtered=False
 station_text=station_ids_input('compare', 'compare_stations', 'Station IDs (comma-separated)')
@@ -140,7 +148,7 @@ context=dict(model_a=model_a,model_b=model_b,element=element,obs=obs,percentile_
     speed_minimum=speed_minimum,verify_direction=verify_direction,
     direction_min_speed=direction_min_speed,direction_error_threshold=direction_error_threshold)
 
-if st.button('Run Model Comparison',type='primary',key='compare_run'):
+if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=not can_run):
     try:
         if lead_min>lead_max:raise ValueError('Minimum lead must not exceed maximum lead')
         if not stations:raise ValueError('Select at least one station')
@@ -177,10 +185,10 @@ if st.button('Run Model Comparison',type='primary',key='compare_run'):
                 diagnostics=diagnostics,warnings=warnings,context=context.copy(),metadata=metadata.copy(),
                 direction_result=direction_result)
     except Exception as exc:
-        st.error(f'Comparison could not run: {exc}')
+        downloads.issue(f'Comparison could not run: {exc}', fatal=True)
 
 if 'comparison_result' not in st.session_state:
-    st.info('Choose two models and run a comparison.');st.stop()
+    st.info('Choose two models and run a comparison.');downloads.stop()
 result=st.session_state['comparison_result'];saved=result['context'];pairs=result['cases']
 if saved!=context:
     st.info('These results use the previous settings. Run Model Comparison to refresh.')
@@ -189,7 +197,7 @@ model_a,model_b=saved['model_a'],saved['model_b']
 prob_a,prob_b=is_probabilistic(model_a,element),is_probabilistic(model_b,element)
 label_a='A: '+model_a.upper()+(f' p{saved["percentile_a"]}' if prob_a else '')
 label_b='B: '+model_b.upper()+(f' p{saved["percentile_b"]}' if prob_b else '')
-for message in result['warnings']:st.warning(message)
+for message in result['warnings']:downloads.issue(message)
 diag=result['diagnostics']
 st.subheader(f'{label_a} versus {label_b}: {cfg["label"]}')
 st.caption(f'B offset {saved["offset"]:+g} h; observation tolerance {saved["obs_minutes"]} min; reference tolerance ±{saved["ref_tolerance"]:g} h.')
@@ -200,20 +208,20 @@ c3.metric('Matched forecasts without obs',f'{diag.get("missing_observations",0):
 c4.metric('Observed events',f'{result["summary_a"].get("hits",0)+result["summary_a"].get("misses",0):,}')
 if saved.get('speed_minimum') is not None:
     st.caption(f"{cfg['label']} scores use observed value ≥ {saved['speed_minimum']:g} kt: {diag['cases_excluded_by_speed_minimum']:,} of {diag['cases_before_speed_filter']:,} cases excluded. The same retained cases are used for both models and all speed/probability plots.")
-render_direction_comparison(result, ui, label_a, label_b)
+render_direction_comparison(result, ui, label_a, label_b, downloads)
 if pairs.empty:
     if diag.get('cases_before_speed_filter', 0) and saved.get('speed_minimum') is not None:
         st.warning('No cases remain for wind-speed scores at this minimum observed speed. Lower the speed-score minimum to include more cases.' if element == 'wind' else 'No cases remain at this minimum observed gust. Lower the gust minimum to include more cases.')
-        st.json(diag); st.stop()
+        downloads.add_json(diag); downloads.stop()
     st.warning('No shared verification cases. Check reference offsets/tolerance, lead ranges, archive coverage, and observation windows.')
-    st.json(diag);st.stop()
+    downloads.add_json(diag);downloads.stop()
 if saved.get('verify_direction'):
     st.subheader('Wind-speed comparison')
 st.caption(f'Event: {element} {saved["operator"]} {saved["threshold"]} {cfg["units"]}. Lead filtering/grouping uses Model A; Model B leads are shown separately. Results pool the shared cases. "Better" indicates the smaller error or higher score, not statistical significance.')
 metrics=result['scores'].copy()
 metrics['better']=metrics.better.replace({'A':label_a,'B':label_b})
-st.dataframe(metrics[['label','a','b','difference','better']].rename(
-    columns={'label':'Metric','a':label_a,'b':label_b,'difference':'A − B','better':'Better'}),hide_index=True,use_container_width=True)
+downloads.add(metrics[['label','a','b','difference','better']].rename(
+    columns={'label':'Metric','a':label_a,'b':label_b,'difference':'A − B','better':'Better'}),hide_index=True,use_container_width=True, name='Model scorecard')
 if ui.checkbox('Estimate confidence for the MAE difference',key='compare_bootstrap'):
     interval=paired_mae_interval(pairs)
     if interval is None:
@@ -225,12 +233,12 @@ if ui.checkbox('Estimate confidence for the MAE difference',key='compare_bootstr
 plot_metrics=metrics.metric.tolist()
 metric=ui.selectbox('Metric for charts and station differences',plot_metrics,index=plot_metrics.index('mae'),
                     format_func=lambda m:METRIC_LABELS[m],key=f'compare_display_metric_{element}_{prob_a}_{prob_b}')
-lead_tab,map_tab,condition_tab,prob_tab,data_tab=st.tabs(['Lead times','Station differences','Conditions','Probabilities','Paired data & coverage'])
+lead_tab,map_tab,condition_tab,prob_tab=st.tabs(['Lead times','Station differences','Conditions','Probabilities'])
 with lead_tab:
     table=grouped_scores(pairs,'lead_day',element,saved['threshold'],saved['operator'],prob_a,prob_b)
     fig=plot_group_scores(table,'lead_day',metric,label_a,label_b,'Model A forecast day')
     st.pyplot(fig);plt.close(fig)
-    st.dataframe(table[table.metric.eq(metric)][['lead_day','n','observed_events','n_prob','a','b','difference']],hide_index=True)
+    downloads.add(table[table.metric.eq(metric)][['lead_day','n','observed_events','n_prob','a','b','difference']],hide_index=True, name='Lead scores')
     st.caption('Days use Model A leads: Day 1 = 0–24 h, Day 2 = >24–48 h, through Day 7 = >144–168 h. All archived projections in the lead range are eligible; only shared station/valid targets are scored. Actual Model B leads can differ with an offset.')
 with map_tab:
     station_table=grouped_scores(pairs,'station_id',element,saved['threshold'],saved['operator'],prob_a,prob_b)
@@ -251,7 +259,7 @@ with map_tab:
     context=station_context_table(result['metadata'])
     if 'station_id' in context:
         display_table=display_table.merge(context.drop_duplicates('station_id'),on='station_id',how='left')
-    st.dataframe(display_table,hide_index=True,use_container_width=True)
+    downloads.add(display_table,hide_index=True,use_container_width=True, name='Station differences')
 with condition_tab:
     condition=ui.radio('Break down by',['Observed category','Month'],horizontal=True,key='compare_condition')
     work=pairs.copy()
@@ -274,7 +282,7 @@ with condition_tab:
                 "POD = hits / observed events. A category with cases but zero observed events has undefined POD (N/A).")
     fig=plot_group_scores(table,'condition',metric,label_a,label_b,condition)
     st.pyplot(fig);plt.close(fig)
-    st.dataframe(table[table.metric.eq(metric)],hide_index=True,use_container_width=True)
+    downloads.add(table[table.metric.eq(metric)],hide_index=True,use_container_width=True, name='Condition scores')
     if metric=='pod':
         st.caption('n counts all shared cases in the group; observed_events counts observations meeting the selected event threshold. More non-event cases do not make POD defined.')
     st.caption('Condition scores are descriptive. Overall threshold scores include all common cases, including non-events and false alarms.')
@@ -286,26 +294,29 @@ with prob_tab:
         for label,summary,prob in [('A: '+model_a.upper(),result['summary_a'],prob_a),('B: '+model_b.upper(),result['summary_b'],prob_b)]:
             if prob:ptable.append({'Model':label,'Probability cases':summary.get('n_prob',0),
                 'Brier score':summary.get('brier_score',np.nan),'Reliability error':summary.get('reliability_error',np.nan)})
-        st.dataframe(pd.DataFrame(ptable),hide_index=True)
+        downloads.add(pd.DataFrame(ptable),hide_index=True, name='Probability scores')
         fig=plot_probability_comparison(pairs,element,saved['threshold'],saved['operator'],'A: '+model_a.upper(),'B: '+model_b.upper(),prob_a,prob_b)
         st.pyplot(fig);plt.close(fig)
         st.caption('Both probabilistic models use the intersection of valid probability cases. '+probability_description('refs' in [model_a,model_b])+' Reliability error uses 10% probability bins.')
     else:st.info('Neither selected model/element provides archived probability distributions.')
-with data_tab:
-    st.json(diag)
+with st.container():
+    downloads.add_json(diag)
     columns=['station_id','target_time','a_valid_time','b_valid_time','a_init_time','b_init_time','a_forecast_hour','b_forecast_hour',
         'actual_offset_hours','reference_error_hours','a_model_value','b_model_value','obs_value',
         'a_forecast_direction','b_forecast_direction','observed_direction',
         'obs_valid_time','obs_time_offset_minutes','obs_window_start','obs_window_end']
     columns += [side+'_'+name for side in ['a','b'] for name in ['n_available','n_expected','complete','statistics_config','forecast_probability','probability_source']]
-    st.dataframe(pairs[[c for c in columns if c in pairs]].head(1000),hide_index=True,use_container_width=True)
-    st.download_button('Download all paired cases (CSV)',pairs.to_csv(index=False),
+    downloads.add(pairs[[c for c in columns if c in pairs]].head(1000),hide_index=True,use_container_width=True, name='Paired cases preview')
+    downloads.file('Download all paired cases (CSV)',pairs.to_csv(index=False),
                        file_name='model_comparison_cases.csv',mime='text/csv',key='compare_download')
-    st.download_button('Download scorecard (CSV)',result['scores'].to_csv(index=False),
+    downloads.file('Download scorecard (CSV)',result['scores'].to_csv(index=False),
                        file_name='model_comparison_scores.csv',mime='text/csv',key='compare_scores_download')
     if 'obs_time_offset_minutes' in pairs:
         offsets=pairs.obs_time_offset_minutes.abs()
-        st.write(f'Observation timing: median absolute offset {offsets.median():.1f} minutes; maximum {offsets.max():.1f} minutes.')
-    st.write('Actual A reference hours (UTC):',sorted(pairs.a_init_time.dt.hour.unique().tolist()))
-    st.write('Actual B reference hours (UTC):',sorted(pairs.b_init_time.dt.hour.unique().tolist()))
+        downloads.add_json({'median_absolute_offset_minutes':offsets.median(),'max_absolute_offset_minutes':offsets.max()},name='Observation timing')
+    downloads.add_json({'a_reference_hours':sorted(pairs.a_init_time.dt.hour.unique().tolist()),
+                        'b_reference_hours':sorted(pairs.b_init_time.dt.hour.unique().tolist())},name='Reference timing')
 
+
+
+downloads.render()

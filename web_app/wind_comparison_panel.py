@@ -7,7 +7,7 @@ from wind_verification import (DIRECTION_LABELS, direction_exceedance,
 from comparison_plots import station_difference_map
 
 
-def render_direction_comparison(result, ui, label_a, label_b):
+def render_direction_comparison(result, ui, label_a, label_b, downloads):
     saved = result['context']
     if not saved.get('verify_direction'):
         return
@@ -37,9 +37,9 @@ def render_direction_comparison(result, ui, label_a, label_b):
     scores = direction['scores'].copy()
     scores['label'] = scores['label'].replace({'Angular error exceeding threshold (%)': f'Error > {threshold:g}° (%)'})
     scores['better'] = scores.better.replace({'A': label_a, 'B': label_b})
-    st.dataframe(scores[['label', 'a', 'b', 'difference', 'better']].rename(columns={
+    downloads.add(scores[['label', 'a', 'b', 'difference', 'better']].rename(columns={
         'label': 'Direction metric', 'a': label_a, 'b': label_b,
-        'difference': 'A − B', 'better': 'Better'}), hide_index=True, use_container_width=True)
+        'difference': 'A − B', 'better': 'Better'}), hide_index=True, use_container_width=True, name='Direction scorecard')
     st.caption('Absolute angular error ranges from 0° to 180°. Exceedance is strictly greater than the chosen threshold; lower is better for all direction metrics. Percentage differences are percentage points. “Better” is descriptive, not a significance test.')
     curves = direction_exceedance(cases)
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
@@ -56,7 +56,7 @@ def render_direction_comparison(result, ui, label_a, label_b):
     fig.tight_layout(); st.pyplot(fig); plt.close(fig)
     metric = ui.selectbox('Direction metric for breakdowns', list(DIRECTION_LABELS),
         format_func=lambda m: DIRECTION_LABELS[m], key='compare_direction_display_metric')
-    lead_tab, station_tab, data_tab = st.tabs(['Direction by lead time', 'Direction by station', 'Direction paired data'])
+    lead_tab, station_tab = st.tabs(['Direction by lead time', 'Direction by station'])
     with lead_tab:
         table = grouped_direction_scores(cases, 'lead_day', threshold)
         data = table[table.metric.eq(metric)]
@@ -66,8 +66,8 @@ def render_direction_comparison(result, ui, label_a, label_b):
         ax.set(xlabel='Model A forecast day', ylabel=DIRECTION_LABELS[metric])
         ax.grid(alpha=.25); ax.legend(); fig.tight_layout()
         st.pyplot(fig); plt.close(fig)
-        st.dataframe(data[['lead_day', 'n', 'a', 'b', 'difference']].rename(columns={
-            'lead_day':'A forecast day', 'n':'Shared cases', 'a':label_a, 'b':label_b, 'difference':'A − B'}), hide_index=True)
+        downloads.add(data[['lead_day', 'n', 'a', 'b', 'difference']].rename(columns={
+            'lead_day':'A forecast day', 'n':'Shared cases', 'a':label_a, 'b':label_b, 'difference':'A − B'}), hide_index=True, name='Direction lead scores')
     with station_tab:
         table = grouped_direction_scores(cases, 'station_id', threshold)
         minimum = ui.number_input('Minimum direction cases per station', 1, 10000, 10, key='compare_direction_min_cases')
@@ -77,16 +77,16 @@ def render_direction_comparison(result, ui, label_a, label_b):
         else:
             st.caption(f'Blue: {label_a} better. Orange: {label_b} better. White: similar.')
             st.pydeck_chart(deck, use_container_width=True)
-        st.dataframe(table[table.metric.eq(metric)][['station_id', 'n', 'a', 'b', 'difference']].rename(columns={
-            'station_id':'Station', 'n':'Shared cases', 'a':label_a, 'b':label_b, 'difference':'A − B'}), hide_index=True)
-    with data_tab:
+        downloads.add(table[table.metric.eq(metric)][['station_id', 'n', 'a', 'b', 'difference']].rename(columns={
+            'station_id':'Station', 'n':'Shared cases', 'a':label_a, 'b':label_b, 'difference':'A − B'}), hide_index=True, name='Direction station scores')
+    with st.container():
         columns = ['station_id', 'target_time', 'a_init_time', 'b_init_time',
             'a_forecast_hour', 'b_forecast_hour', 'actual_offset_hours',
             'a_model_value', 'b_model_value', 'obs_value', 'a_forecast_direction',
             'b_forecast_direction', 'observed_direction', 'a_angular_error', 'b_angular_error',
             'obs_valid_time', 'obs_time_offset_minutes']
-        st.dataframe(cases[[c for c in columns if c in cases]].head(1000), hide_index=True)
-    st.download_button('Download direction paired cases (CSV)', cases.to_csv(index=False),
+        downloads.add(cases[[c for c in columns if c in cases]].head(1000), hide_index=True, name='Direction cases preview')
+    downloads.file('Download direction paired cases (CSV)', cases.to_csv(index=False),
         file_name='wind_direction_cases.csv', mime='text/csv', key='compare_direction_download')
-    st.download_button('Download direction scorecard (CSV)', direction['scores'].to_csv(index=False),
+    downloads.file('Download direction scorecard (CSV)', direction['scores'].to_csv(index=False),
         file_name='wind_direction_scores.csv', mime='text/csv', key='compare_direction_scores_download')

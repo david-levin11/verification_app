@@ -18,10 +18,10 @@ def initialization_hours(model,element):
     return list(range(24))
 
 
-def initialization_controls(ui,model,element):
+def initialization_controls(ui,model,element,default=None):
     legacy=st.session_state.get('storm_Model Init Time (YYYY-MM-DD HH:MM:SS)',
         st.session_state.get('_page_settings_storm',{}).get('storm_Model Init Time (YYYY-MM-DD HH:MM:SS)'))
-    default=pd.Timestamp('2026-02-21')
+    default=pd.Timestamp(default) if default is not None else pd.Timestamp.now(tz='UTC').tz_localize(None).normalize()
     if legacy:
         parsed=pd.to_datetime(legacy,utc=True,errors='coerce')
         if not pd.isna(parsed):default=parsed.tz_convert(None)

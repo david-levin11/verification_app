@@ -195,7 +195,8 @@ def test_gust_page_flows_and_minimum_filters(tmp_path, monkeypatch):
     next(b for b in app.button if b.label=='Build Station Metric Map').click().run(timeout=30)
     assert not app.exception and not app.error, [e.value for e in app.error]
     assert app.session_state['station_metrics'].n.iloc[0]==2
-    assert any('missing/nonfinite gusts' in w.value for w in app.warning)
+    assert any('Some requested data could not be used' in w.value for w in app.warning)
+    assert any('Data loading details' in button.proto.label for button in app.get('download_button'))
     app.checkbox(key='map_ui_filter_gust').set_value(True).run()
     next(b for b in app.button if b.label=='Build Station Metric Map').click().run(timeout=30)
     assert not app.exception and app.session_state['station_metrics'].n.iloc[0]==1

@@ -119,6 +119,43 @@ on reconstructed archive reference times. Reference tolerance concerns model run
 observation tolerance concerns valid-time/window matching. Earlier B runs have
 longer leads at the same valid target.
 
+## Rebuilding station metadata
+
+`build_ak_station_metadata.py` uses the same geographic inventory bounds as
+`alaska_verification/regional_stations.py` (source blob
+`6c3bf93066bb4355bbf76c869eb95a5bebf1c603`): mainland/central Alaska
+−180 to −129° longitude, 50–73° latitude, plus western Aleutians
+170 to 180° longitude, 50–73° latitude. These boxes deliberately include offshore
+and neighboring sites; state/CWA labels do not determine inclusion.
+
+The two Synoptic bbox requests use −179.999999 and +179.999999 near the dateline,
+matching the archiver's API workaround. Every returned station is independently
+validated against the true bounds, including ±180°. Missing, nonnumeric,
+nonfinite, out-of-bounds coordinates and blank station IDs are rejected. The
+inventory is deduplicated by exact station ID across both requests. A failed
+request aborts the build instead of writing a partial region inventory.
+
+No `state` or `status` filter is sent, and the default variable restriction is
+None. Inactive and other returned statuses are retained for historical
+verification, including marine stations with missing state/CWA labels. This
+inventory describes currently returned metadata; it cannot recover stations
+removed from the upstream catalog or supply missing historical observations.
+
+Run the generator in an environment with `geopandas`, `requests`, and the normal
+pandas/Parquet dependencies installed. Set `SYNOPTIC_TOKEN`, check the script's
+existing `BASE_DIR` output location, then run:
+
+```bash
+python build_ak_station_metadata.py
+```
+
+It writes `ak_station_metadata.csv`, `.parquet`, and `.gpkg` under its configured
+metadata directory. Replace the metadata used by the local/server app with the
+new output and restart the app. The generator preserves exact IDs such as
+`NDBCRIXA2` when returned within the bounds and assigns WFO using the shared
+public/coastal/offshore/Synoptic fallback below. GIS-specific tests run when
+GeoPandas is installed; the app itself does not require GIS dependencies.
+
 ## Stations with missing CWA/WFO metadata
 
 All pages normalize station metadata before WFO filtering. Existing valid

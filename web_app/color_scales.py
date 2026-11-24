@@ -102,6 +102,8 @@ def scale_controls(ui, values, element, metric, difference=False):
                 if not np.isfinite([low, high]).all() or low >= high:
                     st.error('Color maximum must exceed minimum. Showing the standard scale until corrected.')
                 else: limits = low, high
+        if temperature_boundaries(element,metric,limits) is not None:
+            st.caption('Temperature color bands use 5°F intervals; custom limits may create shorter end bands.')
         st.caption(f'Color limits: {limits[0]:g} to {limits[1]:g} {units}. '
                    'Limits affect colors only; all stations and their actual values remain available.')
         if mode == 'Standard' and metric in {'n', 'n_prob'}:
@@ -125,28 +127,43 @@ def clipping_caption(values, limits):
 SEQUENTIAL_BANDS = 5
 
 
-def color_mapping(limits, colors, stepped=False):
+def temperature_boundaries(element, metric, limits):
+    """Absolute temperatures use a shared 5 F grid, preserving custom endpoints."""
+    if element not in {'maxt','mint','temp2m'} or metric not in {'model_value','obs_value','max_obs','max_fcst'}:
+        return None
+    low,high=limits
+    interior=np.arange(np.floor(low/5)*5+5,high,5.)
+    return np.r_[low,interior,high]
+
+
+def color_mapping(limits, colors, stepped=False, boundaries=None):
     """Share bin edges and palette between station markers and their colorbar."""
     from matplotlib.colors import LinearSegmentedColormap, Normalize, BoundaryNorm
     cmap = LinearSegmentedColormap.from_list('station_scale', colors) if isinstance(colors, list) else colors
     if stepped:
-        cmap = cmap.resampled(SEQUENTIAL_BANDS)
-        norm = BoundaryNorm(np.linspace(*limits, SEQUENTIAL_BANDS + 1), cmap.N, clip=True)
+        edges=np.asarray(boundaries) if boundaries is not None else np.linspace(*limits, SEQUENTIAL_BANDS + 1)
+        cmap = cmap.resampled(len(edges)-1)
+        norm = BoundaryNorm(edges, cmap.N, clip=True)
     else:
         norm = Normalize(*limits)
     return cmap, norm
 
 
-def colorbar(limits, label, colors, values=(), stepped=False):
+def colorbar(limits, label, colors, values=(), stepped=False, boundaries=None):
     """Compact legend with both end caps; captions report actual clipped counts."""
     import matplotlib.pyplot as plt
     from matplotlib.colorbar import ColorbarBase
-    cmap, norm = color_mapping(limits, colors, stepped)
+    cmap, norm = color_mapping(limits, colors, stepped, boundaries)
     fig = plt.figure(figsize=(6, .8))
     ax = fig.add_axes([.08, .58, .84, .20])
     bar = ColorbarBase(ax, cmap=cmap, norm=norm, orientation='horizontal',
                        extend='both', extendfrac=.045, drawedges=stepped)
-    bar.set_ticks(np.linspace(*limits, SEQUENTIAL_BANDS + 1 if stepped else 5))
+    if boundaries is not None:
+        edges=np.asarray(boundaries)
+        stride=max(1,int(np.ceil((len(edges)-1)/14)))
+        bar.set_ticks(np.unique(np.r_[edges[::stride],edges[-1]]))
+    else:
+        bar.set_ticks(np.linspace(*limits, SEQUENTIAL_BANDS + 1 if stepped else 5))
     bar.set_label(label, fontsize=8, labelpad=3)
     bar.ax.tick_params(labelsize=7, length=2, pad=2)
     bar.outline.set_linewidth(.5)

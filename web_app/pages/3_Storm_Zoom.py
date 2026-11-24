@@ -22,6 +22,7 @@ from station_distribution import plot_station_distribution
 from storm_initialization import initialization_controls
 from comparison_loader import load_comparison_data
 from forecast_archive import refs_root_control, probability_description
+from probability_outcomes import probability_outcomes, highlight_outcomes, HIGHLIGHTS, POSITIVE_EVENT, ZERO_EVENT, UNKNOWN
 from probability import forecast_probability_details
 from comparison import model_view
 from storm_comparison import (compare_storm_runs, storm_comparison_summary, forecast_label,
@@ -270,22 +271,40 @@ with spatial:
         minimum=ui.number_input('Minimum observed speed for direction (kt)',min_value=0.,value=5.,step=1.,key='storm_direction_minimum')
         map_snapshot.loc[map_snapshot.obs_value.lt(minimum),'angular_error']=np.nan
         st.caption('Direction errors use archived directions and exclude calm/nonpositive forecast or observed speeds.')
-    map_data,view,limits=snapshot_map_data(map_snapshot,result['metadata'],metric)
+    highlighted=[]
+    if metric=='forecast_probability':
+        map_snapshot=probability_outcomes(map_snapshot)
+        highlighted=ui.multiselect('Observed outcomes to highlight',HIGHLIGHTS,default=HIGHLIGHTS,
+            key='storm_probability_highlights')
+        only_highlighted=ui.checkbox('Show only highlighted outcomes',key='storm_probability_only_highlighted')
+        counts=map_snapshot.probability_outcome.value_counts()
+        st.caption(f'Observed events with non-zero probability: {counts.get(POSITIVE_EVENT,0):,}; '
+                   f'with zero probability: {counts.get(ZERO_EVENT,0):,}; '
+                   f'without a matched observation: {counts.get(UNKNOWN,0):,}.')
+        if only_highlighted:
+            map_snapshot=map_snapshot[map_snapshot.probability_outcome.isin(highlighted)].copy()
+            if not highlighted:st.info('Choose at least one observed outcome to show stations.')
+        st.caption('Zero means exactly zero in the probability estimate; small non-zero probabilities remain non-zero. '
+                   'These outcomes describe this snapshot; reliability requires many cases.')
+    map_data,view,limits=snapshot_map_data(map_snapshot,result['metadata'],metric,element=saved['element'])
     if map_data.empty:
-        st.info('No stations have both coordinates and a valid value for this map display. The tables and station plots remain available.')
+        st.info('No stations meet the selected map display and outcome filters with valid coordinates and values. Other graphics and downloads remain available.')
     else:
         limits = scale_controls(ui, map_data[metric], saved['element'], metric)
-        map_data,view,_ = snapshot_map_data(map_snapshot,result['metadata'],metric,limits)
+        map_data,view,_ = snapshot_map_data(map_snapshot,result['metadata'],metric,limits,element=saved['element'])
+        if metric=='forecast_probability':map_data=highlight_outcomes(map_data,highlighted)
         clipping_caption(map_data[metric], limits)
         unit = ('percentile' if metric=='observed_percentile' else 'probability (0–1)' if metric=='forecast_probability'
                 else 'degrees' if metric=='angular_error' else spread_units
                 if metric in ['error','absolute_error','median_error','absolute_error_difference'] or metric.startswith('width_') else cfg['units'])
         st.caption(f'{len(map_data)} stations plotted. Click a station to populate Station detail.')
         render_storm_map(map_data,metric,view,result['generation'])
-        fig=map_colorbar(metric,limits,map_label,unit,map_data[metric])
+        fig=map_colorbar(metric,limits,map_label,unit,map_data[metric],element=saved['element'])
         render_colorbar(fig);plt.close(fig)
         if metric=='forecast_probability':
-            st.caption('Outline: green = event observed; purple = event not observed; gray = no matched observation. Gold marks the selected station.')
+            st.caption('Green outline with +: event observed with non-zero probability. Red outline with !: event observed with zero probability. '
+                       'Gray: other outcomes; the tooltip identifies missing observations. Gold marks the selected station. '
+                       'Fill color always shows forecast probability. The tooltip includes the probability source.')
             st.caption(probability_description(saved['model']=='refs'))
     if probabilistic:
         st.subheader('Forecast spread and observed coverage')

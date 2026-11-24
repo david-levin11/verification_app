@@ -88,13 +88,38 @@ percentiles use 0–100. Counts adapt to the data rather than use physical defau
 
 Colorbars are centered below each map, use compact labels, and always have extensions at
 both ends. Sequential scales (including MAE and POD) use five discrete color bands
-with identical boundaries for markers and legends. Signed scales remain smooth.
+with identical boundaries for markers and legends. Signed scales remain smooth. Absolute temperature maps (forecast/observed values
+and station forecast/observed maxima) use 5°F bands, including negative temperatures.
+The compact legend thins its tick labels when needed; all 5°F color boundaries
+remain present. Custom limits are honored exactly, with shorter end bands when needed.
 Values outside a color range use end colors;
 a caption reports how many plotted station values fall outside each limit.
 Tooltips, tables, scores, and selected stations retain their actual values.
 Fixed ranges are display defaults, not acceptable-error thresholds. Current
 limits and units appear inside the scale controls. Shared defaults live in
 [web_app/color_scales.py](web_app/color_scales.py).
+
+## Storm probability outcomes
+
+For a probabilistic Storm Zoom snapshot, choose **Threshold probability**.
+**Observed outcomes to highlight** lets users highlight observed events with
+non-zero probability, observed events with exactly zero probability, or both.
+**Show only highlighted outcomes** filters the map display without changing
+verification cases, scores, station selection, or the other graphics.
+
+Probability remains the circle fill color. A green outline and **+** identify an
+observed event assigned non-zero probability; a red outline and **!** identify an
+observed event assigned zero probability. Other outcomes are gray, and tooltips
+identify observations that are missing. Missing observations never count as an
+event not occurring. Very small positive probabilities remain distinct from zero
+in classifications and tooltip text. Gold still marks the selected station.
+
+The event uses the selected threshold/operator and the existing matched report
+or accumulation window. These are snapshot outcomes, not a reliability assessment:
+a small non-zero chance followed by an event is not automatically a good forecast.
+Quantile-derived probabilities remain estimates with the documented tie/tail
+assumptions; tooltips retain the probability source. Incomplete REFS distributions
+and unavailable probabilities are not converted to zero.
 
 ## Quick start with conda
 

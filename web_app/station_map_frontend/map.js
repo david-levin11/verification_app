@@ -41,7 +41,18 @@ function layers() {
     getLineWidth: d => selected.has(d.station_id) ? 3 : (d.event_outline_color ? 2 : 1),
     lineWidthUnits: 'pixels',
     updateTriggers: {getLineColor: [...selected].join('|'), getLineWidth: [...selected].join('|')}
-  })];
+  }), ...(records.some(d => d.event_symbol) ? [new deck.TextLayer({
+    id: 'probability-event-symbols',
+    data: records.filter(d => d.event_symbol),
+    getPosition: d => [d.longitude, d.latitude],
+    getText: d => d.event_symbol,
+    getSize: 12, sizeUnits: 'pixels',
+    getColor: [255,255,255,255],
+    characterSet: '+!', fontSettings: {sdf: true},
+    fontWeight: 'bold', outlineWidth: 0.12, outlineColor: [20,20,20,255],
+    getTextAnchor: 'middle', getAlignmentBaseline: 'center',
+    pickable: false
+  })] : [])];
 }
 
 function toggleStation(info) {
@@ -64,7 +75,7 @@ function tooltip({object}) {
   const times = object.forecast_date ? ['forecast_date', 'valid_time', 'obs_window_start', 'obs_window_end']
     : object.model_window_start ? ['model_window_start', 'model_window_end', 'obs_window_start', 'obs_window_end', 'obs_time_offset_minutes']
     : ['forecast_hour', 'obs_valid_time', 'obs_time_offset_minutes'];
-  for (const field of ['model_value', 'median_value', 'obs_value', 'rank_label', 'interval_bounds', 'n_available', 'n_expected', 'complete', 'probability_source', ...times, 'mnet_id', 'elevation_ft']) {
+  for (const field of ['model_value', 'median_value', 'obs_value', 'rank_label', 'interval_bounds', 'n_available', 'n_expected', 'complete', 'probability_source', 'probability_text', 'probability_outcome', ...times, 'mnet_id', 'elevation_ft']) {
     if (object[field] != null) lines.push(`${field}: ${object[field]}`);
   }
   for (const field of ['n', 'bias', 'mae', 'rmse', 'pod', 'far', 'csi']) {

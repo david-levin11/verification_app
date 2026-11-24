@@ -69,7 +69,7 @@ def map_description(metric,label,cfg,percentile,threshold,operator):
 def snapshot_map_data(snapshot, metadata, metric, limits=None, element=None):
     if metadata.empty or not {'station_id','latitude','longitude'}.issubset(metadata):
         return pd.DataFrame(), None, None
-    context = [c for c in ['station_id','latitude','longitude','name','mnet_id','elevation_ft'] if c in metadata]
+    context = [c for c in ['station_id','latitude','longitude','name','mnet_id','elevation_ft','wfo_best','wfo_assignment_source'] if c in metadata]
     data = snapshot.merge(metadata[context].drop_duplicates('station_id'), on='station_id', how='left')
     for column in ['latitude','longitude',metric]:
         data[column] = pd.to_numeric(data[column], errors='coerce')

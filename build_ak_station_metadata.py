@@ -497,11 +497,9 @@ def add_station_group_helpers(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     out["station_context"] = out.apply(classify, axis=1)
 
-    # Prefer spatially joined WFO, fall back to Synoptic CWA
-    if "public_zone_wfo" in out.columns:
-        out["wfo_best"] = out["public_zone_wfo"].fillna(out.get("cwa_synoptic"))
-    else:
-        out["wfo_best"] = out.get("cwa_synoptic")
+    # Match the viewer's public/coastal/offshore/Synoptic/alias fallback policy.
+    from web_app.station_metadata import normalize_station_metadata
+    out = normalize_station_metadata(out)
 
     return out
 

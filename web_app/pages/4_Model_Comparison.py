@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from config import (MODELS, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
                     get_available_obs_sources, get_element_config, is_probabilistic)
 from comparison_loader import load_comparison_data
+from reference_guide import render_reference_guide
 from forecast_archive import refs_root_control, probability_description
 from probability import forecast_probability_details
 from wind_verification import (filter_observed_speed, filter_observed_sector,
@@ -76,6 +77,7 @@ use_offset=ui.checkbox('Offset Model B reference time relative to Model A',key='
 offset=ui.number_input('Model B offset (hours; negative = earlier)',-72.0,72.0,-6.0,step=1.0,key='compare_offset') if use_offset else 0.
 ref_tolerance=ui.number_input('Reference-time tolerance (hours)',0.0,6.0,1.0,step=.5,key='compare_ref_tolerance')
 st.caption(f'For each A forecast, select B at A reference {offset:+g} hours, within ±{ref_tolerance:g} hours. Valid targets must match. Actual offsets and both leads appear in the paired data.')
+render_reference_guide(ui,model_a,model_b,element,offset,ref_tolerance)
 
 @st.cache_data
 def read_metadata(path):

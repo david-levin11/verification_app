@@ -99,6 +99,49 @@ Fixed ranges are display defaults, not acceptable-error thresholds. Current
 limits and units appear inside the scale controls. Shared defaults live in
 [web_app/color_scales.py](web_app/color_scales.py).
 
+## Choosing comparison reference offsets
+
+Model Comparison's **Choosing a Model B offset** guide shows typical model/element
+run hours, a worked A-hour example, day rollover, the nearest nominal B hour,
+and whether it fits the current reference tolerance. **Use this offset** applies
+a same-time/earlier B example without running verification. A fixed offset may
+fit only some A hours; schedule warnings are advisory, never matching restrictions.
+Actual archived runs, shared targets, lead coverage, and observations still decide
+which cases can be verified.
+
+For NDFD A at 00/12Z, NBM wind B at the previous 19Z/same-day 07Z uses **−5 h**;
+NBMQMD B at previous 18Z/same-day 06Z uses **−6 h**. Offset 0 with reference
+tolerance ±1 h may select the later NBM 01Z for NDFD 00Z. The guide uses the
+configured source for each element: NBM QMD-source temperature/precipitation
+fields have different initialization hours from NBM wind/gust; NBM MinRH uses
+00/12Z. NDFD 00/12Z are typical hours supplied by the archive owner, not a filter
+on reconstructed archive reference times. Reference tolerance concerns model runs;
+observation tolerance concerns valid-time/window matching. Earlier B runs have
+longer leads at the same valid target.
+
+## Stations with missing CWA/WFO metadata
+
+All pages normalize station metadata before WFO filtering. Existing valid
+`wfo_best` assignments are preserved. Missing/blank assignments are filled in
+order from public-zone, coastal-marine-zone, offshore-zone WFO, then Synoptic CWA.
+The metadata builder uses the same policy, fixing its omission of marine WFOs.
+`wfo_assignment_source` records the field used and is included in detailed outputs
+and map tooltips where available.
+
+For an existing `NDBC...` metadata row still lacking a WFO, the viewer can inherit
+from its exact unprefixed station ID only when coordinates agree within 1 km and
+nearby matching ID records agree on WFO. Station IDs and observation series are
+kept separate. Missing coordinates, conflicting assignments, unrelated nearby
+stations, and absent aliases do not trigger guesses. This does not add a station
+missing from metadata entirely or replace point-in-polygon zone assignments.
+
+To include an offshore site in a regional query, ensure the configured metadata
+contains its exact archive station ID, coordinates, and a WFO or assigned marine
+zone WFO. Rebuild/update metadata or add a verified `wfo_best` assignment when
+needed, then restart the app to reload it. Selecting the relevant WFO includes
+that site without querying all Alaska observations. Forecast/observation coverage
+and other station filters still apply. The app does not rewrite production metadata.
+
 ## Category charts and all-sites overview
 
 After building a station map, **Station map** and **All-sites overview** tabs

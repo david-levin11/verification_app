@@ -124,20 +124,59 @@ const parent={};const deck={ScatterplotLayer:Layer,TextLayer:Layer,DeckGL:Deck};
 const context={console,Set,Date,Math,deck,maplibregl:{},
  document:{getElementById:()=>({addEventListener:()=>{}})},
  window:{parent,deck,maplibregl:{},addEventListener:()=>{}}};
-parent.postMessage=()=>{};vm.createContext(context);
+let lastClick;parent.postMessage=message=>{if(message.type==='streamlit:setComponentValue')lastClick=message.value;};vm.createContext(context);
 vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),context);
 const records=[{station_id:'A',event_symbol:'+',longitude:-135,latitude:58,
  event_outline_color:[0,130,65,255],probability_outcome:'Observed event with non-zero probability',probability_text:'0.000001%'}];
 const render=(data,zoom)=>context.render({source:parent,data:{type:'streamlit:render',args:{
  records:data,selected_ids:['A'],metric:'forecast_probability',initial_view:{zoom},ack_event_id:null}}});
-render(records,5);assert.equal(instance.props.layers.length,2);
+const missing={station_id:'B',event_symbol:'',longitude:-135,latitude:58,
+ rank_label:'No matched observation',probability_outcome:'No matched observation'};
+render([...records,missing],5);assert.equal(instance.props.layers.length,2);
 const text=instance.props.layers[1].props;
-assert.equal(text.getText(records[0]),'+');assert.equal(text.pickable,false);assert.equal(text.fontSettings.sdf,true);
+assert.equal(text.getText(records[0]),'+');assert.equal(text.pickable,true);assert.equal(text.fontSettings.sdf,true);
 assert.ok(context.tooltip({object:records[0]}).text.includes('0.000001%'));
+assert.equal(text.data.length,1);
+assert.equal(text.data[0].station_id,'A');
+assert.ok(context.tooltip({object:text.data[0]}).text.startsWith('A\n'));
+assert.ok(!context.tooltip({object:text.data[0]}).text.includes('No matched observation'));
+assert.ok(context.tooltip({object:missing}).text.includes('No matched observation'));
 render(records,9);assert.equal(instance.props.viewState.zoom,5);
 assert.deepEqual(Array.from(instance.props.layers[0].props.getLineColor(records[0])),[255,190,0,255]);
+instance.props.onClick({object:text.data[0]});
+assert.equal(lastClick.clicked_station_id,'A');
 render([{station_id:'A'}],9);assert.equal(instance.props.layers.length,1);
 '''
     source=Path(__file__).parents[1]/'web_app/station_map_frontend/map.js'
     result=subprocess.run(['node','-e',script,str(source)],capture_output=True,text=True)
     assert result.returncode==0,result.stderr
+
+
+def test_missing_observation_never_gets_an_event_symbol_even_with_stale_event_flag():
+    frame=pd.DataFrame({'station_id':['MISSING','INVALID','MATCHED'],
+        'obs_value':[np.nan,np.inf,30.], 'observed_event':[1.,1.,1.],
+        'forecast_probability':[.5,.5,.5]})
+    annotated=highlight_outcomes(probability_outcomes(frame),HIGHLIGHTS)
+    assert annotated.event_symbol.tolist()==['','','+']
+    assert annotated.probability_outcome.tolist()==[UNKNOWN,UNKNOWN,POSITIVE_EVENT]
+
+
+def test_mint_colocated_missing_observation_retains_unknown_without_symbol():
+    from storm_analysis import build_storm_cases
+    from config import get_percentile_columns
+    init=pd.Timestamp('2026-11-20')
+    model=pd.DataFrame(dict(station_id=['NCMA2','NEARBY'],init_time=[init]*2,
+        valid_time=[pd.Timestamp('2026-11-22 18:00')]*2,forecast_hour=[66]*2))
+    for column in get_percentile_columns('mint').values():model[column]=10.
+    observations=pd.DataFrame(dict(stid=['NEARBY'],date=[pd.Timestamp('2026-11-22')],
+        window_start=[pd.Timestamp('2026-11-22')],window_end=[pd.Timestamp('2026-11-22 18:00')],
+        tmin=[15.],temp_units=['F']))
+    cases=build_storm_cases(model,observations,'nbmqmd','obs','mint',init,'50',threshold=20,operator='<=')
+    metadata=pd.DataFrame(dict(station_id=['NCMA2','NEARBY'],latitude=[60.,60.],longitude=[-150.,-150.]))
+    data,_,_=snapshot_map_data(probability_outcomes(cases),metadata,'forecast_probability',element='mint')
+    data=highlight_outcomes(data,HIGHLIGHTS).set_index('station_id')
+    assert data.loc['NCMA2','rank_label']=='No matched observation'
+    assert data.loc['NCMA2','probability_outcome']==UNKNOWN
+    assert data.loc['NCMA2','event_symbol']==''
+    assert data.loc['NEARBY','event_symbol']=='+'
+    assert np.isfinite(data.loc['NEARBY','obs_value'])

@@ -51,7 +51,8 @@ function layers() {
     characterSet: '+!', fontSettings: {sdf: true},
     fontWeight: 'bold', outlineWidth: 0.12, outlineColor: [20,20,20,255],
     getTextAnchor: 'middle', getAlignmentBaseline: 'center',
-    pickable: false
+    // The visible symbol must pick its own station, even above colocated sites.
+    pickable: true
   })] : [])];
 }
 

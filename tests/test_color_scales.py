@@ -158,3 +158,16 @@ def test_storm_steps_match_legend_and_signed_scales_remain_continuous():
     cmap, norm = color_mapping((-1.,1.), ['blue','white','red'])
     assert norm(0) == .5
     assert cmap(norm(.01)) != cmap(norm(.19))
+
+
+@pytest.mark.parametrize('limits',[(0,1),(0,4.7),(0,1000)])
+def test_count_colorbar_uses_integer_ticks(limits):
+    from color_scales import colorbar
+    import matplotlib.pyplot as plt
+    fig=colorbar(limits,'Observed events (cases)',['white','blue'],stepped=True,integer_ticks=True)
+    ticks=fig.axes[0].get_xticks()
+    assert len(ticks)>=2
+    assert all(float(tick).is_integer() for tick in ticks)
+    assert all('.' not in label.get_text() for label in fig.axes[0].get_xticklabels())
+    if limits==(0,1):assert ticks.tolist()==[0,1]
+    plt.close(fig)

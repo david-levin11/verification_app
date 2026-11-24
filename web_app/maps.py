@@ -219,7 +219,8 @@ def show_map_legend(station_metrics, selected_metric, limits=None, units='', ele
     label = cfg.get('label', selected_metric) + (f' ({units})' if units else '')
     fig = colorbar(limits, label, colors, station_metrics[selected_metric],
                    stepped=cfg['scale']!='diverging_zero',
-                   boundaries=temperature_boundaries(element,selected_metric,limits))
+                   boundaries=temperature_boundaries(element,selected_metric,limits),
+                   integer_ticks=selected_metric in {'n','n_prob','zero_probability_events'})
     render_colorbar(fig)
     plt.close(fig)
 

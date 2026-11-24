@@ -154,7 +154,7 @@ def color_mapping(limits, colors, stepped=False, boundaries=None):
     return cmap, norm
 
 
-def colorbar(limits, label, colors, values=(), stepped=False, boundaries=None):
+def colorbar(limits, label, colors, values=(), stepped=False, boundaries=None, integer_ticks=False):
     """Compact legend with both end caps; captions report actual clipped counts."""
     import matplotlib.pyplot as plt
     from matplotlib.colorbar import ColorbarBase
@@ -163,7 +163,12 @@ def colorbar(limits, label, colors, values=(), stepped=False, boundaries=None):
     ax = fig.add_axes([.08, .58, .84, .20])
     bar = ColorbarBase(ax, cmap=cmap, norm=norm, orientation='horizontal',
                        extend='both', extendfrac=.045, drawedges=stepped)
-    if boundaries is not None:
+    if integer_ticks:
+        from matplotlib.ticker import MaxNLocator, StrMethodFormatter
+        ticks=MaxNLocator(nbins=5,integer=True).tick_values(*limits)
+        bar.set_ticks(ticks[(ticks>=limits[0]) & (ticks<=limits[1])])
+        bar.ax.xaxis.set_major_formatter(StrMethodFormatter('{x:.0f}'))
+    elif boundaries is not None:
         edges=np.asarray(boundaries)
         stride=max(1,int(np.ceil((len(edges)-1)/14)))
         bar.set_ticks(np.unique(np.r_[edges[::stride],edges[-1]]))

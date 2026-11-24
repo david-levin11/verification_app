@@ -78,7 +78,7 @@ function tooltip({object}) {
   for (const field of ['model_value', 'median_value', 'obs_value', 'rank_label', 'interval_bounds', 'n_available', 'n_expected', 'complete', 'probability_source', 'probability_text', 'probability_outcome', ...times, 'mnet_id', 'elevation_ft']) {
     if (object[field] != null) lines.push(`${field}: ${object[field]}`);
   }
-  for (const field of ['n', 'bias', 'mae', 'rmse', 'pod', 'far', 'csi']) {
+  for (const field of ['n', 'bias', 'mae', 'rmse', 'pod', 'far', 'csi', 'n_prob', 'mean_probability_pct', 'prob_observed_frequency_pct', 'probability_bias_pp', 'prob_observed_events', 'n_zero_probability', 'zero_probability_events', 'zero_probability_event_rate_pct']) {
     if (field !== metric && object[field] != null) lines.push(`${field.toUpperCase()}: ${object[field]}`);
   }
   return {text: lines.join('\n'), style: {backgroundColor: 'white', color: 'black'}};

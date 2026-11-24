@@ -340,6 +340,7 @@ def plot_threshold_reliability(
     obs_col="obs_value",
     savepath=None,
     threshold_operator=">=",
+    probability_data=None,
 ):
     """
     Reliability plot for probability of exceeding a threshold.
@@ -350,13 +351,14 @@ def plot_threshold_reliability(
         Wind       -> wind_p5 ... wind_p95
     """
 
-    if obs_col not in merged_df.columns:
+    if probability_data is None and obs_col not in merged_df.columns:
         raise ValueError(
             f"Observation column '{obs_col}' not found. "
             f"Available columns: {merged_df.columns.tolist()}"
         )
 
-    cases = probability_cases(merged_df, element, threshold, threshold_operator, obs_col)
+    cases = (probability_cases(merged_df, element, threshold, threshold_operator, obs_col)
+             if probability_data is None else probability_data)
     if cases.empty:
         raise ValueError("No valid forecast probabilities could be computed.")
     reliability_data = reliability_table(cases)

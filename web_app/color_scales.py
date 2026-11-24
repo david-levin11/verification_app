@@ -4,7 +4,7 @@ import pandas as pd
 from config import get_element_config
 
 
-SIGNED = {'bias', 'error', 'median_error', 'absolute_error_difference'}
+SIGNED = {'bias', 'error', 'median_error', 'absolute_error_difference', 'probability_bias_pp'}
 PROPORTIONS = {'pod', 'far', 'csi', 'event_freq_obs', 'event_freq_fcst',
                'brier_score', 'reliability_error', 'forecast_probability'}
 
@@ -19,7 +19,9 @@ def finite_values(values):
 
 
 def scale_units(element, metric, difference=False):
-    if metric in {'n', 'n_prob'}: return 'cases'
+    if metric in {'n', 'n_prob', 'zero_probability_events'}: return 'cases'
+    if metric == 'probability_bias_pp': return 'percentage points'
+    if metric in {'mean_probability_pct','prob_observed_frequency_pct','zero_probability_event_rate_pct'}: return '%'
     if metric in PROPORTIONS or metric == 'frequency_bias': return 'unitless'
     if metric == 'observed_percentile': return 'percentile'
     if metric == 'angular_error': return 'degrees'
@@ -50,6 +52,9 @@ def fit_bounds(values, metric, difference=False):
 
 def standard_bounds(element, metric, difference=False, values=()):
     """Display defaults, not acceptable-error thresholds. Values use archive units."""
+    if metric == 'probability_bias_pp': return -25.,25.
+    if metric in {'mean_probability_pct','prob_observed_frequency_pct','zero_probability_event_rate_pct'}: return 0.,100.
+    if metric == 'zero_probability_events': return fit_bounds(values,metric,difference)
     if metric in PROPORTIONS:
         return (-.25, .25) if difference else (0., 1.)
     if metric == 'frequency_bias': return (-1., 1.) if difference else (0., 2.)

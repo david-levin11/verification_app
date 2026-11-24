@@ -21,7 +21,10 @@ from wind_verification import filter_observed_speed
 from archive_files import gust_observation_coverage
 from pairing import build_verification_pairs
 from metrics import compute_station_metrics
-from maps import plot_station_metric_map, show_map_legend
+from maps import plot_station_metric_map, show_map_legend, METRIC_COLOR_CONFIG
+from probability_overview import (build_probability_overview, render_probability_overview,
+    probability_map_rows, PROBABILITY_MAP_METRICS, EXPLANATIONS)
+from config import is_probabilistic
 from color_scales import scale_controls, scale_units, clipping_caption
 
 
@@ -196,6 +199,7 @@ selected_metric = ui.selectbox(
     metric_options,
     index=metric_options.index(current_metric),
     key="map_selected_metric",
+    format_func=lambda metric: METRIC_COLOR_CONFIG.get(metric,{}).get("label",metric) if metric in PROBABILITY_MAP_METRICS else metric,
 )
 
 # ---------------------------------------------------------------------
@@ -289,6 +293,8 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
             st.session_state['station_minimum_counts'] = dict(before=before_minimum,
                 excluded=before_minimum-len(merged))
             st.session_state['station_gust_coverage'] = gust_observation_coverage(obdf) if element == 'gust' else None
+            st.session_state['map_probability_cases'] = (build_probability_overview(
+                merged,element,threshold,threshold_operator) if model_is_probabilistic else None)
             st.session_state["station_metrics"] = station_metrics
             st.session_state["station_metrics_context"] = {
                 "model": model,
@@ -358,15 +364,30 @@ if "station_metrics" in st.session_state:
 
     limits = None
     display_element = result_context.get('element', element)
-    if not station_metrics.empty and selected_metric in station_metrics:
-        plotted_metrics = station_metrics.dropna(subset=[c for c in ['latitude','longitude',selected_metric] if c in station_metrics])
+    display_metrics=station_metrics
+    if selected_metric in PROBABILITY_MAP_METRICS:
+        st.caption(EXPLANATIONS[selected_metric])
+        minimum=ui.number_input('Minimum probability cases per mapped station',min_value=1,value=1,step=1,
+                                key='map_probability_minimum')
+        if 'n_prob' in station_metrics:
+            display_metrics=probability_map_rows(station_metrics,selected_metric,minimum)
+            st.caption(f'{len(station_metrics)-len(display_metrics):,} stations excluded by the probability sample minimum. '
+                       'This changes the map only; downloads and the all-sites overview retain all cases.')
+    if not display_metrics.empty and selected_metric in display_metrics:
+        plotted_metrics = display_metrics.dropna(subset=[c for c in ['latitude','longitude',selected_metric] if c in station_metrics])
         limits = scale_controls(ui, plotted_metrics[selected_metric], display_element, selected_metric)
     st.caption("Click a station to select it; click again to deselect. Selected stations have a gold outline.")
-    plot_station_metric_map(station_metrics, selected_metric, limits, display_element)
+    plot_station_metric_map(display_metrics, selected_metric, limits, display_element)
     if limits is not None:
         show_map_legend(plotted_metrics, selected_metric, limits, scale_units(display_element, selected_metric), display_element)
         clipping_caption(plotted_metrics[selected_metric], limits)
     show_selected_stations(station_meta)
+    if result_context and is_probabilistic(result_context['model'],display_element):
+        probability_data=st.session_state.get('map_probability_cases')
+        if probability_data is None:
+            st.info('Rebuild the map to generate the probability overview for this run.')
+        else:
+            render_probability_overview(probability_data,result_context,downloads)
 
 
     if station_metrics.empty:

@@ -5,6 +5,11 @@ import streamlit as st
 
 
 METRIC_COLOR_CONFIG = {
+    'probability_bias_pp': {'scale':'diverging_zero','label':'Mean probability − observed event frequency'},
+    'mean_probability_pct': {'scale':'sequential','label':'Mean forecast probability'},
+    'prob_observed_frequency_pct': {'scale':'sequential','label':'Observed event frequency (probability cases)'},
+    'zero_probability_events': {'scale':'sequential','label':'Observed events assigned zero probability'},
+    'zero_probability_event_rate_pct': {'scale':'sequential','label':'Observed events assigned zero probability / all observed events'},
     "brier_score": {"scale": "sequential", "label": "Brier score (lower is better)",
                     "low_label": "Lower", "high_label": "Higher"},
     "reliability_error": {"scale": "sequential", "label": "Reliability error (lower is better)",

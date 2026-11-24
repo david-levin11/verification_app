@@ -642,6 +642,11 @@ PROBABILISTIC_MAP_METRICS = [
     "n_prob",
     "brier_score",
     "reliability_error",
+    "probability_bias_pp",
+    "mean_probability_pct",
+    "prob_observed_frequency_pct",
+    "zero_probability_events",
+    "zero_probability_event_rate_pct",
 ]
 
 

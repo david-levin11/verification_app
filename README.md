@@ -99,6 +99,34 @@ Fixed ranges are display defaults, not acceptable-error thresholds. Current
 limits and units appear inside the scale controls. Shared defaults live in
 [web_app/color_scales.py](web_app/color_scales.py).
 
+## Map Explorer probability verification
+
+For probabilistic guidance, Map Explorer offers Brier score, binned reliability
+error, mean forecast probability, observed event frequency on probability cases,
+and mean probability minus observed frequency (percentage points). Positive
+probability differences mean probabilities were too high on average; errors in
+different probability bins can cancel, so inspect the reliability plot as well.
+The existing deterministic forecast event frequency uses the selected point
+forecast; it is distinct from mean forecast probability.
+
+Zero-probability event counts and rates identify observed threshold events given
+exactly zero probability. The rate denominator is **all observed events among
+valid matched probability cases**, not all forecasts. No observed events gives an
+undefined rate, omitted from that map. Tooltips include probability case counts,
+observed event counts, and zero-probability forecast counts. A minimum probability
+case control filters map stations only; colors retain Standard/Fit/Custom options.
+
+The all-sites probability overview reuses Aggregate Verification's reliability
+plot with 10% probability bins and sample-count bars. It includes all valid cases
+in the completed map run, even stations without coordinates, and weights each
+forecast/observation case equally. Stations with more cases contribute more.
+Map selection and display filters do not change this overview; use Aggregate
+Verification for selected groups. The plot and scores keep the completed run's
+threshold, operator, dates, and model when controls are edited. Detailed case,
+bin, summary, and station results remain downloads rather than inline tables.
+Missing probabilities/observations and incomplete REFS ensembles are excluded,
+never converted to zero. Matching rules and the Storm comparison map are unchanged.
+
 ## Storm probability outcomes
 
 For a probabilistic Storm Zoom snapshot, choose **Threshold probability**.

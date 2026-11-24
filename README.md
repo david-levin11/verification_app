@@ -99,6 +99,42 @@ Fixed ranges are display defaults, not acceptable-error thresholds. Current
 limits and units appear inside the scale controls. Shared defaults live in
 [web_app/color_scales.py](web_app/color_scales.py).
 
+## Category charts and all-sites overview
+
+After building a station map, **Station map** and **All-sites overview** tabs
+separate the map from category-frequency and confusion-matrix graphics. The
+overview pools every matched pair in the completed run, including sites without
+coordinates. Station selections and map sample/color filters do not restrict it;
+use Aggregate Verification for a selected group. Probability verification also
+appears in the overview for probabilistic models. Rebuild a map from an older
+session to populate its category chart inputs.
+
+Map Explorer and Aggregate Verification share **Chart categories** controls.
+Choose **Default** or **Custom**, entering strictly increasing, comma-separated
+numeric upper boundaries (1–30 values). Categories include open-ended tails;
+each boundary belongs to the bin ending at that value. Invalid entries show a
+message and use defaults until corrected. Controls are independent by page and
+weather element, redraw the saved paired values without querying archives, and
+do not change matching, threshold metrics, or map color scales. Wind defaults
+retain Marine/Beaufort names; custom categories use numeric labels. Precipitation
+and wind defaults are unchanged.
+
+New default finite boundaries (upper inclusive):
+
+| Element | Boundaries |
+| --- | --- |
+| Maximum temperature (°F) | −40, −20, 0, 10, 20, 32, 50, 70, 80 |
+| Minimum temperature (°F) | −50, −40, −30, −20, −10, 0, 10, 20, 32, 50 |
+| RH and minimum RH (%) | 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90 |
+
+For example, MaxT starts with ≤−40°F and ends with >80°F. Numeric interval
+labels make every category explicit. Empty categories remain on the axes.
+Category-frequency bars show same/lower/higher forecast categories within each
+observed category (each populated bar sums to 100%, with case counts). Confusion
+matrix cells show percentages of all categorized pairs. Stations with more pairs
+contribute more weight. Detailed categorized cases, confusion counts, and category
+definitions remain downloadable, without inline text tables.
+
 ## Map Explorer probability verification
 
 For probabilistic guidance, Map Explorer offers Brier score, binned reliability

@@ -112,7 +112,8 @@ def plot_confusion_matrix(
     cleaned[category_col_model] = pd.to_numeric(cleaned[category_col_model])
 
     # Convert to consistent categorical type
-    full_range = sorted(set(cleaned[category_col_obs]).union(set(cleaned[category_col_model])))
+    full_range = (list(category_labels) if isinstance(category_labels,dict) else
+                  sorted(set(cleaned[category_col_obs]).union(set(cleaned[category_col_model]))))
     cat_type = pd.CategoricalDtype(categories=full_range, ordered=True)
     cleaned[category_col_obs] = cleaned[category_col_obs].astype(cat_type)
     cleaned[category_col_model] = cleaned[category_col_model].astype(cat_type)
@@ -128,8 +129,10 @@ def plot_confusion_matrix(
     conf_matrix = conf_matrix.drop(index=np.nan, errors='ignore')
     conf_matrix = conf_matrix.drop(columns=np.nan, errors='ignore')
 
-    # Normalize to percent
-    conf_matrix_pct = conf_matrix / conf_matrix.values.sum() * 100
+    conf_matrix = conf_matrix.reindex(index=full_range, columns=full_range, fill_value=0)
+    # Normalize over all categorized pairs, including empty categories on the axes.
+    total=conf_matrix.values.sum()
+    conf_matrix_pct = conf_matrix / total * 100 if total else conf_matrix.astype(float)
 
     # Plot
     plt.figure(figsize=(10, 8))
@@ -239,6 +242,10 @@ def plot_forecast_bias_bar_chart(
             summary[col] = 0
     summary = summary[expected_bins]
 
+    if isinstance(category_labels,dict):
+        summary=summary.reindex(list(category_labels),fill_value=0)
+        counts=counts.reindex(list(category_labels),fill_value=0)
+
     # Apply label mapping to BOTH the summary and the counts
     if category_labels:
         if isinstance(category_labels, dict):
@@ -265,7 +272,6 @@ def plot_forecast_bias_bar_chart(
         "Over by 2+": "#003399",
     }
     colors = [color_map[b] for b in expected_bins]
-    plt.figure(figsize=(10, 8))
     # Plot (assigning to 'ax' so we can add text)
     ax = summary.plot(
         kind='bar',

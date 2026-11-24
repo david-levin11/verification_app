@@ -8,18 +8,17 @@ from station_selection import station_ids_input, parse_station_ids
 
 ui = PageControls("aggregate")
 
-from config import CATEGORY_CONFIG, get_element_config, is_probabilistic
+from config import get_element_config, is_probabilistic
+from category_charts import render_category_charts
 
 from data_loader import fetch_data
 from forecast_archive import probability_description
 from probability import forecast_probability_details
 from wind_verification import filter_observed_speed
 from archive_files import gust_observation_coverage
-from pairing import build_verification_pairs, add_category_columns
+from pairing import build_verification_pairs
 from metrics import compute_summary_metrics
 from plots import (
-    plot_forecast_bias_bar_chart,
-    plot_confusion_matrix,
     plot_threshold_reliability,
     plot_quantile_rank_histogram,
 )
@@ -278,51 +277,9 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
     # -----------------------------------------------------------------
 
     if category_set is not None:
-        category_cfg = CATEGORY_CONFIG[category_set]
-
-        merged_cat = add_category_columns(
-            pairs=merged,
-            bins=category_cfg["bins"],
-            label_values=list(category_cfg["labels"].keys()),
-            model_category_col="model_category",
-            obs_category_col="obs_category",
-        )
-
-        st.subheader(f"Categorical Verification: {category_set.title()}")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            fig_bias = plot_forecast_bias_bar_chart(
-                merged_cat,
-                "obs_category",
-                "model_category",
-                model,
-                obs,
-                group_name,
-                start_date,
-                end_date,
-                forecast_projection,
-                category_cfg["labels"],
-                varname="model_value",
-            )
-            st.pyplot(fig_bias)
-
-        with col2:
-            fig_conf = plot_confusion_matrix(
-                merged_cat,
-                "obs_category",
-                "model_category",
-                model,
-                obs,
-                group_name,
-                start_date,
-                end_date,
-                forecast_projection,
-                category_cfg["labels"],
-                varname="model_value",
-            )
-            st.pyplot(fig_conf)
+        render_category_charts(merged,dict(model=model,element=element,obs=obs,
+            percentile=percentile,start_date=start_date,end_date=end_date,
+            forecast_projection=forecast_projection),ui,downloads,group_name,category_set)
 
     # -----------------------------------------------------------------
     # Probabilistic verification

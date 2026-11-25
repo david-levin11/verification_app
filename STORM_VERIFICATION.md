@@ -40,7 +40,7 @@ and point errors can be downloaded as CSV. If no B run or shared cases exist,
 diagnostics explain the empty comparison and the primary results remain usable.
 
 Storm Specific Zoom explores one archived model initialization. Choose the element,
-event dates, observation tolerance, and either the shared Map Explorer selection
+event dates, observation tolerance, and either the shared Verification Overview selection
 or metadata filters. Network and elevation filters have
 no station cap. Generate the analysis to load the run; changing inputs leaves the
 saved result labeled with its original settings until you generate again.
@@ -63,7 +63,7 @@ observed-speed minimum for the direction map.
 Circles require valid coordinates and a value for the selected display. Missing
 observations do not suppress forecast-only map information. Click a station to
 populate Station detail; this selection is local to the storm page. Zoom controls
-and optional wheel zoom work as in Map Explorer, and selections preserve the camera.
+and optional wheel zoom work as in Verification Overview, and selections preserve the camera.
 On probability maps, green outlines indicate observed events, purple non-events,
 and gray missing observations. Gold identifies the selected detail station.
 

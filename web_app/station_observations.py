@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.dates as mdates
 from config import get_element_config
+from station_crosswalk import deduplicate_station_alias_rows
 
 
 def utc_time(value):
@@ -28,12 +29,13 @@ def report_series(observations,station,element,start=None,end=None):
     data=observations.loc[observations[id_column].astype(str).str.strip().eq(str(station).strip())]
     times=pd.to_datetime(data.valid_time,utc=True,errors='coerce').dt.tz_convert(None)
     values=pd.to_numeric(data[value_column],errors='coerce')
-    result=pd.DataFrame({'report_time':times,'observed_value':values})
+    result=data.assign(report_time=times,observed_value=values)
     keep=result.report_time.notna() & np.isfinite(result.observed_value)
     low,high=plot_bounds(start,end)
     if low is not None:keep &= result.report_time.ge(low)
     if high is not None:keep &= result.report_time.le(high)
-    return result.loc[keep].sort_values('report_time',kind='stable')
+    result = deduplicate_station_alias_rows(result.loc[keep], ['report_time'], 'obs_station_id')
+    return result[['report_time', 'observed_value']].sort_values('report_time', kind='stable')
 
 
 def plume_positions(times):

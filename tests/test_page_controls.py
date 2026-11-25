@@ -1,4 +1,5 @@
 """Navigation, automatic station propagation, and map event regressions."""
+from datetime import date
 from pathlib import Path
 import sys
 import pandas as pd
@@ -75,6 +76,8 @@ def test_pages_keep_settings_and_receive_new_map_selection_automatically(tmp_pat
     assert len(app.get('component_instance')) == 0  # only a generated metric map can select stations
     app.selectbox(key='map_ui_model').set_value('nbmqmd').run()
     app.selectbox(key='map_ui_element').set_value('precip24hr').run()
+    app.date_input(key='map_ui_start_date').set_value(date(2026, 10, 3))
+    app.date_input(key='map_ui_end_date').set_value(date(2026, 10, 13)).run()
     # The map component publishes shared selection and a revision.
     app.session_state['selected_station_list'] = ['PAJN', 'PANC']
     app.session_state['_map_selection_revision'] = 1
@@ -86,12 +89,17 @@ def test_pages_keep_settings_and_receive_new_map_selection_automatically(tmp_pat
     app.session_state['station_metrics'] = metrics
     app.switch_page('pages/2_Aggregate_Verification.py').run()
     assert not app.exception
-    assert app.selectbox(key='aggregate_ui_element').value == 'wind'
+    assert app.title[0].value == 'Selected-Site Verification'
+    assert app.selectbox(key='aggregate_ui_model').value == 'nbmqmd'
+    assert app.selectbox(key='aggregate_ui_element').value == 'precip24hr'
+    assert app.date_input(key='aggregate_ui_start_date').value == date(2026, 10, 3)
+    assert app.date_input(key='aggregate_ui_end_date').value == date(2026, 10, 13)
     assert app.text_input(key='aggregate_station_ids_input').value == 'PAJN, PANC'
     assert not any(b.label == 'Use selected map stations' for b in app.button)
     app.text_input(key='aggregate_station_ids_input').set_value('CUSTOM').run()
     app.selectbox(key='aggregate_ui_model').set_value('nbmqmd_exp').run()
     app.selectbox(key='aggregate_ui_element').set_value('mint').run()
+    app.date_input(key='aggregate_ui_end_date').set_value(date(2026, 10, 17)).run()
     assert not app.exception
     assert app.text_input(key='aggregate_station_ids_input').value == 'CUSTOM'
 
@@ -122,6 +130,7 @@ def test_pages_keep_settings_and_receive_new_map_selection_automatically(tmp_pat
     app.switch_page('pages/2_Aggregate_Verification.py').run()
     assert app.selectbox(key='aggregate_ui_model').value == 'nbmqmd_exp'
     assert app.selectbox(key='aggregate_ui_element').value == 'mint'
+    assert app.date_input(key='aggregate_ui_end_date').value == date(2026, 10, 17)
     assert app.text_input(key='aggregate_station_ids_input').value == 'PANC'
     # Unsupported elements and their dependent thresholds reset safely.
     app.selectbox(key='aggregate_ui_model').set_value('hrrr').run()
@@ -132,14 +141,18 @@ def test_pages_keep_settings_and_receive_new_map_selection_automatically(tmp_pat
     assert app.number_input(key='compare_offset').value == -12.
     app.switch_page('pages/1_Map_Explorer.py').run()
     app.button(key='clear_map_stations').click().run()
+    app.date_input(key='map_ui_end_date').set_value(date(2026, 10, 21)).run()
     app.switch_page('pages/2_Aggregate_Verification.py').run()
+    assert app.selectbox(key='aggregate_ui_model').value == 'nbmqmd'
+    assert app.selectbox(key='aggregate_ui_element').value == 'precip24hr'
+    assert app.date_input(key='aggregate_ui_end_date').value == date(2026, 10, 21)
     assert app.text_input(key='aggregate_station_ids_input').value == ''
     app.switch_page('pages/4_Model_Comparison.py').run()
     assert app.text_input(key='compare_stations').value == ''
     app.switch_page('pages/3_Storm_Zoom.py').run()
     assert not app.exception
-    app.radio(key='storm_station_scope').set_value('Map Explorer selections').run()
+    app.radio(key='storm_station_scope').set_value('Verification Overview selections').run()
     app.switch_page('pages/2_Aggregate_Verification.py').run()
     app.switch_page('pages/3_Storm_Zoom.py').run()
-    assert app.radio(key='storm_station_scope').value == 'Map Explorer selections'
+    assert app.radio(key='storm_station_scope').value == 'Verification Overview selections'
     assert not app.exception

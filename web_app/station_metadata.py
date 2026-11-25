@@ -1,5 +1,6 @@
 """Shared station metadata controls and sortable station context."""
 import math
+import numpy as np
 import pandas as pd
 
 
@@ -16,6 +17,49 @@ def normalize_station_metadata(frame):
     if 'elevation_ft' in result:
         result['elevation_ft'] = pd.to_numeric(result.elevation_ft, errors='coerce').replace(
             [float('inf'), -float('inf')], float('nan'))
+    return fill_station_wfo(result)
+
+
+def fill_station_wfo(frame):
+    """Fill absent WFOs from explicit metadata, then coordinate-checked NDBC aliases.
+
+    This assigns filter context only; station IDs and observation series remain separate.
+    It never guesses a WFO from a nearby unrelated station.
+    """
+    result=frame.copy()
+    candidates=['wfo_best','public_zone_wfo','coastal_marine_zone_wfo','offshore_zone_wfo','cwa_synoptic','CWA']
+    if not any(column in result for column in candidates):return result
+    def codes(values):
+        values=values.astype('string').str.strip().str.upper()
+        return values.where(values.str.fullmatch(r'[A-Z]{3}',na=False) & ~values.isin(['NAN','UNK','ALL']))
+    assignment=pd.Series(pd.NA,index=result.index,dtype='string')
+    source=pd.Series(pd.NA,index=result.index,dtype='string')
+    for column in candidates:
+        if column not in result:continue
+        values=codes(result[column]);take=assignment.isna() & values.notna()
+        assignment=assignment.mask(take,values)
+        source=source.mask(take,column)
+        if column=='wfo_best' and 'wfo_assignment_source' in result:
+            source=source.mask(take & result.wfo_assignment_source.notna(),result.wfo_assignment_source)
+    if {'station_id','latitude','longitude'}.issubset(result):
+        ids=result.station_id.astype('string').str.upper()
+        latitude=pd.to_numeric(result.latitude,errors='coerce')
+        longitude=pd.to_numeric(result.longitude,errors='coerce')
+        for position in np.flatnonzero((assignment.isna() & ids.str.startswith('NDBC',na=False)).to_numpy(dtype=bool)):
+            base=ids.iloc[position][4:]
+            matches=np.flatnonzero((ids.eq(base).fillna(False) & assignment.notna()).to_numpy(dtype=bool))
+            nearby=[]
+            for other in matches:
+                lat1,lat2,lon1,lon2=latitude.iloc[position],latitude.iloc[other],longitude.iloc[position],longitude.iloc[other]
+                if not np.isfinite([lat1,lat2,lon1,lon2]).all() or not(-90<=lat1<=90 and -90<=lat2<=90 and -180<=lon1<=180 and -180<=lon2<=180):continue
+                delta_lat=np.radians(lat2-lat1);delta_lon=np.radians(lon2-lon1)
+                hav=np.sin(delta_lat/2)**2+np.cos(np.radians(lat1))*np.cos(np.radians(lat2))*np.sin(delta_lon/2)**2
+                distance=6371*2*np.arcsin(np.sqrt(np.clip(hav,0,1)))
+                if distance<=1:nearby.append(assignment.iloc[other])
+            if len(set(nearby))==1:
+                assignment.iloc[position]=nearby[0];source.iloc[position]='coordinate-checked alias:'+base
+    result['wfo_best']=assignment
+    result['wfo_assignment_source']=source
     return result
 
 
@@ -67,7 +111,7 @@ def network_elevation_controls(frame, ui, prefix):
 
 def station_context_table(frame):
     """Keep numeric elevation for sorting in Streamlit tables."""
-    columns = ['station_id', 'name', 'mnet_id', 'elevation_ft', 'wfo_best', 'station_context']
+    columns = ['station_id', 'name', 'mnet_id', 'elevation_ft', 'wfo_best', 'wfo_assignment_source', 'station_context']
     table = normalize_station_metadata(frame)[[c for c in columns if c in frame]].copy()
     if 'mnet_id' in table:
         numeric = pd.to_numeric(table.mnet_id, errors='coerce')

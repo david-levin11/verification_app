@@ -5,6 +5,7 @@ from comparison import prepare_forecasts
 from config import (get_percentile_columns, is_probabilistic, get_element_config,
                     get_pairing_method, get_obs_time_column)
 from pairing import build_verification_pairs, get_obs_value_column
+from station_crosswalk import prefer_canonical_station
 from probability import forecast_probability_details, threshold_event
 
 INTERVALS = [('25', '75'), ('10', '90'), ('5', '95')]
@@ -47,6 +48,8 @@ def build_storm_cases(model_frame, observations, model, obs_source, element,
     init = pd.to_datetime(init_time, utc=True).tz_convert(None)
     prepared = prepared[prepared.init_time.eq(init)].copy()
     # Use the same target key as Model Comparison, including normalized daily dates.
+    if 'source_station_id' in prepared:
+        prepared = prefer_canonical_station(prepared, 'source_station_id')
     prepared = prepared.drop_duplicates(['station_id', 'target_time'], keep='last')
     if prepared.empty:
         return prepared
@@ -65,7 +68,7 @@ def build_storm_cases(model_frame, observations, model, obs_source, element,
     pairs = (build_verification_pairs(prepared, reports, model, obs_source, element,
                                       percentile, tolerance) if not reports.empty else pd.DataFrame())
     columns = ['station_id', 'init_time', 'valid_time', 'obs_value', 'obs_valid_time',
-               'obs_time_offset_minutes']
+               'obs_time_offset_minutes', 'obs_station_id']
     if accum_hours is not None and not pairs.empty:
         columns.extend(['obs_window_start', 'obs_window_end'])
     if element=='minrh' and not pairs.empty:

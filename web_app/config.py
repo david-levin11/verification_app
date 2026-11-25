@@ -244,6 +244,7 @@ ELEMENT_CONFIG = {
         "available_obs_sources": ["obs", "urma"],
         "obs_time_column": "valid_time",
         "model_value_candidates": ["wind_gust_kt", "i10fg"],
+        "forecast_direction_candidates": ["wind_dir_deg", "wind_direction"],
         "obs_value_candidates": ["obs_wind_gust_kts", "wind_gust_kt"],
         "direction_candidates": ["obs_wind_dir_deg", "wind_dir_deg", "wind_direction"],
         "percentile_prefix": "gust_p",
@@ -418,7 +419,7 @@ ELEMENT_CONFIG = {
         "default_threshold": 32,
         "thresholds": [-20, 0, 10, 20, 32, 40, 50, 60, 70, 80],
         "supports_direction_filter": False,
-        "category_sets": ["temperature"],
+        "category_sets": ["maxt"],
     },
 
     "mint": {
@@ -444,7 +445,7 @@ ELEMENT_CONFIG = {
         "default_threshold": 32,
         "thresholds": [-40, -20, 0, 10, 20, 32, 40, 50],
         "supports_direction_filter": False,
-        "category_sets": ["temperature"],
+        "category_sets": ["mint"],
     },
 }
 
@@ -515,6 +516,16 @@ def get_percentile_columns(element: str) -> dict[str, str]:
 # Numeric non-wind labels follow pd.cut's (lower, upper] intervals.
 # Small negative first edges for nonnegative elements admit true zeros;
 # retain those bin edges while displaying the meaningful upper limit.
+def numeric_category(cutoffs, units, label='Custom categories'):
+    """Finite upper-inclusive boundaries with open-ended tails."""
+    edges=[float('-inf'),*cutoffs,float('inf')]
+    labels={0:f'≤{cutoffs[0]:g} {units}'}
+    labels.update({i:f'({low:g}, {high:g}] {units}'
+                   for i,(low,high) in enumerate(zip(cutoffs[:-1],cutoffs[1:]),1)})
+    labels[len(cutoffs)]=f'>{cutoffs[-1]:g} {units}'
+    return dict(label=label,bins=edges,labels=labels)
+
+
 CATEGORY_CONFIG = {
     "marine": {
         "label": "Marine Category",
@@ -572,33 +583,9 @@ CATEGORY_CONFIG = {
             6: ">12.0 in",
         },
     },
-    "temperature": {
-        "label": "Temperature Category",
-        "bins": [-100, 0, 20, 32, 50, 70, 85, 100, float("inf")],
-        "labels": {
-            0: "(-100, 0] °F",
-            1: "(0, 20] °F",
-            2: "(20, 32] °F",
-            3: "(32, 50] °F",
-            4: "(50, 70] °F",
-            5: "(70, 85] °F",
-            6: "(85, 100] °F",
-            7: ">100 °F",
-        },
-    },
-    "rh": {
-        "label": "Relative Humidity Category",
-        "bins": [-0.1, 15, 25, 35, 50, 70, 90, 100],
-        "labels": {
-            0: "≤15 %",
-            1: "(15, 25] %",
-            2: "(25, 35] %",
-            3: "(35, 50] %",
-            4: "(50, 70] %",
-            5: "(70, 90] %",
-            6: "(90, 100] %",
-        },
-    },
+    "maxt": numeric_category([-40,-20,0,10,20,32,50,70,80], '°F', 'Maximum temperature'),
+    "mint": numeric_category([-50,-40,-30,-20,-10,0,10,20,32,50], '°F', 'Minimum temperature'),
+    "rh": numeric_category([10,15,20,25,30,40,50,60,70,80,90], '%', 'Relative humidity'),
 }
 
 
@@ -642,6 +629,11 @@ PROBABILISTIC_MAP_METRICS = [
     "n_prob",
     "brier_score",
     "reliability_error",
+    "probability_bias_pp",
+    "mean_probability_pct",
+    "prob_observed_frequency_pct",
+    "zero_probability_events",
+    "zero_probability_event_rate_pct",
 ]
 
 

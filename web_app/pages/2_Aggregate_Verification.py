@@ -1,6 +1,7 @@
 from data_downloads import DataDownloads
 downloads = DataDownloads('aggregate')
 import streamlit as st
+from chart_downloads import render_chart
 
 from sidebar_controls import shared_sidebar_controls
 from page_controls import PageControls
@@ -8,24 +9,26 @@ from station_selection import station_ids_input, parse_station_ids
 
 ui = PageControls("aggregate")
 
-from config import CATEGORY_CONFIG, get_element_config, is_probabilistic
+from config import get_element_config, is_probabilistic
+from category_charts import render_category_charts
 
 from data_loader import fetch_data
+from station_crosswalk import (apply_station_crosswalk, canonical_station_ids,
+                               resolve_station_crosswalk)
 from forecast_archive import probability_description
 from probability import forecast_probability_details
-from wind_verification import filter_observed_speed
+from wind_verification import compass_agreement
+from wind_event_panel import apply_wind_subset, show_compass_agreement, show_wind_subset
 from archive_files import gust_observation_coverage
-from pairing import build_verification_pairs, add_category_columns
+from pairing import build_verification_pairs
 from metrics import compute_summary_metrics
 from plots import (
-    plot_forecast_bias_bar_chart,
-    plot_confusion_matrix,
     plot_threshold_reliability,
     plot_quantile_rank_histogram,
 )
 
 
-st.title("Aggregate Verification")
+st.title("Selected-Site Verification")
 
 # ---------------------------------------------------------------------
 # Shared sidebar controls
@@ -47,7 +50,9 @@ end_date = controls["end_date"]
 threshold = controls["threshold"]
 threshold_operator = controls["threshold_operator"]
 obs_time_tolerance = controls["obs_time_tolerance"]
-minimum_observed_speed = controls["minimum_observed_speed"]
+wind_settings = {key: controls[key] for key in (
+    'minimum_observed_speed', 'observed_sectors', 'verify_direction'
+)}
 category_set = controls["category_set"]
 
 # ---------------------------------------------------------------------
@@ -61,16 +66,17 @@ group_name = ui.sidebar.text_input(
 )
 
 station_ids_text = station_ids_input("aggregate", "aggregate_station_ids_input",
-    "Station IDs for Aggregate Verification", default="EROWC, LIXA2, RIXA2, NKXA2")
+    "Station IDs for Selected-Site Verification", default="EROWC, LIXA2, RIXA2, NKXA2")
 station_list = parse_station_ids(station_ids_text)
 
-st.caption(f"{len(station_list)} stations selected.")
+selection_crosswalk = resolve_station_crosswalk(station_list)
+st.caption(f"{len(canonical_station_ids(station_list, selection_crosswalk))} stations selected.")
 
 # ---------------------------------------------------------------------
 # Fetch and compute
 # ---------------------------------------------------------------------
 
-if st.button("Run Aggregate Verification", type="primary", disabled=not controls["can_run"]):
+if st.button("Run Selected-Site Verification", type="primary", disabled=not controls["can_run"]):
     try:
         with st.spinner("Fetching and processing aggregate data..."):
             modeldf, obdf, message = fetch_data(
@@ -89,6 +95,7 @@ if st.button("Run Aggregate Verification", type="primary", disabled=not controls
                 archive_root=archive_root,
                 refs_root=controls['refs_root'],
                 obs_time_tolerance=obs_time_tolerance,
+                include_station_aliases=True,
             )
 
             if message:
@@ -117,6 +124,9 @@ if st.button("Run Aggregate Verification", type="primary", disabled=not controls
                 downloads.issue("No observation data returned.", fatal=True)
                 downloads.stop()
 
+            crosswalk = resolve_station_crosswalk(station_list, modeldf, obdf)
+            modeldf = apply_station_crosswalk(modeldf, crosswalk, 'source_station_id')
+            obdf = apply_station_crosswalk(obdf, crosswalk, 'obs_station_id')
             merged = build_verification_pairs(
                 modeldf=modeldf,
                 obdf=obdf,
@@ -127,13 +137,7 @@ if st.button("Run Aggregate Verification", type="primary", disabled=not controls
                 obs_time_tolerance=obs_time_tolerance,
             )
 
-            before_minimum = len(merged)
-            merged = filter_observed_speed(merged, minimum_observed_speed)
-            if minimum_observed_speed is not None:
-                st.caption(f'Observed gust ≥ {minimum_observed_speed:g} kt: {before_minimum-len(merged)} of {before_minimum} paired cases excluded.')
-            if merged.empty:
-                st.warning("No valid model/observation pairs were found.")
-                downloads.stop()
+            merged, wind_counts = apply_wind_subset(merged, dict(element=element, **wind_settings), downloads)
 
             summary = compute_summary_metrics(
                 merged=merged,
@@ -143,8 +147,10 @@ if st.button("Run Aggregate Verification", type="primary", disabled=not controls
                 probabilistic=model_is_probabilistic,
             )
 
-            st.session_state['aggregate_minimum_counts'] = dict(before=before_minimum,
-                excluded=before_minimum-len(merged))
+            st.session_state['aggregate_wind_counts'] = wind_counts
+            st.session_state['aggregate_compass_agreement'] = (
+                compass_agreement(merged) if wind_settings['verify_direction'] else None
+            )
             st.session_state['aggregate_gust_coverage'] = gust_observation_coverage(obdf) if element == 'gust' else None
             st.session_state["aggregate_merged"] = merged
             st.session_state["aggregate_summary"] = summary
@@ -161,7 +167,7 @@ if st.button("Run Aggregate Verification", type="primary", disabled=not controls
                 "threshold": threshold,
                 "threshold_operator": threshold_operator,
                 "obs_time_tolerance": obs_time_tolerance,
-                "minimum_observed_speed": minimum_observed_speed,
+                **wind_settings,
                 "category_set": category_set,
                 "group_name": group_name,
                 "station_list": station_list,
@@ -191,7 +197,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         "threshold": threshold,
             "threshold_operator": threshold_operator,
             "obs_time_tolerance": obs_time_tolerance,
-            "minimum_observed_speed": minimum_observed_speed,
+            **wind_settings,
         "category_set": category_set,
         "group_name": group_name,
         "station_list": station_list,
@@ -199,14 +205,12 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
 
     if result_context.get('element') == 'gust' and st.session_state.get('aggregate_gust_coverage'):
         st.caption(st.session_state['aggregate_gust_coverage'])
-    if result_context.get('minimum_observed_speed') is not None:
-        counts = st.session_state.get('aggregate_minimum_counts', {})
-        st.caption(f"Observed gust ≥ {result_context['minimum_observed_speed']:g} kt; {counts.get('excluded', 0)} of {counts.get('before', 0)} paired cases excluded.")
+    show_wind_subset(result_context, st.session_state.get('aggregate_wind_counts'))
 
     if result_context and result_context != current_context:
         st.info(
             "The displayed aggregate verification was computed with previous settings. "
-            "Click **Run Aggregate Verification** to refresh with the current sidebar selections."
+            "Click **Run Selected-Site Verification** to refresh with the current sidebar selections."
         )
 
     # Render saved results using the settings that produced them.
@@ -250,6 +254,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         info=forecast_probability_details(merged,element,result_context['threshold'],result_context['threshold_operator'])
         merged=merged.assign(forecast_probability=info.forecast_prob,probability_source=info.probability_source)
         st.caption('Probability sources: '+', '.join(f'{name}: {count:,}' for name,count in info.probability_source.value_counts().items()))
+    show_compass_agreement(result_context, st.session_state.get('aggregate_compass_agreement'), downloads)
     downloads.add(summary,name="Aggregate summary")
 
     preview_cols = [
@@ -278,51 +283,9 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
     # -----------------------------------------------------------------
 
     if category_set is not None:
-        category_cfg = CATEGORY_CONFIG[category_set]
-
-        merged_cat = add_category_columns(
-            pairs=merged,
-            bins=category_cfg["bins"],
-            label_values=list(category_cfg["labels"].keys()),
-            model_category_col="model_category",
-            obs_category_col="obs_category",
-        )
-
-        st.subheader(f"Categorical Verification: {category_set.title()}")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            fig_bias = plot_forecast_bias_bar_chart(
-                merged_cat,
-                "obs_category",
-                "model_category",
-                model,
-                obs,
-                group_name,
-                start_date,
-                end_date,
-                forecast_projection,
-                category_cfg["labels"],
-                varname="model_value",
-            )
-            st.pyplot(fig_bias)
-
-        with col2:
-            fig_conf = plot_confusion_matrix(
-                merged_cat,
-                "obs_category",
-                "model_category",
-                model,
-                obs,
-                group_name,
-                start_date,
-                end_date,
-                forecast_projection,
-                category_cfg["labels"],
-                varname="model_value",
-            )
-            st.pyplot(fig_conf)
+        render_category_charts(merged,dict(model=model,element=element,obs=obs,
+            percentile=percentile,start_date=start_date,end_date=end_date,
+            forecast_projection=forecast_projection),ui,downloads,group_name,category_set)
 
     # -----------------------------------------------------------------
     # Probabilistic verification
@@ -353,7 +316,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
                     obs_col="obs_value",
                     threshold_operator=result_context.get("threshold_operator", threshold_operator),
                 )
-                st.pyplot(fig_rel)
+                render_chart(fig_rel, 'selected-site reliability chart')
             except Exception as e:
                 downloads.issue(f"Reliability plot: {e}")
 
@@ -368,13 +331,13 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
                     element=element,
                     obs_col="obs_value",
                 )
-                st.pyplot(fig_rank)
+                render_chart(fig_rank, 'selected-site rank histogram')
             except Exception as e:
                 downloads.issue(f"Rank histogram: {e}")
 else:
     st.info(
-        "Choose your settings and click **Run Aggregate Verification**. "
-        "Station selections from the Map Explorer page will appear here automatically."
+        "Choose your settings and click **Run Selected-Site Verification**. "
+        "Station selections from the Verification Overview page will appear here automatically."
     )
 
 

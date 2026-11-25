@@ -18,12 +18,12 @@ def map_is_stepped(metric):
     return metric not in ['observed_percentile','error','median_error','absolute_error_difference']
 
 
-def map_colorbar(metric, limits, label, units, values=()):
+def map_colorbar(metric, limits, label, units, values=(), element=None):
     """Use exactly the same bins, normalization and colormap as station markers."""
-    from color_scales import colorbar
+    from color_scales import colorbar, temperature_boundaries
     from matplotlib.ticker import PercentFormatter
     fig = colorbar(limits, f'{label} ({units})', map_colormap(metric), values,
-                   stepped=map_is_stepped(metric))
+                   stepped=map_is_stepped(metric), boundaries=temperature_boundaries(element,metric,limits))
     bar = fig.axes[0]._colorbar
     if metric == 'forecast_probability':
         bar.formatter = PercentFormatter(xmax=1, decimals=0)
@@ -66,10 +66,10 @@ def map_description(metric,label,cfg,percentile,threshold,operator):
     return text
 
 
-def snapshot_map_data(snapshot, metadata, metric, limits=None):
+def snapshot_map_data(snapshot, metadata, metric, limits=None, element=None):
     if metadata.empty or not {'station_id','latitude','longitude'}.issubset(metadata):
         return pd.DataFrame(), None, None
-    context = [c for c in ['station_id','latitude','longitude','name','mnet_id','elevation_ft'] if c in metadata]
+    context = [c for c in ['station_id','latitude','longitude','name','mnet_id','elevation_ft','wfo_best','wfo_assignment_source'] if c in metadata]
     data = snapshot.merge(metadata[context].drop_duplicates('station_id'), on='station_id', how='left')
     for column in ['latitude','longitude',metric]:
         data[column] = pd.to_numeric(data[column], errors='coerce')
@@ -91,13 +91,13 @@ def snapshot_map_data(snapshot, metadata, metric, limits=None):
         if low==high:high=low+1e-6
     else:
         low, high = 0., max(float(data[metric].max()), 1e-6)
-    from color_scales import color_mapping
-    cmap, norm = color_mapping((low,high), map_colormap(metric), map_is_stepped(metric))
+    from color_scales import color_mapping, temperature_boundaries
+    cmap, norm = color_mapping((low,high), map_colormap(metric), map_is_stepped(metric),temperature_boundaries(element,metric,(low,high)))
     data['fill_color'] = [list((np.array(cmap(norm(value)))*255).astype(int)) for value in data[metric]]
     data['point_radius'] = 7
     data['metric_value'] = data[metric]
     data['metric_value_text'] = (data.rank_label if metric=='observed_percentile' else
-                                 data[metric].map(lambda value: f'{value:.0%}') if metric=='forecast_probability' else
+                                 data[metric].map(lambda value: f'{value*100:.6g}%') if metric=='forecast_probability' else
                                  data[metric].map(lambda value: f'{value:.2f}'))
     bounds = []
     for lo_level, hi_level in available_intervals(snapshot):
@@ -123,7 +123,8 @@ def render_storm_map(data, metric, view, generation):
     selection = st.session_state.get('storm_detail_station')
     event = _station_map(records=json.loads(data.to_json(orient='records', date_format='iso')),
         metric=metric, selected_ids=[selection] if selection else [], initial_view=view,
-        ack_event_id=st.session_state.get('_storm_map_ack'), default=None, key=key)
+        ack_event_id=st.session_state.get('_storm_map_ack'), screenshot_name='storm-snapshot',
+        default=None, key=key)
     if isinstance(event, dict) and event.get('event_id') and event['event_id'] != st.session_state.get('_storm_map_ack'):
         st.session_state['_storm_map_ack'] = event['event_id']
         station = event.get('clicked_station_id')

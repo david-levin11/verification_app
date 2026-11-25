@@ -10,8 +10,8 @@ new forecasts or observations.
 
 | Page | Purpose |
 | --- | --- |
-| Map Explorer | Map station verification metrics, filter stations by metadata, and select stations for other pages. |
-| Aggregate Verification | Summarize performance across stations, dates, forecast leads, and event categories. |
+| Verification Overview | Score all stations that match the filters, view pooled results, and select sites on the station map. |
+| Selected-Site Verification | Verify stations selected on the map or entered by ID, with summaries by forecast lead and event category. |
 | Storm Specific Zoom | Explore a model run through spatial snapshots, storm evolution, and station details; optionally compare a second model. |
 | Model Comparison | Compare two models against the same matched observations, with reference-time offsets and deterministic or probabilistic scoring. |
 
@@ -32,8 +32,10 @@ deterministic guidance does not require percentile fields. REFS completeness is
 judged against the expected membership at each lead, including scheduled member
 departures.
 
-Each page has independent analysis controls. Map Explorer station selections
-propagate to the other analysis pages; manual station lists are also supported.
+Selected-Site Verification picks up the model, element, and date range from
+Verification Overview when those selections change. You can then adjust the
+Selected-Site settings independently. Station selections on the Overview map
+propagate to the other analysis pages. Manual station lists are also supported.
 All available archived forecast hours are eligible within the selected lead
 range, without inventing missing forecast increments.
 
@@ -63,7 +65,7 @@ Archives and administrator-configured data paths are not changed by these contro
 
 ## Map color scales
 
-Map Explorer, Model Comparison station differences, and Storm Zoom spatial
+Verification Overview, Model Comparison station differences, and Storm Zoom spatial
 snapshots offer **Standard**, **Fit to data**, and **Custom** under **Map color
 scale**. Standard uses fixed ranges by element/metric; Fit to data uses robust
 95th-percentile limits (5th–95th for forecast/observed values). Custom accepts a
@@ -88,13 +90,182 @@ percentiles use 0–100. Counts adapt to the data rather than use physical defau
 
 Colorbars are centered below each map, use compact labels, and always have extensions at
 both ends. Sequential scales (including MAE and POD) use five discrete color bands
-with identical boundaries for markers and legends. Signed scales remain smooth.
+with identical boundaries for markers and legends. Signed scales remain smooth. Absolute temperature maps (forecast/observed values
+and station forecast/observed maxima) use 5°F bands, including negative temperatures.
+The compact legend thins its tick labels when needed; all 5°F color boundaries
+remain present. Custom limits are honored exactly, with shorter end bands when needed.
 Values outside a color range use end colors;
 a caption reports how many plotted station values fall outside each limit.
 Tooltips, tables, scores, and selected stations retain their actual values.
 Fixed ranges are display defaults, not acceptable-error thresholds. Current
 limits and units appear inside the scale controls. Shared defaults live in
 [web_app/color_scales.py](web_app/color_scales.py).
+
+## Choosing comparison reference offsets
+
+Model Comparison's **Choosing a Model B offset** guide shows typical model/element
+run hours, a worked A-hour example, day rollover, the nearest nominal B hour,
+and whether it fits the current reference tolerance. **Use this offset** applies
+a same-time/earlier B example without running verification. A fixed offset may
+fit only some A hours; schedule warnings are advisory, never matching restrictions.
+Actual archived runs, shared targets, lead coverage, and observations still decide
+which cases can be verified.
+
+For NDFD A at 00/12Z, NBM wind B at the previous 19Z/same-day 07Z uses **−5 h**;
+NBMQMD B at previous 18Z/same-day 06Z uses **−6 h**. Offset 0 with reference
+tolerance ±1 h may select the later NBM 01Z for NDFD 00Z. The guide uses the
+configured source for each element: NBM QMD-source temperature/precipitation
+fields have different initialization hours from NBM wind/gust; NBM MinRH uses
+00/12Z. NDFD 00/12Z are typical hours supplied by the archive owner, not a filter
+on reconstructed archive reference times. Reference tolerance concerns model runs;
+observation tolerance concerns valid-time/window matching. Earlier B runs have
+longer leads at the same valid target.
+
+## Rebuilding station metadata
+
+`build_ak_station_metadata.py` uses the same geographic inventory bounds as
+`alaska_verification/regional_stations.py` (source blob
+`6c3bf93066bb4355bbf76c869eb95a5bebf1c603`): mainland/central Alaska
+−180 to −129° longitude, 50–73° latitude, plus western Aleutians
+170 to 180° longitude, 50–73° latitude. These boxes deliberately include offshore
+and neighboring sites; state/CWA labels do not determine inclusion.
+
+The two Synoptic bbox requests use −179.999999 and +179.999999 near the dateline,
+matching the archiver's API workaround. Every returned station is independently
+validated against the true bounds, including ±180°. Missing, nonnumeric,
+nonfinite, out-of-bounds coordinates and blank station IDs are rejected. The
+inventory is deduplicated by exact station ID across both requests. A failed
+request aborts the build instead of writing a partial region inventory.
+
+No `state` or `status` filter is sent, and the default variable restriction is
+None. Inactive and other returned statuses are retained for historical
+verification, including marine stations with missing state/CWA labels. This
+inventory describes currently returned metadata; it cannot recover stations
+removed from the upstream catalog or supply missing historical observations.
+
+Run the generator in an environment with `geopandas`, `requests`, and the normal
+pandas/Parquet dependencies installed. Set `SYNOPTIC_TOKEN`, check the script's
+existing `BASE_DIR` output location, then run:
+
+```bash
+python build_ak_station_metadata.py
+```
+
+It writes `ak_station_metadata.csv`, `.parquet`, and `.gpkg` under its configured
+metadata directory. Replace the metadata used by the local/server app with the
+new output and restart the app. The generator preserves exact IDs such as
+`NDBCRIXA2` when returned within the bounds and assigns WFO using the shared
+public/coastal/offshore/Synoptic fallback below. GIS-specific tests run when
+GeoPandas is installed; the app itself does not require GIS dependencies.
+
+## Stations with missing CWA/WFO metadata
+
+All pages normalize station metadata before WFO filtering. Existing valid
+`wfo_best` assignments are preserved. Missing/blank assignments are filled in
+order from public-zone, coastal-marine-zone, offshore-zone WFO, then Synoptic CWA.
+The metadata builder uses the same policy, fixing its omission of marine WFOs.
+`wfo_assignment_source` records the field used and is included in detailed outputs
+and map tooltips where available.
+
+For an existing `NDBC...` metadata row still lacking a WFO, the viewer can inherit
+from its exact unprefixed station ID only when coordinates agree within 1 km and
+nearby matching ID records agree on WFO. Station IDs and observation series are
+kept separate. Missing coordinates, conflicting assignments, unrelated nearby
+stations, and absent aliases do not trigger guesses. This does not add a station
+missing from metadata entirely or replace point-in-polygon zone assignments.
+
+To include an offshore site in a regional query, ensure the configured metadata
+contains its exact archive station ID, coordinates, and a WFO or assigned marine
+zone WFO. Rebuild/update metadata or add a verified `wfo_best` assignment when
+needed, then restart the app to reload it. Selecting the relevant WFO includes
+that site without querying all Alaska observations. Forecast/observation coverage
+and other station filters still apply. The app does not rewrite production metadata.
+
+## Category charts and all-sites overview
+
+After building a station map, **Station Map** and **All-Sites Overview** tabs
+separate the map from category-frequency and confusion-matrix graphics. The
+overview pools every matched pair in the completed run, including sites without
+coordinates. Station selections and map sample/color filters do not restrict it;
+use Selected-Site Verification for a selected group. Probability verification also
+appears in the overview for probabilistic models. Rebuild a map from an older
+session to populate its category chart inputs.
+
+Verification Overview and Selected-Site Verification share **Chart categories** controls.
+Choose **Default** or **Custom**, entering strictly increasing, comma-separated
+numeric upper boundaries (1–30 values). Categories include open-ended tails;
+each boundary belongs to the bin ending at that value. Invalid entries show a
+message and use defaults until corrected. Controls are independent by page and
+weather element, redraw the saved paired values without querying archives, and
+do not change matching, threshold metrics, or map color scales. Wind defaults
+retain Marine/Beaufort names; custom categories use numeric labels. Precipitation
+and wind defaults are unchanged.
+
+New default finite boundaries (upper inclusive):
+
+| Element | Boundaries |
+| --- | --- |
+| Maximum temperature (°F) | −40, −20, 0, 10, 20, 32, 50, 70, 80 |
+| Minimum temperature (°F) | −50, −40, −30, −20, −10, 0, 10, 20, 32, 50 |
+| RH and minimum RH (%) | 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90 |
+
+For example, MaxT starts with ≤−40°F and ends with >80°F. Numeric interval
+labels make every category explicit. Empty categories remain on the axes.
+Category-frequency bars show same/lower/higher forecast categories within each
+observed category (each populated bar sums to 100%, with case counts). Confusion
+matrix cells show percentages of all categorized pairs. Stations with more pairs
+contribute more weight. Detailed categorized cases, confusion counts, and category
+definitions remain downloadable, without inline text tables.
+
+## Verification Overview probability verification
+
+For probabilistic guidance, Verification Overview offers Brier score, binned reliability
+error, mean forecast probability, observed event frequency on probability cases,
+and mean probability minus observed frequency (percentage points). Positive
+probability differences mean probabilities were too high on average; errors in
+different probability bins can cancel, so inspect the reliability plot as well.
+The existing deterministic forecast event frequency uses the selected point
+forecast; it is distinct from mean forecast probability.
+
+Zero-probability event counts and rates identify observed threshold events given
+exactly zero probability. The rate denominator is **all observed events among
+valid matched probability cases**, not all forecasts. No observed events gives an
+undefined rate, omitted from that map. Tooltips include probability case counts,
+observed event counts, and zero-probability forecast counts. A minimum probability
+case control filters map stations only; colors retain Standard/Fit/Custom options.
+
+The all-sites probability overview reuses Selected-Site Verification's reliability
+plot with 10% probability bins and sample-count bars. It includes all valid cases
+in the completed map run, even stations without coordinates, and weights each
+forecast/observation case equally. Stations with more cases contribute more.
+Map selection and display filters do not change this overview; use Aggregate
+Verification for selected groups. The plot and scores keep the completed run's
+threshold, operator, dates, and model when controls are edited. Detailed case,
+bin, summary, and station results remain downloads rather than inline tables.
+Missing probabilities/observations and incomplete REFS ensembles are excluded,
+never converted to zero. Matching rules and the Storm comparison map are unchanged.
+
+## Storm probability outcomes
+
+For a probabilistic Storm Zoom snapshot, choose **Threshold probability**.
+**Observed outcomes to highlight** lets users highlight observed events with
+non-zero probability, observed events with exactly zero probability, or both.
+**Show only highlighted outcomes** filters the map display without changing
+verification cases, scores, station selection, or the other graphics.
+
+Probability remains the circle fill color. A green outline and **+** identify an
+observed event assigned non-zero probability; a red outline and **!** identify an
+observed event assigned zero probability. Other outcomes are gray, and tooltips
+identify observations that are missing. Missing observations never count as an
+event not occurring. Very small positive probabilities remain distinct from zero
+in classifications and tooltip text. Gold still marks the selected station.
+
+The event uses the selected threshold/operator and the existing matched report
+or accumulation window. These are snapshot outcomes, not a reliability assessment:
+a small non-zero chance followed by an event is not automatically a good forecast.
+Quantile-derived probabilities remain estimates with the documented tie/tail
+assumptions; tooltips retain the probability source. Incomplete REFS distributions
+and unavailable probabilities are not converted to zero.
 
 ## Quick start with conda
 
@@ -177,6 +348,14 @@ Drive running and allow files to synchronize; offline availability can reduce
 on-demand download delays.
 
 ## Matching and interpreting comparisons
+
+Verification Overview, Selected-Site Verification, Storm Specific Zoom, and Model Comparison
+treat a matching NDBC-prefixed and unprefixed station ID as one physical site.
+For example, selecting either `RIXA2` or `NDBCRIXA2` searches both archive IDs.
+Metadata filters select sites, and the app can then use an alternate network's
+archive rows for those sites. The map shows one marker per site, and verifying
+the same initialization and target through both aliases counts as one case.
+
 
 - Instantaneous observations match using a configurable time tolerance, so an
   observation reported at :53 can verify the following top-of-hour forecast.

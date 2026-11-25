@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sidebar_controls import shared_sidebar_controls
 from page_controls import PageControls
-from station_selection import show_selected_stations
+from station_selection import selected_station_ids, set_map_station_ids, show_selected_stations
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
 
 ui = PageControls("map")
@@ -17,11 +17,18 @@ from config import (
 )
 
 from data_loader import fetch_data
-from wind_verification import filter_observed_speed
+from station_crosswalk import (apply_station_crosswalk, canonical_station_ids,
+                               canonical_station_metadata, resolve_station_crosswalk)
+from wind_verification import compass_agreement
+from wind_event_panel import apply_wind_subset, show_compass_agreement, show_wind_subset
 from archive_files import gust_observation_coverage
 from pairing import build_verification_pairs
 from metrics import compute_station_metrics
-from maps import plot_station_metric_map, show_map_legend
+from maps import plot_station_metric_map, show_map_legend, METRIC_COLOR_CONFIG
+from probability_overview import (build_probability_overview, render_probability_overview,
+    probability_map_rows, PROBABILITY_MAP_METRICS, EXPLANATIONS)
+from config import is_probabilistic
+from category_charts import render_category_charts
 from color_scales import scale_controls, scale_units, clipping_caption
 
 
@@ -43,7 +50,7 @@ def load_station_metadata(metadata_path):
     return normalize_station_metadata(df)
 
 
-st.title("Map Explorer")
+st.title("Verification Overview")
 
 def show_coverage_diagnostics(candidate_stations,modeldf,obdf,merged,station_metrics):
     candidate=set(map(str,candidate_stations))
@@ -78,7 +85,9 @@ end_date = controls["end_date"]
 threshold = controls["threshold"]
 threshold_operator = controls["threshold_operator"]
 obs_time_tolerance = controls["obs_time_tolerance"]
-minimum_observed_speed = controls["minimum_observed_speed"]
+wind_settings = {key: controls[key] for key in (
+    'minimum_observed_speed', 'observed_sectors', 'verify_direction'
+)}
 
 # ---------------------------------------------------------------------
 # Map-specific sidebar controls
@@ -179,8 +188,11 @@ elif zone_type == "Offshore Zone" and "offshore_zone_id" in filtered_meta.column
 filtered_meta = network_elevation_controls(filtered_meta, ui, 'map')
 candidate_stations = sorted(filtered_meta["station_id"].dropna().unique().tolist())
 
-st.caption(f"{len(candidate_stations)} candidate stations from metadata filters.")
-downloads.add(station_context_table(filtered_meta), name='Matching stations')
+candidate_crosswalk = resolve_station_crosswalk(candidate_stations, station_meta)
+site_candidates = canonical_station_ids(candidate_stations, candidate_crosswalk)
+st.caption(f"{len(site_candidates)} candidate stations from metadata filters.")
+downloads.add(station_context_table(canonical_station_metadata(filtered_meta, candidate_crosswalk)),
+              name='Matching stations')
 
 
 metric_options = get_map_metrics(model, element)
@@ -196,6 +208,7 @@ selected_metric = ui.selectbox(
     metric_options,
     index=metric_options.index(current_metric),
     key="map_selected_metric",
+    format_func=lambda metric: METRIC_COLOR_CONFIG.get(metric,{}).get("label",metric) if metric in PROBABILITY_MAP_METRICS else metric,
 )
 
 # ---------------------------------------------------------------------
@@ -221,6 +234,7 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 archive_root=archive_root,
                 refs_root=controls['refs_root'],
                 obs_time_tolerance=obs_time_tolerance,
+                include_station_aliases=True,
             )
 
             if message:
@@ -249,6 +263,9 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 downloads.issue("No observation data returned.", fatal=True)
                 downloads.stop()
 
+            crosswalk = resolve_station_crosswalk(candidate_stations, modeldf, obdf, station_meta)
+            modeldf = apply_station_crosswalk(modeldf, crosswalk, 'source_station_id')
+            obdf = apply_station_crosswalk(obdf, crosswalk, 'obs_station_id')
             merged = build_verification_pairs(
                 modeldf=modeldf,
                 obdf=obdf,
@@ -260,17 +277,12 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
             )
 
 
-            before_minimum = len(merged)
-            merged = filter_observed_speed(merged, minimum_observed_speed)
-            if minimum_observed_speed is not None:
-                st.caption(f'Observed gust ≥ {minimum_observed_speed:g} kt: {before_minimum-len(merged)} of {before_minimum} paired cases excluded.')
-            if merged.empty:
-                st.warning("No model/obs pairs were created.")
-                downloads.stop()
+            merged, wind_counts = apply_wind_subset(merged, dict(element=element, **wind_settings), downloads)
 
+            result_metadata = canonical_station_metadata(station_meta, crosswalk)
             station_metrics = compute_station_metrics(
                 merged=merged,
-                station_meta=station_meta,
+                station_meta=result_metadata,
                 threshold=threshold,
                 threshold_operator=threshold_operator,
                 element=element,
@@ -284,11 +296,22 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 downloads.stop()
 
             st.session_state['station_coverage_tables']=show_coverage_diagnostics(
-                candidate_stations,modeldf,obdf,merged,station_metrics)
+                canonical_station_ids(candidate_stations, crosswalk),modeldf,obdf,merged,station_metrics)
+            st.session_state['map_station_crosswalk'] = crosswalk
+            selected = selected_station_ids()
+            if any(station in crosswalk for station in selected):
+                set_map_station_ids(canonical_station_ids(selected, crosswalk))
 
-            st.session_state['station_minimum_counts'] = dict(before=before_minimum,
-                excluded=before_minimum-len(merged))
+            st.session_state['station_wind_counts'] = wind_counts
+            st.session_state['station_compass_agreement'] = (
+                compass_agreement(merged) if wind_settings['verify_direction'] else None
+            )
             st.session_state['station_gust_coverage'] = gust_observation_coverage(obdf) if element == 'gust' else None
+            st.session_state['map_probability_cases'] = (build_probability_overview(
+                merged,element,threshold,threshold_operator) if model_is_probabilistic else None)
+            # Only retain chart inputs, not another copy of the full forecast archive.
+            chart_columns=[c for c in ['station_id','model_value','obs_value','valid_time','forecast_hour'] if c in merged]
+            st.session_state['map_chart_cases']=merged[chart_columns].copy()
             st.session_state["station_metrics"] = station_metrics
             st.session_state["station_metrics_context"] = {
                 "model": model,
@@ -305,7 +328,8 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 "threshold": threshold,
                 "threshold_operator": threshold_operator,
                 "obs_time_tolerance": obs_time_tolerance,
-                "minimum_observed_speed": minimum_observed_speed,
+                **wind_settings,
+                "candidate_stations": candidate_stations,
             }
     except Exception as exc:
         downloads.issue(str(exc),fatal=True)
@@ -321,8 +345,6 @@ if "station_metrics" in st.session_state:
     station_metrics = st.session_state["station_metrics"]
     for table,name in zip(st.session_state.get('station_coverage_tables',[]),['Station coverage','Coverage counts']):
         downloads.add(table,name=name)
-
-    st.subheader("Station Metric Map")
 
     # Warn if the displayed map was computed with different settings.
     result_context = st.session_state.get("station_metrics_context", {})
@@ -341,14 +363,13 @@ if "station_metrics" in st.session_state:
             "threshold": threshold,
             "threshold_operator": threshold_operator,
             "obs_time_tolerance": obs_time_tolerance,
-            "minimum_observed_speed": minimum_observed_speed,
+            **wind_settings,
+            "candidate_stations": candidate_stations,
         }
 
     if result_context.get('element') == 'gust' and st.session_state.get('station_gust_coverage'):
         st.caption(st.session_state['station_gust_coverage'])
-    if result_context.get('minimum_observed_speed') is not None:
-        counts = st.session_state.get('station_minimum_counts', {})
-        st.caption(f"Observed gust ≥ {result_context['minimum_observed_speed']:g} kt; {counts.get('excluded', 0)} of {counts.get('before', 0)} paired cases excluded.")
+    show_wind_subset(result_context, st.session_state.get('station_wind_counts'))
 
     if result_context and result_context != current_context:
         st.info(
@@ -356,17 +377,46 @@ if "station_metrics" in st.session_state:
             "Click **Build Station Metric Map** to refresh with the current sidebar selections."
         )
 
-    limits = None
-    if not station_metrics.empty and selected_metric in station_metrics:
-        display_element = result_context.get('element', element)
-        plotted_metrics = station_metrics.dropna(subset=[c for c in ['latitude','longitude',selected_metric] if c in station_metrics])
-        limits = scale_controls(ui, plotted_metrics[selected_metric], display_element, selected_metric)
-    st.caption("Click a station to select it; click again to deselect. Selected stations have a gold outline.")
-    plot_station_metric_map(station_metrics, selected_metric, limits)
-    if limits is not None:
-        show_map_legend(plotted_metrics, selected_metric, limits, scale_units(display_element, selected_metric))
-        clipping_caption(plotted_metrics[selected_metric], limits)
-    show_selected_stations(station_meta)
+    map_tab,overview_tab=st.tabs(['Station Map','All-Sites Overview'])
+    display_element = result_context.get('element', element)
+    with map_tab:
+        st.subheader('Station Metric Map')
+        limits = None
+        display_metrics=station_metrics
+        if selected_metric in PROBABILITY_MAP_METRICS:
+            st.caption(EXPLANATIONS[selected_metric])
+            minimum=ui.number_input('Minimum probability cases per mapped station',min_value=1,value=1,step=1,
+                                    key='map_probability_minimum')
+            if 'n_prob' in station_metrics:
+                display_metrics=probability_map_rows(station_metrics,selected_metric,minimum)
+                st.caption(f'{len(station_metrics)-len(display_metrics):,} stations excluded by the probability sample minimum. '
+                           'This changes the map only; downloads and the all-sites overview retain all cases.')
+        if not display_metrics.empty and selected_metric in display_metrics:
+            plotted_metrics = display_metrics.dropna(subset=[c for c in ['latitude','longitude',selected_metric] if c in station_metrics])
+            limits = scale_controls(ui, plotted_metrics[selected_metric], display_element, selected_metric)
+        st.caption("Click a station to select it; click again to deselect. Selected stations have a gold outline.")
+        plot_station_metric_map(display_metrics, selected_metric, limits, display_element)
+        if limits is not None:
+            show_map_legend(plotted_metrics, selected_metric, limits, scale_units(display_element, selected_metric), display_element)
+            clipping_caption(plotted_metrics[selected_metric], limits)
+        show_selected_stations(canonical_station_metadata(
+            station_meta, st.session_state.get('map_station_crosswalk', {})
+        ))
+    with overview_tab:
+        show_compass_agreement(result_context, st.session_state.get('station_compass_agreement'), downloads)
+        st.caption('All-Sites Overview uses every matched case from the completed Verification Overview run, including stations without coordinates. '
+                   'Station selections and map display filters do not change these charts. Use Selected-Site Verification for selected stations.')
+        chart_cases=st.session_state.get('map_chart_cases')
+        if chart_cases is None or not result_context:
+            st.info('Rebuild the map to generate the all-sites category charts for this run.')
+        else:
+            render_category_charts(chart_cases,result_context,ui,downloads,'All sites in map run')
+        if result_context and is_probabilistic(result_context['model'],display_element):
+            probability_data=st.session_state.get('map_probability_cases')
+            if probability_data is None:
+                st.info('Rebuild the map to generate the probability overview for this run.')
+            else:
+                render_probability_overview(probability_data,result_context,downloads)
 
 
     if station_metrics.empty:

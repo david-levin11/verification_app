@@ -207,3 +207,77 @@ def test_page_missing_qmd_direction_keeps_filtered_speed_and_probabilities(tmp_p
     app.selectbox(key='compare_element').set_value('snow6hr').run()
     assert not app.exception
     assert not any(c.key == 'compare_verify_direction' for c in app.checkbox)
+
+
+def test_compass_agreement_and_observed_event_filters():
+    from wind_verification import compass_agreement, compass_sectors, filter_wind_events
+
+    direction = pd.Series([360, 337.5, 22.49, 22.5, 67.5, 180, -999, 361])
+    sectors = compass_sectors(direction)
+    assert sectors.iloc[:6].tolist() == ['N', 'N', 'N', 'NE', 'E', 'S']
+    assert sectors.iloc[6:].isna().all()
+
+    cases = pd.DataFrame(dict(
+        obs_value=[5., 10., 10., 10., 0., 4.9],
+        model_value=[10., 10., 10., 0., 10., 10.],
+        observed_direction=[350., 45., 10., 0., 0., 45.],
+        forecast_direction=[10., 225., 90., 180., 0., 45.],
+    ))
+    retained = filter_wind_events(cases, minimum=5., sectors=('N', 'NE'))
+    assert retained.index.tolist() == [0, 1, 2, 3]
+    scores = compass_agreement(retained)
+    assert (scores['n'], scores['same'], scores['opposite'], scores['other']) == (3, 1, 1, 1)
+    assert scores['angular_mae'] == pytest.approx((20 + 180 + 80) / 3)
+    assert scores['matrix'].loc['NE', 'SW'] == 1
+    assert (scores['adjacent'], scores['more_than_one']) == (0, 2)
+    assert scores['sector_errors'].loc[[0, 2, 4]].tolist() == [1, 1, 1]
+    assert scores['miss_cases'].sectors_apart.tolist() == [4, 2]
+    assert compass_agreement(retained.drop(columns='forecast_direction')) is None
+    with pytest.raises(ValueError, match='Observed wind direction is unavailable'):
+        filter_wind_events(cases.drop(columns='observed_direction'), sectors=('N',))
+
+
+def test_overview_and_selected_site_filter_and_score_paired_wind(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    forecast, _, _, _ = archive_fixture(tmp_path, 'wind_dir_deg')
+    forecast.loc[0, 'wind_dir_deg'] = 90.
+    forecast.to_parquet(tmp_path / 'ndfd' / 'wind' / '2026_06_archive.parquet', index=False)
+    metadata = tmp_path / 'stations.parquet'
+    pd.DataFrame(dict(station_id=['A'], latitude=[58.3], longitude=[-134.5])).to_parquet(metadata)
+    app = AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'), default_timeout=20)
+    app.secrets['local'] = dict(archive_root=str(tmp_path), metadata_path=str(metadata))
+    app.run()
+    pages = [
+        ('map', '1_Map_Explorer.py', 'Build Station Metric Map', 'station'),
+        ('aggregate', '2_Aggregate_Verification.py', 'Run Selected-Site Verification', 'aggregate'),
+    ]
+    for page, file, button, prefix in pages:
+        app.switch_page(f'pages/{file}').run()
+        if page == 'aggregate':
+            app.text_input(key='aggregate_station_ids_input').set_value('A')
+        app.selectbox(key=f'{page}_ui_model').set_value('ndfd').run()
+        app.selectbox(key=f'{page}_ui_element').set_value('wind').run()
+        app.date_input(key=f'{page}_ui_start_date').set_value(date(2026, 6, 2))
+        app.date_input(key=f'{page}_ui_end_date').set_value(date(2026, 6, 2))
+        app.multiselect(key=f'{page}_ui_sectors_wind').set_value(['N'])
+        app.checkbox(key=f'{page}_ui_verify_direction_wind').set_value(True)
+        app.checkbox(key=f'{page}_ui_filter_wind').set_value(True).run()
+        next(b for b in app.button if b.label == button).click().run()
+        assert not app.exception and not app.error
+        assert app.session_state[f'{prefix}_wind_counts'] == dict(paired=2, retained=1)
+        scores = app.session_state[f'{prefix}_compass_agreement']
+        assert (scores['n'], scores['same'], scores['opposite']) == (1, 1, 0)
+        assert scores['angular_mae'] == 20
+        assert next(metric for metric in app.metric if metric.label == 'Same sector').value == '100.0%'
+
+        app.radio(key=f'{page}_direction_heatmap_units').set_value('Percent within observed sector').run()
+        assert not app.exception
+        app.checkbox(key=f'{page}_ui_filter_wind').set_value(False).run()
+        next(b for b in app.button if b.label == button).click().run()
+        assert not app.exception
+        assert next(metric for metric in app.metric if metric.label == 'More than one apart').value == '50.0%'
+        app.selectbox(key=f'{page}_direction_pair').set_value(('N', 'E')).run()
+        assert not app.exception
+        detail = app.dataframe[0].value
+        assert detail[['forecast_sector', 'observed_sector', 'sectors_apart']].values.tolist() == [['E', 'N', 2]]

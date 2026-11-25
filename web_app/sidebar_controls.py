@@ -1,8 +1,9 @@
 """Consistent controls, with independent durable settings on each page."""
 import pandas as pd
 import streamlit as st
-from page_controls import PageControls
+from page_controls import PageControls, set_page_value
 from archive_paths import configured_paths
+from wind_verification import COMPASS_SECTORS
 from archive_availability import coverage, latest_dates, seed_dates, preflight
 from forecast_archive import refs_root_control
 from config import (MODELS, PERCENTILES, FORECAST_PROJECTION_GROUPS,
@@ -11,7 +12,23 @@ from config import (MODELS, PERCENTILES, FORECAST_PROJECTION_GROUPS,
     is_probabilistic)
 
 
+def pending_overview_selection():
+    """Return the four Overview inputs when they differ from the last handoff."""
+    saved = st.session_state.get('_page_settings_map', {})
+    keys = ('ui_model', 'ui_element', 'ui_start_date', 'ui_end_date')
+    if all(f'map_{key}' in saved for key in keys):
+        selection = {key: saved[f'map_{key}'] for key in keys}
+        if selection != st.session_state.get('_overview_selection_applied'):
+            return selection
+    return None
+
+
 def shared_sidebar_controls(show_category_set=False, page_key='map'):
+    overview = pending_overview_selection() if page_key == 'aggregate' else None
+    if overview is not None:
+        for key in ('ui_model', 'ui_element'):
+            set_page_value(page_key, f'{page_key}_{key}', overview[key])
+
     ui = PageControls(page_key).sidebar
     archive_root = configured_paths()['archive_root']
     model = ui.selectbox('Model', MODELS, key='ui_model')
@@ -50,6 +67,11 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
     default_start,default_end=latest_dates(sources)
     seed_dates(page_key,[f'{page_key}_ui_start_date',f'{page_key}_ui_end_date'],
                [default_start,default_end],(model,element,obs,archive_root,refs_root))
+    if overview is not None:
+        # Apply dates after refreshing archive defaults so the handoff wins.
+        for key in ('ui_start_date', 'ui_end_date'):
+            set_page_value(page_key, f'{page_key}_{key}', overview[key])
+        st.session_state['_overview_selection_applied'] = overview
     d1, d2 = ui.columns(2)
     start_date = d1.date_input('Start Date', default_start, key='ui_start_date')
     end_date = d2.date_input('End Date', default_end, key='ui_end_date')
@@ -67,12 +89,22 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
     obs_time_tolerance = f'{tolerance}min'
     st.sidebar.caption('Daily temperatures use their configured date; accumulation durations must agree.')
     minimum_observed_speed = None
-    if element == 'gust':
-        st.sidebar.caption('Gusts use their recorded report times and the selected observation tolerance.')
-        if ui.checkbox('Set a minimum observed gust', key='ui_filter_gust'):
-            minimum_observed_speed = ui.number_input('Minimum observed gust (kt)',
-                min_value=0., value=5., step=1., key='ui_minimum_gust')
-            st.sidebar.caption('Scores exclude lighter observed gusts, including false alarms during those cases.')
+    observed_sectors = ()
+    verify_direction = False
+    if element in ('wind', 'gust'):
+        st.sidebar.markdown('### Wind Event Filters')
+        observed_sectors = tuple(ui.multiselect(
+            'Observed wind direction sectors', COMPASS_SECTORS, key=f'ui_sectors_{element}',
+            help='Eight 45° compass sectors. Leave empty for all directions. Calm or missing directions are excluded when filtering.'
+        ))
+        quantity = 'gust' if element == 'gust' else 'wind speed'
+        if ui.checkbox(f'Set a minimum observed {quantity}', key=f'ui_filter_{element}'):
+            minimum_observed_speed = ui.number_input(f'Minimum observed {quantity} (kt)',
+                min_value=0., value=5., step=1., key=f'ui_minimum_{element}')
+            st.sidebar.caption('Scores use only cases at or above the observed minimum.')
+        verify_direction = ui.checkbox('Verify wind direction by compass sector', key=f'ui_verify_direction_{element}')
+        if element == 'gust':
+            st.sidebar.caption('Direction uses wind direction from the paired forecast and gust report, where archived.')
     category_set = None
     if show_category_set:
         categories = get_available_category_sets(element)
@@ -84,5 +116,6 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
         forecast_projection_end=forecast_projection_end, forecast_hours=forecast_hours, forecast_lead_range=forecast_lead_range,
         start_date=start_date, end_date=end_date, threshold=threshold,
         threshold_operator=threshold_operator, obs_time_tolerance=obs_time_tolerance, category_set=category_set,
-        minimum_observed_speed=minimum_observed_speed)
+        minimum_observed_speed=minimum_observed_speed, observed_sectors=observed_sectors,
+        verify_direction=verify_direction)
 

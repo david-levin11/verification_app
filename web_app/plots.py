@@ -6,6 +6,7 @@ import matplotlib.patches as patches
 from probability import probability_cases, reliability_table
 from config import get_percentile_columns, get_element_config, is_probabilistic
 from pairing import get_model_value_column, get_obs_value_column
+from station_crosswalk import deduplicate_station_alias_rows
 
 def plot_storm_timeseries(
     model_df, obs_df, target_station, target_init_time, plot_start, plot_end,
@@ -38,9 +39,16 @@ def plot_storm_timeseries(
         return None
     station_col = 'station_id' if 'station_id' in observations else 'stid'
     observations = observations.loc[observations[station_col].astype(str).str.strip().eq(target_station) &
-        observations.valid_time.between(start, finish)].sort_values('valid_time').copy()
+        observations.valid_time.between(start, finish)].sort_values('valid_time', kind='stable').copy()
     observations[obs_col] = pd.to_numeric(observations[obs_col], errors='coerce')
     observations[obs_col] = observations[obs_col].where(np.isfinite(observations[obs_col]))
+    if 'obs_station_id' in observations and observations.obs_station_id.ne(target_station).any():
+        # Keep gaps while letting a valid alternate replace an invalid report at the same time.
+        usable = observations[obs_col].notna()
+        observations = observations.loc[usable | ~observations.valid_time.isin(observations.loc[usable, 'valid_time'])]
+        observations = deduplicate_station_alias_rows(
+            observations, ['valid_time'], 'obs_station_id'
+        ).sort_values('valid_time', kind='stable')
     fig, ax = plt.subplots(figsize=(12, 6))
     if probabilistic:
         columns = get_percentile_columns(element)
@@ -112,7 +120,8 @@ def plot_confusion_matrix(
     cleaned[category_col_model] = pd.to_numeric(cleaned[category_col_model])
 
     # Convert to consistent categorical type
-    full_range = sorted(set(cleaned[category_col_obs]).union(set(cleaned[category_col_model])))
+    full_range = (list(category_labels) if isinstance(category_labels,dict) else
+                  sorted(set(cleaned[category_col_obs]).union(set(cleaned[category_col_model]))))
     cat_type = pd.CategoricalDtype(categories=full_range, ordered=True)
     cleaned[category_col_obs] = cleaned[category_col_obs].astype(cat_type)
     cleaned[category_col_model] = cleaned[category_col_model].astype(cat_type)
@@ -128,8 +137,10 @@ def plot_confusion_matrix(
     conf_matrix = conf_matrix.drop(index=np.nan, errors='ignore')
     conf_matrix = conf_matrix.drop(columns=np.nan, errors='ignore')
 
-    # Normalize to percent
-    conf_matrix_pct = conf_matrix / conf_matrix.values.sum() * 100
+    conf_matrix = conf_matrix.reindex(index=full_range, columns=full_range, fill_value=0)
+    # Normalize over all categorized pairs, including empty categories on the axes.
+    total=conf_matrix.values.sum()
+    conf_matrix_pct = conf_matrix / total * 100 if total else conf_matrix.astype(float)
 
     # Plot
     plt.figure(figsize=(10, 8))
@@ -239,6 +250,10 @@ def plot_forecast_bias_bar_chart(
             summary[col] = 0
     summary = summary[expected_bins]
 
+    if isinstance(category_labels,dict):
+        summary=summary.reindex(list(category_labels),fill_value=0)
+        counts=counts.reindex(list(category_labels),fill_value=0)
+
     # Apply label mapping to BOTH the summary and the counts
     if category_labels:
         if isinstance(category_labels, dict):
@@ -265,7 +280,6 @@ def plot_forecast_bias_bar_chart(
         "Over by 2+": "#003399",
     }
     colors = [color_map[b] for b in expected_bins]
-    plt.figure(figsize=(10, 8))
     # Plot (assigning to 'ax' so we can add text)
     ax = summary.plot(
         kind='bar',
@@ -340,6 +354,7 @@ def plot_threshold_reliability(
     obs_col="obs_value",
     savepath=None,
     threshold_operator=">=",
+    probability_data=None,
 ):
     """
     Reliability plot for probability of exceeding a threshold.
@@ -350,13 +365,14 @@ def plot_threshold_reliability(
         Wind       -> wind_p5 ... wind_p95
     """
 
-    if obs_col not in merged_df.columns:
+    if probability_data is None and obs_col not in merged_df.columns:
         raise ValueError(
             f"Observation column '{obs_col}' not found. "
             f"Available columns: {merged_df.columns.tolist()}"
         )
 
-    cases = probability_cases(merged_df, element, threshold, threshold_operator, obs_col)
+    cases = (probability_cases(merged_df, element, threshold, threshold_operator, obs_col)
+             if probability_data is None else probability_data)
     if cases.empty:
         raise ValueError("No valid forecast probabilities could be computed.")
     reliability_data = reliability_table(cases)

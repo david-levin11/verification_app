@@ -1,7 +1,7 @@
 # RRFS and derived REFS verification
 
-RRFS control and REFS support wind, gust, RH and six-hour precipitation in Map
-Explorer, Aggregate Verification, Storm Zoom (including two-model overlays), and
+RRFS control and REFS support wind, gust, RH and six-hour precipitation in Verification
+Overview, Selected-Site Verification, Storm Zoom (including two-model overlays), and
 Model Comparison. Snow and instantaneous temperature are not enabled by this change.
 
 ## Archive locations

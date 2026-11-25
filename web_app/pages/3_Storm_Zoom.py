@@ -4,10 +4,10 @@ downloads = DataDownloads('storm')
 from archive_paths import configured_paths
 from archive_availability import coverage, latest_dates, seed_dates, preflight
 from pathlib import Path
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
+from chart_downloads import render_chart
 from config import (MODELS, PERCENTILES, get_available_elements, get_available_obs_sources,
                     get_element_config, is_probabilistic)
 from data_loader import fetch_data
@@ -15,6 +15,8 @@ from plots import plot_storm_timeseries
 from page_controls import PageControls
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
 from station_selection import selected_station_ids
+from station_crosswalk import (apply_station_crosswalk, canonical_station_ids,
+                               canonical_station_metadata, resolve_station_crosswalk)
 from storm_analysis import build_storm_cases, available_intervals, interval_summary, evolution_summary, STORM_ELEMENTS
 from temperature_storm import plot_temperature_periods, temperature_snapshot_label
 from accumulation_storm import plot_accumulation_periods
@@ -22,6 +24,7 @@ from station_distribution import plot_station_distribution
 from storm_initialization import initialization_controls
 from comparison_loader import load_comparison_data
 from forecast_archive import refs_root_control, probability_description
+from probability_outcomes import probability_outcomes, highlight_outcomes, HIGHLIGHTS, POSITIVE_EVENT, ZERO_EVENT, UNKNOWN
 from probability import forecast_probability_details
 from comparison import model_view
 from storm_comparison import (compare_storm_runs, storm_comparison_summary, forecast_label,
@@ -100,7 +103,7 @@ try:
     metadata = read_metadata(metadata_path)
 except Exception as exc:
     downloads.add_json({'details':str(exc)},name='Station metadata error')
-    st.warning('Station metadata could not be opened. Ask the administrator to check the metadata file, or use stations selected from Map Explorer.')
+    st.warning('Station metadata could not be opened. Ask the administrator to check the metadata file, or use stations selected from Verification Overview.')
     metadata = pd.DataFrame()
 
 sources=[coverage(archive_root,name,element,refs_root) for name in [model,obs]+([model_b] if model_b else [])]
@@ -113,12 +116,12 @@ left,right = ui.columns(2)
 start = left.date_input('Plot Start Date',default_start)
 end = right.date_input('Plot End Date',default_end)
 can_run=preflight(sources,start,end)
-scope = ui.radio('Stations to load',['Filtered metadata stations','Map Explorer selections'],
+scope = ui.radio('Stations to load',['Filtered metadata stations','Verification Overview selections'],
                  key='storm_station_scope',horizontal=True)
 filtered = metadata.copy()
 if scope=='Filtered metadata stations':
     if metadata.empty:
-        st.warning('Provide station metadata to load filtered stations, or choose stations selected in Map Explorer.')
+        st.warning('Provide station metadata to load filtered stations, or choose stations selected in Verification Overview.')
     else:
         with st.expander('Station filters',expanded=True):
             cols=ui.columns(2)
@@ -129,13 +132,13 @@ if scope=='Filtered metadata stations':
                     if chosen!='All':filtered=filtered[filtered[field].astype(str).eq(chosen)]
             filtered=network_elevation_controls(filtered,ui,'storm')
             downloads.add(station_context_table(filtered),hide_index=True,use_container_width=True, name='Matching stations')
-if scope=='Map Explorer selections':
+if scope=='Verification Overview selections':
     stations=selected_station_ids()
-    if stations:st.caption(f'{len(stations):,} stations selected in Map Explorer.')
-    else:st.info('Select stations on the Map Explorer map; they will appear here automatically.')
+    if not stations:st.info('Select stations on the Verification Overview map; they will appear here automatically.')
 else:
     stations=filtered.station_id.dropna().unique().tolist() if 'station_id' in filtered else []
-st.caption(f'{len(stations):,} stations requested. Maps require metadata coordinates; station plots and scores do not.')
+candidate_crosswalk = resolve_station_crosswalk(stations, metadata)
+st.caption(f'{len(canonical_station_ids(stations, candidate_crosswalk)):,} stations requested. Maps require metadata coordinates; station plots and scores do not.')
 context=dict(model=model,element=element,obs=obs,percentile=percentile,threshold=threshold,
     operator=operator,minutes=minutes,init=init_text,start=start,end=end,stations=stations,
     archive_root=archive_root,refs_root=refs_root,metadata_path=metadata_path,compare_enabled=compare_enabled,
@@ -149,17 +152,31 @@ if st.button('Generate Storm Timeseries',type='primary',disabled=not can_run):
         if pd.isna(init):raise ValueError('Enter a valid model initialization time.')
         with st.spinner(f'Loading one {model.upper()} run for {len(stations):,} station(s)...'):
             modeldf,obdf,message=fetch_data('Storm Specific Zoom',model,obs,start,end,stations,[],init,
-                {},percentile,element=element,archive_root=archive_root,obs_time_tolerance=f'{minutes}min',refs_root=refs_root)
+                {},percentile,element=element,archive_root=archive_root,obs_time_tolerance=f'{minutes}min',
+                refs_root=refs_root,include_station_aliases=True)
             if modeldf.empty:raise ValueError(message or 'No model forecasts found for this run and event period.')
-            cases=build_storm_cases(modeldf,obdf,model,obs,element,init,percentile,
-                f'{minutes}min',threshold,operator)
-            if cases.empty:raise ValueError('No valid forecasts matched the requested initialization.')
             shared=pd.DataFrame();comparison_diagnostics={};comparison_warnings=[]
+            b_frame = None
             if compare_enabled:
                 try:
                     lookback=max(0.,(pd.Timestamp(start)-init).total_seconds()/3600)+abs(offset_hours)+reference_hours+48
                     _,b_frame,_,comparison_warnings=load_comparison_data(archive_root,model,model_b,obs,element,
-                        start,end,stations,lookback_hours=lookback,obs_time_tolerance=f'{minutes}min',refs_root=refs_root)
+                        start,end,stations,lookback_hours=lookback,obs_time_tolerance=f'{minutes}min',
+                        refs_root=refs_root,include_station_aliases=True)
+                except ValueError as exc:
+                    comparison_warnings.append(f'Comparison could not load: {exc}')
+            archive_frames = [metadata, modeldf, obdf]
+            if b_frame is not None:
+                archive_frames.append(b_frame)
+            crosswalk = resolve_station_crosswalk(stations, *archive_frames)
+            modeldf = apply_station_crosswalk(modeldf, crosswalk, 'source_station_id')
+            obdf = apply_station_crosswalk(obdf, crosswalk, 'obs_station_id')
+            cases=build_storm_cases(modeldf,obdf,model,obs,element,init,percentile,
+                f'{minutes}min',threshold,operator)
+            if cases.empty:raise ValueError('No valid forecasts matched the requested initialization.')
+            if b_frame is not None:
+                try:
+                    b_frame = apply_station_crosswalk(b_frame, crosswalk, 'source_station_id')
                     shared,comparison_diagnostics=compare_storm_runs(modeldf,b_frame,obdf,model,model_b,element,init,
                         percentile,percentile_b,offset_hours,f'{reference_hours}h',obs,f'{minutes}min')
                     if 'refs' in [model,model_b] and not shared.empty:
@@ -178,7 +195,8 @@ if st.button('Generate Storm Timeseries',type='primary',disabled=not can_run):
             generation=st.session_state.get('_storm_generation',0)+1
             st.session_state['_storm_generation']=generation
             st.session_state['storm_result']=dict(context=context.copy(),cases=cases,
-                modeldf=modeldf,obdf=obdf,metadata=metadata.copy(),warnings=[message] if message else [],
+                obdf=obdf,metadata=canonical_station_metadata(metadata, crosswalk),crosswalk=crosswalk,
+                warnings=[message] if message else [],
                 generation=generation,init=init)
             st.session_state['storm_result'].update(shared=shared,comparison_diagnostics=comparison_diagnostics,
                                                     comparison_warnings=comparison_warnings)
@@ -270,22 +288,40 @@ with spatial:
         minimum=ui.number_input('Minimum observed speed for direction (kt)',min_value=0.,value=5.,step=1.,key='storm_direction_minimum')
         map_snapshot.loc[map_snapshot.obs_value.lt(minimum),'angular_error']=np.nan
         st.caption('Direction errors use archived directions and exclude calm/nonpositive forecast or observed speeds.')
-    map_data,view,limits=snapshot_map_data(map_snapshot,result['metadata'],metric)
+    highlighted=[]
+    if metric=='forecast_probability':
+        map_snapshot=probability_outcomes(map_snapshot)
+        highlighted=ui.multiselect('Observed outcomes to highlight',HIGHLIGHTS,default=HIGHLIGHTS,
+            key='storm_probability_highlights')
+        only_highlighted=ui.checkbox('Show only highlighted outcomes',key='storm_probability_only_highlighted')
+        counts=map_snapshot.probability_outcome.value_counts()
+        st.caption(f'Observed events with non-zero probability: {counts.get(POSITIVE_EVENT,0):,}; '
+                   f'with zero probability: {counts.get(ZERO_EVENT,0):,}; '
+                   f'without a matched observation: {counts.get(UNKNOWN,0):,}.')
+        if only_highlighted:
+            map_snapshot=map_snapshot[map_snapshot.probability_outcome.isin(highlighted)].copy()
+            if not highlighted:st.info('Choose at least one observed outcome to show stations.')
+        st.caption('Zero means exactly zero in the probability estimate; small non-zero probabilities remain non-zero. '
+                   'These outcomes describe this snapshot; reliability requires many cases.')
+    map_data,view,limits=snapshot_map_data(map_snapshot,result['metadata'],metric,element=saved['element'])
     if map_data.empty:
-        st.info('No stations have both coordinates and a valid value for this map display. The tables and station plots remain available.')
+        st.info('No stations meet the selected map display and outcome filters with valid coordinates and values. Other graphics and downloads remain available.')
     else:
         limits = scale_controls(ui, map_data[metric], saved['element'], metric)
-        map_data,view,_ = snapshot_map_data(map_snapshot,result['metadata'],metric,limits)
+        map_data,view,_ = snapshot_map_data(map_snapshot,result['metadata'],metric,limits,element=saved['element'])
+        if metric=='forecast_probability':map_data=highlight_outcomes(map_data,highlighted)
         clipping_caption(map_data[metric], limits)
         unit = ('percentile' if metric=='observed_percentile' else 'probability (0–1)' if metric=='forecast_probability'
                 else 'degrees' if metric=='angular_error' else spread_units
                 if metric in ['error','absolute_error','median_error','absolute_error_difference'] or metric.startswith('width_') else cfg['units'])
         st.caption(f'{len(map_data)} stations plotted. Click a station to populate Station detail.')
         render_storm_map(map_data,metric,view,result['generation'])
-        fig=map_colorbar(metric,limits,map_label,unit,map_data[metric])
-        render_colorbar(fig);plt.close(fig)
+        fig=map_colorbar(metric,limits,map_label,unit,map_data[metric],element=saved['element'])
+        render_colorbar(fig)
         if metric=='forecast_probability':
-            st.caption('Outline: green = event observed; purple = event not observed; gray = no matched observation. Gold marks the selected station.')
+            st.caption('Green outline with +: event observed with non-zero probability. Red outline with !: event observed with zero probability. '
+                       'Gray: other outcomes; the tooltip identifies missing observations. Gold marks the selected station. '
+                       'Fill color always shows forecast probability. The tooltip includes the probability source.')
             st.caption(probability_description(saved['model']=='refs'))
     if probabilistic:
         st.subheader('Forecast spread and observed coverage')
@@ -312,14 +348,14 @@ with evolution:
         st.write('Model comparison answers the question: “How did the two forecasts’ bias and MAE change on the same observed cases?”')
         comparison_summary=storm_comparison_summary(shared,valid_times,balanced)
         fig=plot_comparison_evolution(comparison_summary,label_a,label_b,cfg['units'])
-        st.pyplot(fig);plt.close(fig)
+        render_chart(fig, 'storm model comparison evolution')
         downloads.add(comparison_summary,hide_index=True,use_container_width=True, name='Comparison evolution')
     summary=evolution_summary(cases,balanced)
     period='forecast date' if daily else 'projection'
     st.caption(f'Each {period} uses its available stations unless the fixed-station option is enabled. Counts are shown explicitly; '
                f'interval widths and coverage use the same eligible stations within each {period}.')
     fig=plot_evolution(summary,available_intervals(cases),spread_units,date_based=daily)
-    st.pyplot(fig);plt.close(fig)
+    render_chart(fig, 'storm verification evolution')
     downloads.add(summary,hide_index=True,use_container_width=True, name='Storm evolution')
 with detail:
     if daily:
@@ -331,8 +367,10 @@ with detail:
     else:
         st.write('The station distribution answers the question: “How did the forecast and its uncertainty compare with what happened at this station?”'
                  if probabilistic else 'The station plot answers the question: “How did the forecast compare with what happened at this station?”')
+    first_station = saved['stations'][0]
+    first_station = result.get('crosswalk', {}).get(first_station, first_station)
     station=ui.selectbox('Station detail',station_options,
-        index=station_options.index(saved['stations'][0]) if saved['stations'][0] in station_options else 0,
+        index=station_options.index(first_station) if first_station in station_options else 0,
         key='storm_detail_station')
     report_plume=saved['element'] in ['wind','gust'] and (
         probabilistic or (comparing and is_probabilistic(saved.get('model_b'),saved['element'])))
@@ -362,13 +400,13 @@ with detail:
             st.info('No observations were loaded. The plume shows forecast information only.')
             plot_observations=pd.DataFrame({'stid':pd.Series(dtype=str),
                 'valid_time':pd.Series(dtype='datetime64[ns]'),cfg['obs_value_candidates'][0]:pd.Series(dtype=float)})
-        fig=plot_storm_timeseries(model_df=result['modeldf'],obs_df=plot_observations,target_station=station,
+        fig=plot_storm_timeseries(model_df=cases,obs_df=plot_observations,target_station=station,
             target_init_time=result['init'],plot_start=saved['start'],plot_end=saved['end'],
             model=saved['model'],element=saved['element'],percentile=saved['percentile'],
             intervals=[('5','95'),('10','90'),('25','75')] if probabilistic else None)
     if fig is not None:
         if saved['element'] in ['rh','minrh']:fig.axes[0].set_ylim(0,100)
-        st.pyplot(fig);plt.close(fig)
+        render_chart(fig, 'storm station detail')
     if report_plume:
         st.caption('The station plume answers the question: “How did the forecast distribution compare with all observed reports during the requested period?” Small red points show every available report at its actual UTC timestamp; larger red points identify observations used for verification. Darker shading spans p25–p75, lighter shading p5–p95, and the central line is p50. Reports between forecast projections provide visual context; matching, scores, and ensemble completeness rules are unchanged.')
     if probabilistic and not (comparing and not shared.empty):

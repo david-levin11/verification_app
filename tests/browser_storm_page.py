@@ -53,7 +53,7 @@ def main():
             'storm_init_hour':int(m.init_time.iloc[0].hour),
             'storm_Plot Start Date':o.date.min().date() if daily else m.valid_time.min().date(),
             'storm_Plot End Date':o.date.max().date() if daily else m.valid_time.max().date(),
-            'storm_station_scope':'Map Explorer selections','selected_station_list':['A','B']}
+            'storm_station_scope':'Verification Overview selections','selected_station_list':['A','B']}
         app.write_text(f'''
 import sys, runpy, datetime
 sys.path.insert(0,{str(ROOT)!r})

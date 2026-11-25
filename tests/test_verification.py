@@ -119,7 +119,7 @@ def test_streamlit_aggregate_probability_controls(tmp_path):
     app.number_input(key='aggregate_ui_obs_tolerance_minutes').set_value(15)
     app.selectbox(key='aggregate_ui_threshold_operator_wind').set_value('<')
     app.run()
-    next(b for b in app.button if b.label == "Run Aggregate Verification").click().run(timeout=20)
+    next(b for b in app.button if b.label == "Run Selected-Site Verification").click().run(timeout=20)
     assert not app.exception
     assert app.session_state['aggregate_summary']['n_prob']==1
     assert app.session_state['aggregate_summary']['brier_score']==0

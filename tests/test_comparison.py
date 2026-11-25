@@ -278,3 +278,51 @@ def test_empty_condition_groups_do_not_break_charts():
     fig=plot_group_scores(table,'condition','mae','A','B','Observed category')
     assert len(fig.axes)==1
     plt.close(fig)
+
+
+def test_streamlit_station_crosswalk_recovers_cases_and_avoids_double_counting(tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    target = '2026-06-02 00:00'
+    later_target = '2026-06-02 06:00'
+    a_reference = '2026-06-01 12:00'
+    b_reference = '2026-06-01 07:00'
+    a = pd.DataFrame([
+        wind(a_reference, target, 10, 'NDBCRIXA2', ndfd=True),
+        wind(a_reference, target, 99, 'RIXA2', ndfd=True),
+        wind(a_reference, later_target, 12, 'RIXA2', ndfd=True),
+    ])
+    b = pd.DataFrame([
+        wind(b_reference, target, 15, 'RIXA2'),
+        wind(b_reference, later_target, 16, 'RIXA2'),
+    ])
+    o = observations([target, target, later_target, later_target], [20, 99, np.nan, 25],
+                     ['NDBCRIXA2', 'RIXA2', 'RIXA2', 'NDBCRIXA2'])
+    for model, frame in [('ndfd', a), ('nbm', b), ('obs', o)]:
+        folder = tmp_path / model / 'wind'
+        folder.mkdir(parents=True)
+        frame.to_parquet(folder / '2026_06_archive.parquet', index=False)
+
+    app = AppTest.from_file(str(Path(__file__).parents[1] / 'web_app/pages/4_Model_Comparison.py'))
+    app.secrets['local'] = {'archive_root': str(tmp_path), 'metadata_path': str(tmp_path / 'missing.csv')}
+    app.run()
+    app.date_input(key='compare_start').set_value(date(2026, 6, 2))
+    app.date_input(key='compare_end').set_value(date(2026, 6, 2))
+    app.checkbox(key='compare_use_offset').set_value(True).run()
+    app.number_input(key='compare_offset').set_value(-5.)
+    app.number_input(key='compare_ref_tolerance').set_value(0.)
+
+    for selection in ['NDBCRIXA2', 'RIXA2', 'RIXA2, NDBCRIXA2']:
+        app.text_input(key='compare_stations').set_value(selection)
+        app.button(key='compare_run').click().run(timeout=30)
+        assert not app.exception and not app.error
+        result = app.session_state['comparison_result']
+        assert result['crosswalk'] == {'RIXA2': 'NDBCRIXA2'}
+        cases = result['cases'].sort_values('target_time')
+        assert cases.station_id.tolist() == ['NDBCRIXA2', 'NDBCRIXA2']
+        assert cases.a_source_station_id.tolist() == ['NDBCRIXA2', 'RIXA2']
+        assert cases.b_source_station_id.tolist() == ['RIXA2', 'RIXA2']
+        assert cases.obs_station_id.tolist() == ['NDBCRIXA2', 'NDBCRIXA2']
+        assert cases.a_model_value.tolist() == [10, 12]
+        assert cases.obs_value.tolist() == [20, 25]
+        assert result['summary_a']['n'] == result['summary_b']['n'] == 2

@@ -24,7 +24,7 @@ Model B is not incorrectly restricted to Model A's forecast-hour list.
 ## Available forecast projections and day boundaries
 
 The app no longer uses per-model archiver schedules as verification whitelists.
-Map Explorer and Aggregate Verification filter continuous lead intervals selected
+Verification Overview and Selected-Site Verification filter continuous lead intervals selected
 by the day controls. **Use all forecast hours** applies no lead filter. Every
 archived 3-hour step (and irregular steps such as NBM's 5/11-hour leads) is eligible;
 an absent increment simply contributes no row. Storm Specific likewise loads all
@@ -54,6 +54,19 @@ Each distinct A station/reference/target is a verification
 case. Choose B's nearest reference to `A_reference + offset` within the reference
 tolerance, requiring the same station and target. If absent, exclude and count
 that case. This does not join every A run to every B run at the same valid time.
+
+## Station aliases
+
+Model Comparison looks up both the NDBC-prefixed and unprefixed station IDs. When
+both forms exist in metadata or the loaded archives, they are grouped under the
+prefixed verification ID. Either ID can select the site. If a model has forecasts
+under both IDs for the same initialization and target, the valid prefixed row
+takes priority. For time-matched observations, the app still chooses the nearest
+report. The prefixed row takes priority when the reports share a timestamp or
+daily observation date. Separate forecast initializations remain separate cases.
+
+The **Station crosswalk** download lists the aliases, and paired cases include
+the original station ID for each model and the matched observation.
 
 ## Observations
 

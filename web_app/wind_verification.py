@@ -120,3 +120,68 @@ def grouped_direction_scores(cases, group, threshold=45):
         tables.append(scores)
     return pd.concat(tables, ignore_index=True) if tables else pd.DataFrame(
         columns=['metric', 'label', 'a', 'b', 'difference', 'better', group, 'n'])
+
+
+COMPASS_SECTORS = ('N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW')
+
+
+def compass_sectors(direction):
+    """Use 45° sectors centered on compass points, including north across 0°."""
+    sector = ((normalize_direction(direction) + 22.5) % 360 // 45)
+    return sector.map(dict(enumerate(COMPASS_SECTORS)))
+
+
+def filter_wind_events(cases, minimum=None, sectors=()):
+    """Apply observed-value and observed-direction filters to matched cases."""
+    retained = filter_observed_speed(cases, minimum) if minimum is not None else cases
+    if sectors and not retained.empty:
+        if 'observed_direction' not in retained or not normalize_direction(retained.observed_direction).notna().any():
+            raise ValueError('Observed wind direction is unavailable for the paired reports. Clear the direction filter to score these cases.')
+        direction = compass_sectors(retained.observed_direction)
+        retained = retained.loc[retained.obs_value.gt(0) & direction.isin(sectors)].copy()
+    return retained
+
+
+def compass_agreement(cases):
+    """Summarize valid direction pairs and retain details for large sector errors."""
+    if not {'observed_direction', 'forecast_direction'}.issubset(cases):
+        return None
+    valid = (np.isfinite(cases.obs_value) & np.isfinite(cases.model_value)
+             & cases.obs_value.gt(0) & cases.model_value.gt(0))
+    paired = cases.loc[valid]
+    observed = compass_sectors(paired.observed_direction)
+    forecast = compass_sectors(paired.forecast_direction)
+    both_valid = (observed.notna() & forecast.notna()).to_numpy()
+    if not both_valid.any():
+        return None
+
+    observed, forecast = observed.iloc[both_valid], forecast.iloc[both_valid]
+    matrix = pd.crosstab(observed, forecast).reindex(
+        index=COMPASS_SECTORS, columns=COMPASS_SECTORS, fill_value=0
+    )
+    observed_bins = pd.Categorical(observed, categories=COMPASS_SECTORS).codes
+    forecast_bins = pd.Categorical(forecast, categories=COMPASS_SECTORS).codes
+    # Positive means the forecast is clockwise from the observation.
+    signed_bins = (forecast_bins - observed_bins + 3) % 8 - 3
+    distance = np.abs(signed_bins)
+    n = len(distance)
+    same = int((distance == 0).sum())
+    adjacent = int((distance == 1).sum())
+    opposite = int((distance == 4).sum())
+    sector_errors = pd.Series(signed_bins).value_counts().reindex(range(-3, 5), fill_value=0)
+
+    paired = paired.iloc[both_valid]
+    error = absolute_angular_error(paired.forecast_direction, paired.observed_direction)
+    detail_columns = ['station_id', 'valid_time', 'forecast_direction', 'observed_direction',
+                      'init_time', 'obs_valid_time', 'forecast_hour', 'model_value', 'obs_value',
+                      'source_station_id', 'obs_station_id']
+    large = distance > 1
+    miss_cases = paired.iloc[large].loc[:, [key for key in detail_columns if key in paired]].assign(
+        observed_sector=observed.to_numpy()[large],
+        forecast_sector=forecast.to_numpy()[large],
+        sectors_apart=distance[large],
+        angular_error_degrees=error.to_numpy()[large],
+    )
+    return dict(n=n, same=same, adjacent=adjacent, more_than_one=n-same-adjacent,
+                opposite=opposite, other=n-same-opposite, angular_mae=error.mean(),
+                matrix=matrix, sector_errors=sector_errors, miss_cases=miss_cases)

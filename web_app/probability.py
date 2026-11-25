@@ -99,7 +99,8 @@ def probability_cases(frame, element, threshold, operator=">=", obs_col="obs_val
     result = forecast_probability_details(frame,element,threshold,operator)
     result['observed_event']=threshold_event(observed,threshold,operator).astype(float)
     result.loc[~np.isfinite(observed), "observed_event"] = np.nan
-    return result.dropna()
+    return result.loc[np.isfinite(result.forecast_prob) & result.forecast_prob.between(0,1)
+                      & result.observed_event.isin([0,1])].copy()
 
 
 def reliability_table(cases):
@@ -115,11 +116,28 @@ def reliability_table(cases):
 
 def probability_scores(frame, element, threshold, operator=">=", obs_col="obs_value"):
     cases = probability_cases(frame, element, threshold, operator, obs_col)
+    return summarize_probability_cases(cases)
+
+
+def summarize_probability_cases(cases):
+    """All probability diagnostics use the same valid matched cases."""
+    observed_events=int(cases.observed_event.sum())
+    zero_events=int((cases.forecast_prob.eq(0) & cases.observed_event.eq(1)).sum())
+    diagnostics={
+        'n_prob':len(cases),
+        'mean_probability_pct':100*cases.forecast_prob.mean(),
+        'prob_observed_frequency_pct':100*cases.observed_event.mean(),
+        'probability_bias_pp':100*(cases.forecast_prob-cases.observed_event).mean(),
+        'prob_observed_events':observed_events,
+        'n_zero_probability':int(cases.forecast_prob.eq(0).sum()),
+        'zero_probability_events':zero_events,
+        'zero_probability_event_rate_pct':100*zero_events/observed_events if observed_events else np.nan,
+    }
     if cases.empty:
-        return {"n_prob": 0, "brier_score": np.nan, "reliability_error": np.nan}
+        return dict(diagnostics,brier_score=np.nan,reliability_error=np.nan)
     table = reliability_table(cases)
     return {
-        "n_prob": len(cases),
+        **diagnostics,
         "brier_score": ((cases.forecast_prob - cases.observed_event) ** 2).mean(),
         # Binned reliability component: weighted squared calibration error.
         "reliability_error": np.average(

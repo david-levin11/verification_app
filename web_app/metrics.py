@@ -108,6 +108,7 @@ def compute_station_metrics(
                 "elevation_ft",
                 "mnet_id",
                 "wfo_best",
+                "wfo_assignment_source",
                 "public_zone_id",
                 "public_zone_name",
                 "coastal_marine_zone_id",

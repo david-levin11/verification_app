@@ -209,7 +209,7 @@ def test_gust_page_flows_and_minimum_filters(tmp_path, monkeypatch):
     app.date_input(key='aggregate_ui_end_date').set_value(date(2026,5,2))
     app.checkbox(key='aggregate_ui_use_all_forecast_hours').set_value(True)
     app.checkbox(key='aggregate_ui_filter_gust').set_value(True).run()
-    next(b for b in app.button if b.label=='Run Aggregate Verification').click().run(timeout=30)
+    next(b for b in app.button if b.label=='Run Selected-Site Verification').click().run(timeout=30)
     assert not app.exception and app.session_state['aggregate_summary']['n']==1
     app.switch_page('pages/4_Model_Comparison.py').run()
     app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
@@ -237,7 +237,7 @@ def test_gust_page_flows_and_minimum_filters(tmp_path, monkeypatch):
     app.secrets.setdefault('local',{})['archive_root']=str(tmp_path)
     app.selectbox(key='storm_Element').set_value('gust').run()
     app.session_state['selected_station_list']=['A']
-    app.radio(key='storm_station_scope').set_value('Map Explorer selections').run()
+    app.radio(key='storm_station_scope').set_value('Verification Overview selections').run()
     _selected_init=pd.Timestamp('2026-05-01 00:00:00')
     app.date_input(key='storm_init_date').set_value(_selected_init.date())
     app.selectbox(key='storm_init_hour').set_value(_selected_init.hour)

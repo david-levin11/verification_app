@@ -5,6 +5,11 @@ import streamlit as st
 
 
 METRIC_COLOR_CONFIG = {
+    'probability_bias_pp': {'scale':'diverging_zero','label':'Mean probability − observed event frequency'},
+    'mean_probability_pct': {'scale':'sequential','label':'Mean forecast probability'},
+    'prob_observed_frequency_pct': {'scale':'sequential','label':'Observed event frequency (probability cases)'},
+    'zero_probability_events': {'scale':'sequential','label':'Observed events assigned zero probability'},
+    'zero_probability_event_rate_pct': {'scale':'sequential','label':'Observed events assigned zero probability / all observed events'},
     "brier_score": {"scale": "sequential", "label": "Brier score (lower is better)",
                     "low_label": "Lower", "high_label": "Higher"},
     "reliability_error": {"scale": "sequential", "label": "Reliability error (lower is better)",
@@ -156,7 +161,7 @@ def _metric_bounds(df, metric):
     return float(vmin), float(vmax)
 
 
-def add_map_style_columns(df, metric, limits=None):
+def add_map_style_columns(df, metric, limits=None, element=None):
     """
     Add color and radius columns used by the pydeck layer.
     """
@@ -167,10 +172,10 @@ def add_map_style_columns(df, metric, limits=None):
 
     vmin, vmax = limits if limits is not None else _metric_bounds(out, metric)
 
-    from color_scales import color_mapping
+    from color_scales import color_mapping, temperature_boundaries
     palette = ['#e5f5f9', '#2c7fb8']
     if scale == 'fixed_0_1_reversed': palette = palette[::-1]
-    cmap, norm = color_mapping((vmin, vmax), palette, stepped=True)
+    cmap, norm = color_mapping((vmin, vmax), palette, stepped=True, boundaries=temperature_boundaries(element,metric,(vmin,vmax)))
     colors = []
 
     for value in pd.to_numeric(out[metric], errors="coerce"):
@@ -201,10 +206,9 @@ def add_map_style_columns(df, metric, limits=None):
     return out, vmin, vmax
 
 
-def show_map_legend(station_metrics, selected_metric, limits=None, units=''):
+def show_map_legend(station_metrics, selected_metric, limits=None, units='', element=None):
     """The colorbar uses the same bounds and colors as the station markers."""
-    import matplotlib.pyplot as plt
-    from color_scales import colorbar, render_colorbar
+    from color_scales import colorbar, render_colorbar, temperature_boundaries
     if station_metrics.empty or selected_metric not in station_metrics:
         return
     cfg = METRIC_COLOR_CONFIG.get(selected_metric, {'scale': 'sequential'})
@@ -213,12 +217,13 @@ def show_map_legend(station_metrics, selected_metric, limits=None, units=''):
     if cfg['scale']=='fixed_0_1_reversed': colors = colors[::-1]
     label = cfg.get('label', selected_metric) + (f' ({units})' if units else '')
     fig = colorbar(limits, label, colors, station_metrics[selected_metric],
-                   stepped=cfg['scale']!='diverging_zero')
+                   stepped=cfg['scale']!='diverging_zero',
+                   boundaries=temperature_boundaries(element,selected_metric,limits),
+                   integer_ticks=selected_metric in {'n','n_prob','zero_probability_events'})
     render_colorbar(fig)
-    plt.close(fig)
 
 
-def plot_station_metric_map(station_metrics, selected_metric, limits=None):
+def plot_station_metric_map(station_metrics, selected_metric, limits=None, element=None):
     """
     Plot station-level metrics using metric-aware colors and pixel-sized points.
     """
@@ -246,6 +251,6 @@ def plot_station_metric_map(station_metrics, selected_metric, limits=None):
         st.warning("No stations with valid latitude, longitude, and selected metric.")
         return
 
-    map_df, vmin, vmax = add_map_style_columns(map_df, selected_metric, limits)
+    map_df, vmin, vmax = add_map_style_columns(map_df, selected_metric, limits, element)
 
     station_metric_map(map_df, selected_metric)

@@ -7,10 +7,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
+from chart_downloads import render_chart
+from station_map import comparison_station_map
 from config import (MODELS, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
                     get_available_obs_sources, get_element_config, is_probabilistic)
 from comparison_loader import load_comparison_data
+from reference_guide import render_reference_guide
 from forecast_archive import refs_root_control, probability_description
 from probability import forecast_probability_details
 from wind_verification import (filter_observed_speed, filter_observed_sector,
@@ -26,6 +28,8 @@ from archive_availability import coverage, latest_dates, seed_dates, preflight
 from page_controls import PageControls
 from station_selection import station_ids_input, parse_station_ids, sync_map_selection
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
+from station_crosswalk import (canonical_station_ids, canonical_station_metadata,
+                               resolve_station_crosswalk)
 
 ui = PageControls('compare')
 sync_map_selection('compare', 'compare_stations')
@@ -76,6 +80,7 @@ use_offset=ui.checkbox('Offset Model B reference time relative to Model A',key='
 offset=ui.number_input('Model B offset (hours; negative = earlier)',-72.0,72.0,-6.0,step=1.0,key='compare_offset') if use_offset else 0.
 ref_tolerance=ui.number_input('Reference-time tolerance (hours)',0.0,6.0,1.0,step=.5,key='compare_ref_tolerance')
 st.caption(f'For each A forecast, select B at A reference {offset:+g} hours, within ±{ref_tolerance:g} hours. Valid targets must match. Actual offsets and both leads appear in the paired data.')
+render_reference_guide(ui,model_a,model_b,element,offset,ref_tolerance)
 
 @st.cache_data
 def read_metadata(path):
@@ -112,7 +117,9 @@ else:
 station_text=station_ids_input('compare', 'compare_stations', 'Station IDs (comma-separated)')
 stations=(filtered_meta.station_id.dropna().unique().tolist() if use_filtered and 'station_id' in filtered_meta else
           parse_station_ids(station_text))
-st.caption(f'{len(stations)} stations selected.')
+selected_crosswalk = resolve_station_crosswalk(stations, metadata)
+st.caption(f'{len(canonical_station_ids(stations, selected_crosswalk))} stations selected. '
+           'Matching NDBC-prefixed and unprefixed IDs count as one site.')
 use_dir=ui.checkbox('Filter by observed wind direction',key='compare_use_direction') if cfg.get('supports_direction_filter') else False
 if use_dir:
     c1,c2=ui.columns(2)
@@ -156,11 +163,12 @@ if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=no
         horizon=lead_max+abs(offset)+ref_tolerance+48
         with st.spinner('Loading forecasts and matching common verification cases...'):
             a,b,o,warnings=load_comparison_data(archive_root,model_a,model_b,obs,element,start,end,stations,
-                horizon,f'{obs_minutes}min',refs_root=refs_root)
+                horizon,f'{obs_minutes}min',refs_root=refs_root,include_station_aliases=True)
+            crosswalk = resolve_station_crosswalk(stations, metadata, a, b, o)
             pairs,diagnostics=comparison_cases(a,b,o,model_a,model_b,element,percentile_a,percentile_b,
                 obs_source=obs,obs_time_tolerance=f'{obs_minutes}min',offset_hours=offset,
                 reference_tolerance=f'{ref_tolerance}h',lead_min=lead_min,lead_max=lead_max,
-                matching='reference')
+                matching='reference',crosswalk=crosswalk)
             if use_dir:
                 pairs = filter_observed_sector(pairs, dir_min, dir_max)
             base_cases = pairs.reset_index(drop=True)
@@ -181,8 +189,9 @@ if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=no
             diagnostics['cases_after_speed_filter'] = len(pairs)
             diagnostics['cases_excluded_by_speed_minimum'] = len(base_cases) - len(pairs)
             scores,sa,sb=comparison_scores(pairs,element,threshold,operator,prob_a,prob_b)
+            result_metadata = canonical_station_metadata(metadata, crosswalk)
             st.session_state['comparison_result']=dict(cases=pairs,scores=scores,summary_a=sa,summary_b=sb,
-                diagnostics=diagnostics,warnings=warnings,context=context.copy(),metadata=metadata.copy(),
+                diagnostics=diagnostics,warnings=warnings,context=context.copy(),metadata=result_metadata,crosswalk=crosswalk,
                 direction_result=direction_result)
     except Exception as exc:
         downloads.issue(f'Comparison could not run: {exc}', fatal=True)
@@ -199,6 +208,11 @@ label_a='A: '+model_a.upper()+(f' p{saved["percentile_a"]}' if prob_a else '')
 label_b='B: '+model_b.upper()+(f' p{saved["percentile_b"]}' if prob_b else '')
 for message in result['warnings']:downloads.issue(message)
 diag=result['diagnostics']
+if crosswalk := result.get('crosswalk'):
+    downloads.add(
+        pd.DataFrame(crosswalk.items(), columns=['alias_station_id', 'verification_station_id']),
+        hide_index=True, name='Station crosswalk'
+    )
 st.subheader(f'{label_a} versus {label_b}: {cfg["label"]}')
 st.caption(f'B offset {saved["offset"]:+g} h; observation tolerance {saved["obs_minutes"]} min; reference tolerance ±{saved["ref_tolerance"]:g} h.')
 c1,c2,c3,c4=ui.columns(4)
@@ -237,7 +251,7 @@ lead_tab,map_tab,condition_tab,prob_tab=st.tabs(['Lead times','Station differenc
 with lead_tab:
     table=grouped_scores(pairs,'lead_day',element,saved['threshold'],saved['operator'],prob_a,prob_b)
     fig=plot_group_scores(table,'lead_day',metric,label_a,label_b,'Model A forecast day')
-    st.pyplot(fig);plt.close(fig)
+    render_chart(fig, 'comparison by lead time')
     downloads.add(table[table.metric.eq(metric)][['lead_day','n','observed_events','n_prob','a','b','difference']],hide_index=True, name='Lead scores')
     st.caption('Days use Model A leads: Day 1 = 0–24 h, Day 2 = >24–48 h, through Day 7 = >144–168 h. All archived projections in the lead range are eligible; only shared station/valid targets are scored. Actual Model B leads can differ with an offset.')
 with map_tab:
@@ -250,10 +264,11 @@ with map_tab:
         deck,map_data=station_difference_map(station_table,result['metadata'],metric,label_a,label_b,minimum,limits)
         st.caption(f'Blue: {label_a} better. Orange: {label_b} better. White: similar. Bias compares distance from zero; frequency bias compares distance from one.')
         st.caption('Circle size reflects shared case counts. Marker sizes stay readable as you zoom.')
-        st.pydeck_chart(deck,use_container_width=True)
+        comparison_station_map(map_data, deck.initial_view_state, metric, label_a, label_b,
+                               'model_comparison_map')
         fig=colorbar(limits,f'Advantage for A ({scale_units(element,metric,True)})',
                      ['#b35806','#f5f5f5','#2166ac'],map_data.advantage)
-        render_colorbar(fig);plt.close(fig)
+        render_colorbar(fig)
         clipping_caption(map_data.advantage,limits)
     display_table=station_table[station_table.metric.eq(metric)]
     context=station_context_table(result['metadata'])
@@ -281,7 +296,7 @@ with condition_tab:
                 "that event within each category, rather than whether the forecast chose the same category. "
                 "POD = hits / observed events. A category with cases but zero observed events has undefined POD (N/A).")
     fig=plot_group_scores(table,'condition',metric,label_a,label_b,condition)
-    st.pyplot(fig);plt.close(fig)
+    render_chart(fig, 'comparison by condition')
     downloads.add(table[table.metric.eq(metric)],hide_index=True,use_container_width=True, name='Condition scores')
     if metric=='pod':
         st.caption('n counts all shared cases in the group; observed_events counts observations meeting the selected event threshold. More non-event cases do not make POD defined.')
@@ -296,12 +311,12 @@ with prob_tab:
                 'Brier score':summary.get('brier_score',np.nan),'Reliability error':summary.get('reliability_error',np.nan)})
         downloads.add(pd.DataFrame(ptable),hide_index=True, name='Probability scores')
         fig=plot_probability_comparison(pairs,element,saved['threshold'],saved['operator'],'A: '+model_a.upper(),'B: '+model_b.upper(),prob_a,prob_b)
-        st.pyplot(fig);plt.close(fig)
+        render_chart(fig, 'probability comparison')
         st.caption('Both probabilistic models use the intersection of valid probability cases. '+probability_description('refs' in [model_a,model_b])+' Reliability error uses 10% probability bins.')
     else:st.info('Neither selected model/element provides archived probability distributions.')
 with st.container():
     downloads.add_json(diag)
-    columns=['station_id','target_time','a_valid_time','b_valid_time','a_init_time','b_init_time','a_forecast_hour','b_forecast_hour',
+    columns=['station_id','a_source_station_id','b_source_station_id','obs_station_id','target_time','a_valid_time','b_valid_time','a_init_time','b_init_time','a_forecast_hour','b_forecast_hour',
         'actual_offset_hours','reference_error_hours','a_model_value','b_model_value','obs_value',
         'a_forecast_direction','b_forecast_direction','observed_direction',
         'obs_valid_time','obs_time_offset_minutes','obs_window_start','obs_window_end']

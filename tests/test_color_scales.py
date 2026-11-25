@@ -119,14 +119,13 @@ st.session_state['limits']=scale_controls(ui,[-.1,.2,4.],element,metric)
 @pytest.mark.parametrize('metric', ['mae', 'pod', 'far'])
 def test_sequential_markers_match_compact_stepped_legend_including_boundaries(metric):
     from maps import show_map_legend
-    import maps
     from unittest.mock import patch
     limits = (0., 1.)
     values = [-1., .01, .19, .2, .39, .4, .6, .8, 1., 2.]
     frame = pd.DataFrame({metric: values})
     styled, _, _ = add_map_style_columns(frame, metric, limits)
     captured = []
-    with patch.object(maps.st, 'pyplot', side_effect=lambda fig, **kw: captured.append((fig, kw))):
+    with patch('chart_downloads.render_chart', side_effect=lambda fig, name, **kw: captured.append((fig, kw))):
         show_map_legend(frame, metric, limits)
     fig, arguments = captured[0]
     bar = fig.axes[0]._colorbar
@@ -158,3 +157,16 @@ def test_storm_steps_match_legend_and_signed_scales_remain_continuous():
     cmap, norm = color_mapping((-1.,1.), ['blue','white','red'])
     assert norm(0) == .5
     assert cmap(norm(.01)) != cmap(norm(.19))
+
+
+@pytest.mark.parametrize('limits',[(0,1),(0,4.7),(0,1000)])
+def test_count_colorbar_uses_integer_ticks(limits):
+    from color_scales import colorbar
+    import matplotlib.pyplot as plt
+    fig=colorbar(limits,'Observed events (cases)',['white','blue'],stepped=True,integer_ticks=True)
+    ticks=fig.axes[0].get_xticks()
+    assert len(ticks)>=2
+    assert all(float(tick).is_integer() for tick in ticks)
+    assert all('.' not in label.get_text() for label in fig.axes[0].get_xticklabels())
+    if limits==(0,1):assert ticks.tolist()==[0,1]
+    plt.close(fig)

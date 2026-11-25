@@ -1,6 +1,6 @@
 # Gust verification
 
-Select `gust` as the element in Map Explorer, Aggregate Verification, Storm
+Select `gust` as the element in Verification Overview, Selected-Site Verification, Storm
 Specific Zoom, or Model Comparison. Gust is configured for NBM, experimental
 NBM, HRRR, NDFD, NBM QMD, experimental NBM QMD, and URMA. The configured
 capability still requires gust columns to exist in the local archive. Combined
@@ -44,7 +44,7 @@ forecast/observation cases, reference offsets, and probability-case rules.
 
 Missing or nonfinite gusts are excluded during pairing; explicitly recorded
 zero gusts remain valid. The pages report missing gust observation counts among
-loaded reports. Map Explorer and Aggregate Verification retain that coverage
+loaded reports. Verification Overview and Selected-Site Verification retain that coverage
 message with their saved results. Missing reports are not interpreted as calm
 conditions. Missing gust reporting can affect the representativeness of scores,
 especially where gusts are only reported under particular conditions.
@@ -56,7 +56,7 @@ measurement/maximum-period windows. The app does not infer, shift, or recompute
 hourly maximum gusts or establish that model and observation gust periods are
 identical. Storm plots display the actual observation timestamps.
 
-Map Explorer, Aggregate Verification, and Model Comparison provide an optional
+Verification Overview, Selected-Site Verification, and Model Comparison provide an optional
 minimum observed-gust filter, off by default. When enabled, it uses `gust >=
 minimum`, applies the same subset to both models, and reports excluded paired
 cases. All corresponding scores, probability diagnostics, plots, and case

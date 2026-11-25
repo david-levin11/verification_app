@@ -21,6 +21,8 @@ import pandas as pd
 from minrh import prepare_minrh
 from forecast_archive import ENSEMBLE_COLUMNS
 
+from station_crosswalk import deduplicate_station_alias_rows, prefer_canonical_station
+from forecast_targets import forecast_target_time
 from config import (
     get_element_config,
     get_percentile_columns,
@@ -293,6 +295,7 @@ def build_verification_pairs(
         "init_time",
         "forecast_hour",
         model_col,
+        "source_station_id",
     ]
     optional_model_cols.extend([c for c in modeldf if c in ENSEMBLE_COLUMNS or c.startswith('prob_')])
 
@@ -304,7 +307,7 @@ def build_verification_pairs(
 
     # Preserve the actual reporting time, rather than losing it in merge_asof.
     obdf["obs_valid_time"] = obdf["valid_time"]
-    optional_obs_cols = [obs_col, "obs_valid_time"]
+    optional_obs_cols = [obs_col, "obs_valid_time", "obs_station_id"]
     if element=='minrh':
         optional_obs_cols.extend(c for c in ['coverage_ok','n_obs','max_gap_minutes','first_report','last_report','rh_sensor'] if c in obdf)
     accum_hours = get_element_config(element).get("accum_hours")
@@ -354,6 +357,16 @@ def build_verification_pairs(
         if direction_col in modeldf.columns:
             optional_model_cols.append(direction_col)
 
+    # Keep explicit roles even when both archives call their field wind_dir_deg.
+    forecast_dir = _first_existing_column(modeldf, element_cfg.get("forecast_direction_candidates", []))
+    observed_dir = _first_existing_column(obdf, element_cfg.get("direction_candidates", []))
+    if forecast_dir:
+        modeldf["forecast_direction"] = modeldf[forecast_dir]
+        optional_model_cols.append("forecast_direction")
+    if observed_dir:
+        obdf["observed_direction"] = obdf[observed_dir]
+        optional_obs_cols.append("observed_direction")
+
     model_keep_cols = _unique_preserve_order(
         [
             c for c in required_model_cols + optional_model_cols
@@ -374,6 +387,17 @@ def build_verification_pairs(
     if modeldf.empty or obdf.empty:
         return pd.DataFrame()
 
+    if "source_station_id" in modeldf:
+        modeldf = modeldf.loc[~modeldf.model_value.isin([float("inf"), -float("inf")])]
+        modeldf = modeldf.assign(_alias_target=forecast_target_time(modeldf, model, element))
+        run_key = next((col for col in ["init_time", "forecast_hour"] if col in modeldf), None)
+        keys = ["station_id", "_alias_target"] + ([run_key] if run_key else [])
+        modeldf = deduplicate_station_alias_rows(modeldf, keys, "source_station_id").drop(columns="_alias_target")
+
+    if "obs_station_id" in obdf:
+        obdf = obdf.loc[~obdf.obs_value.isin([float("inf"), -float("inf")])]
+        obdf = prefer_canonical_station(obdf, "obs_station_id")
+
     if pairing_method == "date":
         model_pair_col = get_model_pair_date_column(element)
         obs_pair_col = get_obs_pair_date_column(element)
@@ -390,7 +414,6 @@ def build_verification_pairs(
                 f"Available obs columns: {obdf.columns.tolist()}"
             )
 
-        from forecast_targets import forecast_target_time
         modeldf["pair_date"] = forecast_target_time(modeldf, model, element).dt.date
 
         obdf["pair_date"] = (
@@ -456,6 +479,8 @@ def build_verification_pairs(
     else:
         # your existing URMA/exact merge logic
         # Analysis-style verification source, usually exact valid_time match.
+        if "obs_station_id" in obdf:
+            obdf = obdf.drop_duplicates(["station_id", "valid_time"], keep="last")
         if "station_id" in obdf.columns and "station_id" in modeldf.columns:
             merged = pd.merge(
                 modeldf,

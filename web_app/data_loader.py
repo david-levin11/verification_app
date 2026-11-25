@@ -7,6 +7,7 @@ from forecast_targets import forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage, forecast_archive_lookback
 from datetime import date, datetime
 from forecast_archive import register_forecast_archive, archive_diagnostics
+from station_crosswalk import archive_station_ids
 
 WEB_APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = WEB_APP_DIR.parent
@@ -34,6 +35,7 @@ def fetch_data(
     obs_time_tolerance="1h",
     forecast_lead_range=None,
     refs_root=None,
+    include_station_aliases=False,
 ):
     """
     Connects to DuckDB, queries local parquet archives, and returns the raw
@@ -73,7 +75,7 @@ def fetch_data(
     obs_query_end = query_end + padding
     target_sql = forecast_target_sql(model, element)
     model_read_end = query_end + (pd.Timedelta(days=1) if element == "maxt" else pd.Timedelta(0))
-    query_stations = station_list
+    query_stations = archive_station_ids(station_list) if include_station_aliases else station_list
 
     if not query_stations:
         return pd.DataFrame(), pd.DataFrame(), "No stations were provided."

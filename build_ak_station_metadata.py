@@ -16,7 +16,6 @@ from shapely.geometry import Point
 
 BASE_DIR = Path(r"C:\Users\David.Levin\verification_app")
 OUTPUT_DIR = BASE_DIR / "metadata"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 SYNOPTIC_METADATA_URL = "https://api.synopticdata.com/v2/stations/metadata"
 
@@ -34,11 +33,13 @@ ZONE_LAYERS = {
 # Alaska WFOs
 AK_WFOS = ["AJK", "AFC", "AFG"]
 
-# Use active stations by default. Set to None to include all stations returned by Synoptic.
-SYNOPTIC_STATUS = "active"
+# Match alaska_verification/regional_stations.py (blob 6c3bf93066bb4355bbf76c869eb95a5bebf1c603).
+# Request just inside +/-180; independently validate against the true dateline.
+ALASKA_QUERY_BOXES = ("-179.999999,50,-129,73", "170,50,179.999999,73")
+ALASKA_BOUNDS = ((-180,50,-129,73), (170,50,180,73))
+# No status restriction: inactive sites are needed for historical verification.
 
-# If you want only wind-reporting stations, keep this as wind_speed.
-# You can change to None if you want all AK Synoptic sites.
+# Optional variable restriction; None retains all variables/networks for historical use.
 SYNOPTIC_VARS = None
 
 # Output files
@@ -82,48 +83,53 @@ def request_json(url: str, params: dict, timeout: int = 60) -> dict:
 
 
 def fetch_synoptic_ak_stations(token: str) -> pd.DataFrame:
-    """
-    Fetch Alaska station metadata from Synoptic.
+    """Discover all statuses in the archiver's Alaska boxes; validate locally.
 
-    Uses:
-        state=AK
-        vars=wind_speed
-        status=active
-        complete=1
-        sensorvars=1
-
-    Returns a flat pandas DataFrame.
+    Boxes deliberately include offshore and neighboring sites. Neither state nor
+    CWA attributes determine membership. A failed box request aborts the build.
     """
     params = {
         "token": token,
-        "state": "AK",
         "complete": 1,
         "sensorvars": 1,
         "output": "json",
     }
-
-    if SYNOPTIC_STATUS:
-        params["status"] = SYNOPTIC_STATUS
-
     if SYNOPTIC_VARS:
         params["vars"] = SYNOPTIC_VARS
-
-    data = request_json(SYNOPTIC_METADATA_URL, params=params)
-
-    summary = data.get("SUMMARY", {})
-    response_code = str(summary.get("RESPONSE_CODE", ""))
-
-    if response_code not in {"1", "OK"}:
-        raise RuntimeError(f"Synoptic metadata request failed: {summary}")
-
-    stations = data.get("STATION", [])
-
+    stations = {}
+    rejected = set()
+    for box in ALASKA_QUERY_BOXES:
+        data = request_json(SYNOPTIC_METADATA_URL, params={**params,"bbox":box})
+        response_code = str(data.get("SUMMARY", {}).get("RESPONSE_CODE", ""))
+        if response_code == "2":
+            continue
+        if response_code not in {"1", "OK"} or not isinstance(data.get("STATION"),list):
+            raise RuntimeError(f"Synoptic metadata request failed (code={response_code or 'missing'}).")
+        for station in data["STATION"]:
+            station_id = station.get("STID")
+            try:
+                latitude=float(station["LATITUDE"])
+                longitude=float(station["LONGITUDE"])
+            except (KeyError,TypeError,ValueError):
+                rejected.add(station_id)
+                continue
+            if not any(west<=longitude<=east and south<=latitude<=north
+                       for west,south,east,north in ALASKA_BOUNDS):
+                rejected.add(station_id)
+                continue
+            if not isinstance(station_id,str) or not station_id.strip():
+                rejected.add(station_id)
+                continue
+            station = dict(station,STID=station_id.strip())
+            stations[station["STID"]] = station
     if not stations:
-        raise RuntimeError("Synoptic returned zero AK stations.")
+        raise RuntimeError("Synoptic returned no stations with valid coordinates inside the Alaska geographic bounds.")
+    print(f"Regional metadata: {len(stations):,} stations selected by Alaska geographic bounds; all statuses included.")
+    print(f"Regional metadata: rejected {len(rejected):,} listings outside bounds or with invalid coordinates/IDs.")
 
     rows = []
 
-    for stn in stations:
+    for stn in stations.values():
         por = stn.get("PERIOD_OF_RECORD") or {}
 
         sensor_vars = stn.get("SENSOR_VARIABLES") or {}
@@ -497,11 +503,9 @@ def add_station_group_helpers(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     out["station_context"] = out.apply(classify, axis=1)
 
-    # Prefer spatially joined WFO, fall back to Synoptic CWA
-    if "public_zone_wfo" in out.columns:
-        out["wfo_best"] = out["public_zone_wfo"].fillna(out.get("cwa_synoptic"))
-    else:
-        out["wfo_best"] = out.get("cwa_synoptic")
+    # Match the viewer's public/coastal/offshore/Synoptic/alias fallback policy.
+    from web_app.station_metadata import normalize_station_metadata
+    out = normalize_station_metadata(out)
 
     return out
 
@@ -510,6 +514,7 @@ def save_outputs(gdf: gpd.GeoDataFrame):
     """
     Save metadata outputs.
     """
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     # CSV cannot preserve geometry well, so save lon/lat plus zone columns.
     df = pd.DataFrame(gdf.drop(columns="geometry", errors="ignore"))
 

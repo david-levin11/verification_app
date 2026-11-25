@@ -21,6 +21,7 @@ import pandas as pd
 from minrh import prepare_minrh
 from forecast_archive import ENSEMBLE_COLUMNS
 
+from station_crosswalk import prefer_canonical_station
 from config import (
     get_element_config,
     get_percentile_columns,
@@ -304,7 +305,7 @@ def build_verification_pairs(
 
     # Preserve the actual reporting time, rather than losing it in merge_asof.
     obdf["obs_valid_time"] = obdf["valid_time"]
-    optional_obs_cols = [obs_col, "obs_valid_time"]
+    optional_obs_cols = [obs_col, "obs_valid_time", "obs_station_id"]
     if element=='minrh':
         optional_obs_cols.extend(c for c in ['coverage_ok','n_obs','max_gap_minutes','first_report','last_report','rh_sensor'] if c in obdf)
     accum_hours = get_element_config(element).get("accum_hours")
@@ -373,6 +374,10 @@ def build_verification_pairs(
 
     if modeldf.empty or obdf.empty:
         return pd.DataFrame()
+
+    if "obs_station_id" in obdf:
+        obdf = obdf.loc[~obdf.obs_value.isin([float("inf"), -float("inf")])]
+        obdf = prefer_canonical_station(obdf, "obs_station_id")
 
     if pairing_method == "date":
         model_pair_col = get_model_pair_date_column(element)
@@ -456,6 +461,8 @@ def build_verification_pairs(
     else:
         # your existing URMA/exact merge logic
         # Analysis-style verification source, usually exact valid_time match.
+        if "obs_station_id" in obdf:
+            obdf = obdf.drop_duplicates(["station_id", "valid_time"], keep="last")
         if "station_id" in obdf.columns and "station_id" in modeldf.columns:
             merged = pd.merge(
                 modeldf,

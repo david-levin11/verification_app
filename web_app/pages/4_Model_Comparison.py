@@ -27,6 +27,8 @@ from archive_availability import coverage, latest_dates, seed_dates, preflight
 from page_controls import PageControls
 from station_selection import station_ids_input, parse_station_ids, sync_map_selection
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
+from station_crosswalk import (apply_station_crosswalk, archive_station_ids,
+                               prefer_canonical_station, station_crosswalk, station_ids_in)
 
 ui = PageControls('compare')
 sync_map_selection('compare', 'compare_stations')
@@ -114,7 +116,11 @@ else:
 station_text=station_ids_input('compare', 'compare_stations', 'Station IDs (comma-separated)')
 stations=(filtered_meta.station_id.dropna().unique().tolist() if use_filtered and 'station_id' in filtered_meta else
           parse_station_ids(station_text))
-st.caption(f'{len(stations)} stations selected.')
+archive_ids = archive_station_ids(stations)
+known_ids = station_ids_in(metadata)
+selected_crosswalk = station_crosswalk((known_ids | set(stations)).intersection(archive_ids))
+st.caption(f'{len({selected_crosswalk.get(station, station) for station in stations})} stations selected. '
+           'Matching NDBC-prefixed and unprefixed IDs count as one site.')
 use_dir=ui.checkbox('Filter by observed wind direction',key='compare_use_direction') if cfg.get('supports_direction_filter') else False
 if use_dir:
     c1,c2=ui.columns(2)
@@ -158,11 +164,14 @@ if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=no
         horizon=lead_max+abs(offset)+ref_tolerance+48
         with st.spinner('Loading forecasts and matching common verification cases...'):
             a,b,o,warnings=load_comparison_data(archive_root,model_a,model_b,obs,element,start,end,stations,
-                horizon,f'{obs_minutes}min',refs_root=refs_root)
+                horizon,f'{obs_minutes}min',refs_root=refs_root,include_station_aliases=True)
+            crosswalk = station_crosswalk(
+                (known_ids | station_ids_in(a) | station_ids_in(b) | station_ids_in(o)).intersection(archive_ids)
+            )
             pairs,diagnostics=comparison_cases(a,b,o,model_a,model_b,element,percentile_a,percentile_b,
                 obs_source=obs,obs_time_tolerance=f'{obs_minutes}min',offset_hours=offset,
                 reference_tolerance=f'{ref_tolerance}h',lead_min=lead_min,lead_max=lead_max,
-                matching='reference')
+                matching='reference',crosswalk=crosswalk)
             if use_dir:
                 pairs = filter_observed_sector(pairs, dir_min, dir_max)
             base_cases = pairs.reset_index(drop=True)
@@ -183,8 +192,13 @@ if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=no
             diagnostics['cases_after_speed_filter'] = len(pairs)
             diagnostics['cases_excluded_by_speed_minimum'] = len(base_cases) - len(pairs)
             scores,sa,sb=comparison_scores(pairs,element,threshold,operator,prob_a,prob_b)
+            result_metadata = apply_station_crosswalk(metadata, crosswalk, 'source_station_id')
+            if 'source_station_id' in result_metadata:
+                result_metadata = prefer_canonical_station(result_metadata, 'source_station_id').drop_duplicates(
+                    'station_id', keep='last'
+                )
             st.session_state['comparison_result']=dict(cases=pairs,scores=scores,summary_a=sa,summary_b=sb,
-                diagnostics=diagnostics,warnings=warnings,context=context.copy(),metadata=metadata.copy(),
+                diagnostics=diagnostics,warnings=warnings,context=context.copy(),metadata=result_metadata,crosswalk=crosswalk,
                 direction_result=direction_result)
     except Exception as exc:
         downloads.issue(f'Comparison could not run: {exc}', fatal=True)
@@ -201,6 +215,11 @@ label_a='A: '+model_a.upper()+(f' p{saved["percentile_a"]}' if prob_a else '')
 label_b='B: '+model_b.upper()+(f' p{saved["percentile_b"]}' if prob_b else '')
 for message in result['warnings']:downloads.issue(message)
 diag=result['diagnostics']
+if crosswalk := result.get('crosswalk'):
+    downloads.add(
+        pd.DataFrame(crosswalk.items(), columns=['alias_station_id', 'verification_station_id']),
+        hide_index=True, name='Station crosswalk'
+    )
 st.subheader(f'{label_a} versus {label_b}: {cfg["label"]}')
 st.caption(f'B offset {saved["offset"]:+g} h; observation tolerance {saved["obs_minutes"]} min; reference tolerance ±{saved["ref_tolerance"]:g} h.')
 c1,c2,c3,c4=ui.columns(4)
@@ -303,7 +322,7 @@ with prob_tab:
     else:st.info('Neither selected model/element provides archived probability distributions.')
 with st.container():
     downloads.add_json(diag)
-    columns=['station_id','target_time','a_valid_time','b_valid_time','a_init_time','b_init_time','a_forecast_hour','b_forecast_hour',
+    columns=['station_id','a_source_station_id','b_source_station_id','obs_station_id','target_time','a_valid_time','b_valid_time','a_init_time','b_init_time','a_forecast_hour','b_forecast_hour',
         'actual_offset_hours','reference_error_hours','a_model_value','b_model_value','obs_value',
         'a_forecast_direction','b_forecast_direction','observed_direction',
         'obs_valid_time','obs_time_offset_minutes','obs_window_start','obs_window_end']

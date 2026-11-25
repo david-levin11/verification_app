@@ -7,6 +7,7 @@ from metrics import compute_summary_metrics
 from probability import forecast_probabilities, probability_scores
 from forecast_targets import forecast_target_time
 from minrh import prepare_minrh
+from station_crosswalk import apply_station_crosswalk, prefer_canonical_station
 
 POINT_METRICS = ['bias', 'mae', 'rmse', 'pod', 'far', 'csi', 'frequency_bias']
 PROB_METRICS = ['brier_score', 'reliability_error']
@@ -85,6 +86,10 @@ def match_forecasts(model_a_frame, model_b_frame, model_a, model_b, element,
     keys = ['station_id','target_time','init_time']
     diagnostics['a_duplicate_rows'] = int(a.duplicated(keys).sum())
     diagnostics['b_duplicate_rows'] = int(b.duplicated(keys).sum())
+    if 'source_station_id' in a:
+        a = prefer_canonical_station(a, 'source_station_id')
+    if 'source_station_id' in b:
+        b = prefer_canonical_station(b, 'source_station_id')
     a = a.drop_duplicates(keys, keep='last')
     b = b.drop_duplicates(keys, keep='last')
     if matching == 'cutoff':
@@ -142,7 +147,7 @@ def attach_shared_observations(matched, observations, model_a, element,
     if paired.empty:
         return pd.DataFrame()
     obs_cols = ['station_id','init_time','valid_time','obs_value','obs_valid_time',
-                'obs_time_offset_minutes','obs_window_start','obs_window_end','pair_date']
+                'obs_time_offset_minutes','obs_window_start','obs_window_end','pair_date','obs_station_id']
     if element=='minrh':
         obs_cols.extend(c for c in ['coverage_ok','n_obs','max_gap_minutes','rh_sensor'] if c in paired)
     # Date extrema retain their existing configured anchor-date convention.
@@ -163,7 +168,10 @@ def attach_shared_observations(matched, observations, model_a, element,
 
 def comparison_cases(a, b, observations, model_a, model_b, element,
                      percentile_a=None, percentile_b=None, obs_source='obs',
-                     obs_time_tolerance='1h', **matching_options):
+                     obs_time_tolerance='1h', crosswalk=None, **matching_options):
+    a = apply_station_crosswalk(a, crosswalk, 'source_station_id')
+    b = apply_station_crosswalk(b, crosswalk, 'source_station_id')
+    observations = apply_station_crosswalk(observations, crosswalk, 'obs_station_id')
     matched, diagnostics = match_forecasts(a,b,model_a,model_b,element,
         percentile_a,percentile_b,**matching_options)
     pairs = attach_shared_observations(matched,observations,model_a,element,

@@ -5,6 +5,7 @@ import pandas as pd
 from minrh import prepare_minrh
 from forecast_targets import forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage
+from station_crosswalk import archive_station_ids
 from forecast_archive import register_forecast_archive, archive_diagnostics
 from config import (get_model_pair_date_column, get_obs_filter_time_column,
                     get_obs_time_column, get_pairing_method)
@@ -26,7 +27,8 @@ def archive_paths(root, model, element, start, end):
 
 
 def load_comparison_data(root, model_a, model_b, obs, element, start, end,
-                         stations, lookback_hours=240, obs_time_tolerance='1h',refs_root=None):
+                         stations, lookback_hours=240, obs_time_tolerance='1h', refs_root=None,
+                         *, include_station_aliases=False):
     """Dates select forecast targets; look back for initialization-month files.
 
     Load observations once. Older source months are necessary when a target in
@@ -34,6 +36,8 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
     """
     if not stations:
         raise ValueError('Select at least one station')
+    if include_station_aliases:
+        stations = archive_station_ids(stations)
     start, end = date_bounds(start, end)
     tolerance = pd.Timedelta(obs_time_tolerance)
     if tolerance < pd.Timedelta(0):

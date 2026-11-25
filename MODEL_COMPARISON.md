@@ -55,6 +55,19 @@ case. Choose B's nearest reference to `A_reference + offset` within the referenc
 tolerance, requiring the same station and target. If absent, exclude and count
 that case. This does not join every A run to every B run at the same valid time.
 
+## Station aliases
+
+Model Comparison looks up both the NDBC-prefixed and unprefixed station IDs. When
+both forms exist in metadata or the loaded archives, they are grouped under the
+prefixed verification ID. Either ID can select the site. If a model has forecasts
+under both IDs for the same initialization and target, the valid prefixed row
+takes priority. For time-matched observations, the app still chooses the nearest
+report. The prefixed row takes priority when the reports share a timestamp or
+daily observation date. Separate forecast initializations remain separate cases.
+
+The **Station crosswalk** download lists the aliases, and paired cases include
+the original station ID for each model and the matched observation.
+
 ## Observations
 
 Models are matched first; observations are paired once using A's target.

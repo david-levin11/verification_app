@@ -19,7 +19,8 @@ from config import (
 from data_loader import fetch_data
 from station_crosswalk import (apply_station_crosswalk, canonical_station_ids,
                                canonical_station_metadata, resolve_station_crosswalk)
-from wind_verification import filter_observed_speed
+from wind_verification import compass_agreement
+from wind_event_panel import apply_wind_subset, show_compass_agreement, show_wind_subset
 from archive_files import gust_observation_coverage
 from pairing import build_verification_pairs
 from metrics import compute_station_metrics
@@ -84,7 +85,9 @@ end_date = controls["end_date"]
 threshold = controls["threshold"]
 threshold_operator = controls["threshold_operator"]
 obs_time_tolerance = controls["obs_time_tolerance"]
-minimum_observed_speed = controls["minimum_observed_speed"]
+wind_settings = {key: controls[key] for key in (
+    'minimum_observed_speed', 'observed_sectors', 'verify_direction'
+)}
 
 # ---------------------------------------------------------------------
 # Map-specific sidebar controls
@@ -274,13 +277,7 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
             )
 
 
-            before_minimum = len(merged)
-            merged = filter_observed_speed(merged, minimum_observed_speed)
-            if minimum_observed_speed is not None:
-                st.caption(f'Observed gust ≥ {minimum_observed_speed:g} kt: {before_minimum-len(merged)} of {before_minimum} paired cases excluded.')
-            if merged.empty:
-                st.warning("No model/obs pairs were created.")
-                downloads.stop()
+            merged, wind_counts = apply_wind_subset(merged, dict(element=element, **wind_settings), downloads)
 
             result_metadata = canonical_station_metadata(station_meta, crosswalk)
             station_metrics = compute_station_metrics(
@@ -305,8 +302,10 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
             if any(station in crosswalk for station in selected):
                 set_map_station_ids(canonical_station_ids(selected, crosswalk))
 
-            st.session_state['station_minimum_counts'] = dict(before=before_minimum,
-                excluded=before_minimum-len(merged))
+            st.session_state['station_wind_counts'] = wind_counts
+            st.session_state['station_compass_agreement'] = (
+                compass_agreement(merged) if wind_settings['verify_direction'] else None
+            )
             st.session_state['station_gust_coverage'] = gust_observation_coverage(obdf) if element == 'gust' else None
             st.session_state['map_probability_cases'] = (build_probability_overview(
                 merged,element,threshold,threshold_operator) if model_is_probabilistic else None)
@@ -329,7 +328,7 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 "threshold": threshold,
                 "threshold_operator": threshold_operator,
                 "obs_time_tolerance": obs_time_tolerance,
-                "minimum_observed_speed": minimum_observed_speed,
+                **wind_settings,
                 "candidate_stations": candidate_stations,
             }
     except Exception as exc:
@@ -364,15 +363,13 @@ if "station_metrics" in st.session_state:
             "threshold": threshold,
             "threshold_operator": threshold_operator,
             "obs_time_tolerance": obs_time_tolerance,
-            "minimum_observed_speed": minimum_observed_speed,
+            **wind_settings,
             "candidate_stations": candidate_stations,
         }
 
     if result_context.get('element') == 'gust' and st.session_state.get('station_gust_coverage'):
         st.caption(st.session_state['station_gust_coverage'])
-    if result_context.get('minimum_observed_speed') is not None:
-        counts = st.session_state.get('station_minimum_counts', {})
-        st.caption(f"Observed gust ≥ {result_context['minimum_observed_speed']:g} kt; {counts.get('excluded', 0)} of {counts.get('before', 0)} paired cases excluded.")
+    show_wind_subset(result_context, st.session_state.get('station_wind_counts'))
 
     if result_context and result_context != current_context:
         st.info(
@@ -406,6 +403,7 @@ if "station_metrics" in st.session_state:
             station_meta, st.session_state.get('map_station_crosswalk', {})
         ))
     with overview_tab:
+        show_compass_agreement(result_context, st.session_state.get('station_compass_agreement'), downloads)
         st.caption('All-Sites Overview uses every matched case from the completed Verification Overview run, including stations without coordinates. '
                    'Station selections and map display filters do not change these charts. Use Selected-Site Verification for selected stations.')
         chart_cases=st.session_state.get('map_chart_cases')

@@ -120,3 +120,49 @@ def grouped_direction_scores(cases, group, threshold=45):
         tables.append(scores)
     return pd.concat(tables, ignore_index=True) if tables else pd.DataFrame(
         columns=['metric', 'label', 'a', 'b', 'difference', 'better', group, 'n'])
+
+
+COMPASS_SECTORS = ('N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW')
+
+
+def compass_sectors(direction):
+    """Use 45° sectors centered on compass points, including north across 0°."""
+    sector = ((normalize_direction(direction) + 22.5) % 360 // 45)
+    return sector.map(dict(enumerate(COMPASS_SECTORS)))
+
+
+def filter_wind_events(cases, minimum=None, sectors=()):
+    """Apply observed-value and observed-direction filters to matched cases."""
+    retained = filter_observed_speed(cases, minimum) if minimum is not None else cases
+    if sectors and not retained.empty:
+        if 'observed_direction' not in retained or not normalize_direction(retained.observed_direction).notna().any():
+            raise ValueError('Observed wind direction is unavailable for the paired reports. Clear the direction filter to score these cases.')
+        direction = compass_sectors(retained.observed_direction)
+        retained = retained.loc[retained.obs_value.gt(0) & direction.isin(sectors)].copy()
+    return retained
+
+
+def compass_agreement(cases):
+    """Count observed and forecast sectors on pairs with valid, non-calm directions."""
+    if not {'observed_direction', 'forecast_direction'}.issubset(cases):
+        return None
+    valid = (np.isfinite(cases.obs_value) & np.isfinite(cases.model_value)
+             & cases.obs_value.gt(0) & cases.model_value.gt(0))
+    observed = compass_sectors(cases.loc[valid, 'observed_direction'])
+    forecast = compass_sectors(cases.loc[valid, 'forecast_direction'])
+    both_valid = observed.notna() & forecast.notna()
+    if not both_valid.any():
+        return None
+    matrix = pd.crosstab(observed[both_valid], forecast[both_valid]).reindex(
+        index=COMPASS_SECTORS, columns=COMPASS_SECTORS, fill_value=0
+    )
+    values = matrix.to_numpy()
+    same = int(np.trace(values))
+    opposite = int(values[np.arange(8), (np.arange(8) + 4) % 8].sum())
+    n = int(both_valid.sum())
+    error = absolute_angular_error(
+        cases.loc[valid, 'forecast_direction'],
+        cases.loc[valid, 'observed_direction'],
+    )[both_valid].mean()
+    return dict(n=n, same=same, opposite=opposite, other=n-same-opposite,
+                angular_mae=error, matrix=matrix)

@@ -357,6 +357,16 @@ def build_verification_pairs(
         if direction_col in modeldf.columns:
             optional_model_cols.append(direction_col)
 
+    # Keep explicit roles even when both archives call their field wind_dir_deg.
+    forecast_dir = _first_existing_column(modeldf, element_cfg.get("forecast_direction_candidates", []))
+    observed_dir = _first_existing_column(obdf, element_cfg.get("direction_candidates", []))
+    if forecast_dir:
+        modeldf["forecast_direction"] = modeldf[forecast_dir]
+        optional_model_cols.append("forecast_direction")
+    if observed_dir:
+        obdf["observed_direction"] = obdf[observed_dir]
+        optional_obs_cols.append("observed_direction")
+
     model_keep_cols = _unique_preserve_order(
         [
             c for c in required_model_cols + optional_model_cols

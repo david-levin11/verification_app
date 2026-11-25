@@ -16,7 +16,8 @@ from station_crosswalk import (apply_station_crosswalk, canonical_station_ids,
                                resolve_station_crosswalk)
 from forecast_archive import probability_description
 from probability import forecast_probability_details
-from wind_verification import filter_observed_speed
+from wind_verification import compass_agreement
+from wind_event_panel import apply_wind_subset, show_compass_agreement, show_wind_subset
 from archive_files import gust_observation_coverage
 from pairing import build_verification_pairs
 from metrics import compute_summary_metrics
@@ -48,7 +49,9 @@ end_date = controls["end_date"]
 threshold = controls["threshold"]
 threshold_operator = controls["threshold_operator"]
 obs_time_tolerance = controls["obs_time_tolerance"]
-minimum_observed_speed = controls["minimum_observed_speed"]
+wind_settings = {key: controls[key] for key in (
+    'minimum_observed_speed', 'observed_sectors', 'verify_direction'
+)}
 category_set = controls["category_set"]
 
 # ---------------------------------------------------------------------
@@ -133,13 +136,7 @@ if st.button("Run Selected-Site Verification", type="primary", disabled=not cont
                 obs_time_tolerance=obs_time_tolerance,
             )
 
-            before_minimum = len(merged)
-            merged = filter_observed_speed(merged, minimum_observed_speed)
-            if minimum_observed_speed is not None:
-                st.caption(f'Observed gust ≥ {minimum_observed_speed:g} kt: {before_minimum-len(merged)} of {before_minimum} paired cases excluded.')
-            if merged.empty:
-                st.warning("No valid model/observation pairs were found.")
-                downloads.stop()
+            merged, wind_counts = apply_wind_subset(merged, dict(element=element, **wind_settings), downloads)
 
             summary = compute_summary_metrics(
                 merged=merged,
@@ -149,8 +146,10 @@ if st.button("Run Selected-Site Verification", type="primary", disabled=not cont
                 probabilistic=model_is_probabilistic,
             )
 
-            st.session_state['aggregate_minimum_counts'] = dict(before=before_minimum,
-                excluded=before_minimum-len(merged))
+            st.session_state['aggregate_wind_counts'] = wind_counts
+            st.session_state['aggregate_compass_agreement'] = (
+                compass_agreement(merged) if wind_settings['verify_direction'] else None
+            )
             st.session_state['aggregate_gust_coverage'] = gust_observation_coverage(obdf) if element == 'gust' else None
             st.session_state["aggregate_merged"] = merged
             st.session_state["aggregate_summary"] = summary
@@ -167,7 +166,7 @@ if st.button("Run Selected-Site Verification", type="primary", disabled=not cont
                 "threshold": threshold,
                 "threshold_operator": threshold_operator,
                 "obs_time_tolerance": obs_time_tolerance,
-                "minimum_observed_speed": minimum_observed_speed,
+                **wind_settings,
                 "category_set": category_set,
                 "group_name": group_name,
                 "station_list": station_list,
@@ -197,7 +196,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         "threshold": threshold,
             "threshold_operator": threshold_operator,
             "obs_time_tolerance": obs_time_tolerance,
-            "minimum_observed_speed": minimum_observed_speed,
+            **wind_settings,
         "category_set": category_set,
         "group_name": group_name,
         "station_list": station_list,
@@ -205,9 +204,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
 
     if result_context.get('element') == 'gust' and st.session_state.get('aggregate_gust_coverage'):
         st.caption(st.session_state['aggregate_gust_coverage'])
-    if result_context.get('minimum_observed_speed') is not None:
-        counts = st.session_state.get('aggregate_minimum_counts', {})
-        st.caption(f"Observed gust ≥ {result_context['minimum_observed_speed']:g} kt; {counts.get('excluded', 0)} of {counts.get('before', 0)} paired cases excluded.")
+    show_wind_subset(result_context, st.session_state.get('aggregate_wind_counts'))
 
     if result_context and result_context != current_context:
         st.info(
@@ -256,6 +253,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
         info=forecast_probability_details(merged,element,result_context['threshold'],result_context['threshold_operator'])
         merged=merged.assign(forecast_probability=info.forecast_prob,probability_source=info.probability_source)
         st.caption('Probability sources: '+', '.join(f'{name}: {count:,}' for name,count in info.probability_source.value_counts().items()))
+    show_compass_agreement(result_context, st.session_state.get('aggregate_compass_agreement'), downloads)
     downloads.add(summary,name="Aggregate summary")
 
     preview_cols = [

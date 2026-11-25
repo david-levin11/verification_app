@@ -244,6 +244,7 @@ ELEMENT_CONFIG = {
         "available_obs_sources": ["obs", "urma"],
         "obs_time_column": "valid_time",
         "model_value_candidates": ["wind_gust_kt", "i10fg"],
+        "forecast_direction_candidates": ["wind_dir_deg", "wind_direction"],
         "obs_value_candidates": ["obs_wind_gust_kts", "wind_gust_kt"],
         "direction_candidates": ["obs_wind_dir_deg", "wind_dir_deg", "wind_direction"],
         "percentile_prefix": "gust_p",

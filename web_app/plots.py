@@ -6,6 +6,7 @@ import matplotlib.patches as patches
 from probability import probability_cases, reliability_table
 from config import get_percentile_columns, get_element_config, is_probabilistic
 from pairing import get_model_value_column, get_obs_value_column
+from station_crosswalk import deduplicate_station_alias_rows
 
 def plot_storm_timeseries(
     model_df, obs_df, target_station, target_init_time, plot_start, plot_end,
@@ -38,9 +39,16 @@ def plot_storm_timeseries(
         return None
     station_col = 'station_id' if 'station_id' in observations else 'stid'
     observations = observations.loc[observations[station_col].astype(str).str.strip().eq(target_station) &
-        observations.valid_time.between(start, finish)].sort_values('valid_time').copy()
+        observations.valid_time.between(start, finish)].sort_values('valid_time', kind='stable').copy()
     observations[obs_col] = pd.to_numeric(observations[obs_col], errors='coerce')
     observations[obs_col] = observations[obs_col].where(np.isfinite(observations[obs_col]))
+    if 'obs_station_id' in observations and observations.obs_station_id.ne(target_station).any():
+        # Keep gaps while letting a valid alternate replace an invalid report at the same time.
+        usable = observations[obs_col].notna()
+        observations = observations.loc[usable | ~observations.valid_time.isin(observations.loc[usable, 'valid_time'])]
+        observations = deduplicate_station_alias_rows(
+            observations, ['valid_time'], 'obs_station_id'
+        ).sort_values('valid_time', kind='stable')
     fig, ax = plt.subplots(figsize=(12, 6))
     if probabilistic:
         columns = get_percentile_columns(element)

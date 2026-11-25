@@ -1,5 +1,7 @@
 """Resolve Synoptic NDBC-prefixed IDs used for the same physical station."""
 
+import pandas as pd
+
 PREFIX = 'NDBC'
 
 
@@ -45,3 +47,34 @@ def prefer_canonical_station(frame, source_column):
     """Order the canonical row last for stable keep-last deduplication."""
     is_canonical = frame[source_column].eq(frame['station_id']).fillna(False)
     return frame.iloc[is_canonical.to_numpy(dtype=bool).argsort(kind='stable')]
+
+
+def resolve_station_crosswalk(stations, *frames):
+    """Find aliases for selected sites using metadata and available archive rows."""
+    known_ids = set(stations).union(*(station_ids_in(frame) for frame in frames))
+    return station_crosswalk(known_ids.intersection(archive_station_ids(stations)))
+
+
+def canonical_station_ids(stations, crosswalk):
+    return list(dict.fromkeys(crosswalk.get(station, station) for station in stations))
+
+
+def canonical_station_metadata(metadata, crosswalk):
+    metadata = apply_station_crosswalk(metadata, crosswalk, 'source_station_id')
+    if 'source_station_id' in metadata:
+        return prefer_canonical_station(metadata, 'source_station_id').drop_duplicates(
+            'station_id', keep='last'
+        )
+    return metadata
+
+
+def deduplicate_station_alias_rows(frame, keys, source_column):
+    """Keep one row per key at aliased sites, retaining other stations' rows."""
+    if source_column not in frame:
+        return frame
+    aliased_ids = frame.loc[frame[source_column].ne(frame.station_id), 'station_id']
+    aliased = frame.station_id.isin(aliased_ids)
+    if not aliased.any():
+        return frame
+    chosen = prefer_canonical_station(frame.loc[aliased], source_column)
+    return pd.concat([frame.loc[~aliased], chosen.drop_duplicates(keys, keep='last')])

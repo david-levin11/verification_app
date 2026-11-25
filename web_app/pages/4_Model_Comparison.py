@@ -27,8 +27,8 @@ from archive_availability import coverage, latest_dates, seed_dates, preflight
 from page_controls import PageControls
 from station_selection import station_ids_input, parse_station_ids, sync_map_selection
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
-from station_crosswalk import (apply_station_crosswalk, archive_station_ids,
-                               prefer_canonical_station, station_crosswalk, station_ids_in)
+from station_crosswalk import (canonical_station_ids, canonical_station_metadata,
+                               resolve_station_crosswalk)
 
 ui = PageControls('compare')
 sync_map_selection('compare', 'compare_stations')
@@ -116,10 +116,8 @@ else:
 station_text=station_ids_input('compare', 'compare_stations', 'Station IDs (comma-separated)')
 stations=(filtered_meta.station_id.dropna().unique().tolist() if use_filtered and 'station_id' in filtered_meta else
           parse_station_ids(station_text))
-archive_ids = archive_station_ids(stations)
-known_ids = station_ids_in(metadata)
-selected_crosswalk = station_crosswalk((known_ids | set(stations)).intersection(archive_ids))
-st.caption(f'{len({selected_crosswalk.get(station, station) for station in stations})} stations selected. '
+selected_crosswalk = resolve_station_crosswalk(stations, metadata)
+st.caption(f'{len(canonical_station_ids(stations, selected_crosswalk))} stations selected. '
            'Matching NDBC-prefixed and unprefixed IDs count as one site.')
 use_dir=ui.checkbox('Filter by observed wind direction',key='compare_use_direction') if cfg.get('supports_direction_filter') else False
 if use_dir:
@@ -165,9 +163,7 @@ if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=no
         with st.spinner('Loading forecasts and matching common verification cases...'):
             a,b,o,warnings=load_comparison_data(archive_root,model_a,model_b,obs,element,start,end,stations,
                 horizon,f'{obs_minutes}min',refs_root=refs_root,include_station_aliases=True)
-            crosswalk = station_crosswalk(
-                (known_ids | station_ids_in(a) | station_ids_in(b) | station_ids_in(o)).intersection(archive_ids)
-            )
+            crosswalk = resolve_station_crosswalk(stations, metadata, a, b, o)
             pairs,diagnostics=comparison_cases(a,b,o,model_a,model_b,element,percentile_a,percentile_b,
                 obs_source=obs,obs_time_tolerance=f'{obs_minutes}min',offset_hours=offset,
                 reference_tolerance=f'{ref_tolerance}h',lead_min=lead_min,lead_max=lead_max,
@@ -192,11 +188,7 @@ if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=no
             diagnostics['cases_after_speed_filter'] = len(pairs)
             diagnostics['cases_excluded_by_speed_minimum'] = len(base_cases) - len(pairs)
             scores,sa,sb=comparison_scores(pairs,element,threshold,operator,prob_a,prob_b)
-            result_metadata = apply_station_crosswalk(metadata, crosswalk, 'source_station_id')
-            if 'source_station_id' in result_metadata:
-                result_metadata = prefer_canonical_station(result_metadata, 'source_station_id').drop_duplicates(
-                    'station_id', keep='last'
-                )
+            result_metadata = canonical_station_metadata(metadata, crosswalk)
             st.session_state['comparison_result']=dict(cases=pairs,scores=scores,summary_a=sa,summary_b=sb,
                 diagnostics=diagnostics,warnings=warnings,context=context.copy(),metadata=result_metadata,crosswalk=crosswalk,
                 direction_result=direction_result)

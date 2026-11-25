@@ -21,7 +21,8 @@ import pandas as pd
 from minrh import prepare_minrh
 from forecast_archive import ENSEMBLE_COLUMNS
 
-from station_crosswalk import prefer_canonical_station
+from station_crosswalk import deduplicate_station_alias_rows, prefer_canonical_station
+from forecast_targets import forecast_target_time
 from config import (
     get_element_config,
     get_percentile_columns,
@@ -294,6 +295,7 @@ def build_verification_pairs(
         "init_time",
         "forecast_hour",
         model_col,
+        "source_station_id",
     ]
     optional_model_cols.extend([c for c in modeldf if c in ENSEMBLE_COLUMNS or c.startswith('prob_')])
 
@@ -375,6 +377,13 @@ def build_verification_pairs(
     if modeldf.empty or obdf.empty:
         return pd.DataFrame()
 
+    if "source_station_id" in modeldf:
+        modeldf = modeldf.loc[~modeldf.model_value.isin([float("inf"), -float("inf")])]
+        modeldf = modeldf.assign(_alias_target=forecast_target_time(modeldf, model, element))
+        run_key = next((col for col in ["init_time", "forecast_hour"] if col in modeldf), None)
+        keys = ["station_id", "_alias_target"] + ([run_key] if run_key else [])
+        modeldf = deduplicate_station_alias_rows(modeldf, keys, "source_station_id").drop(columns="_alias_target")
+
     if "obs_station_id" in obdf:
         obdf = obdf.loc[~obdf.obs_value.isin([float("inf"), -float("inf")])]
         obdf = prefer_canonical_station(obdf, "obs_station_id")
@@ -395,7 +404,6 @@ def build_verification_pairs(
                 f"Available obs columns: {obdf.columns.tolist()}"
             )
 
-        from forecast_targets import forecast_target_time
         modeldf["pair_date"] = forecast_target_time(modeldf, model, element).dt.date
 
         obdf["pair_date"] = (

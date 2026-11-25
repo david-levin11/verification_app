@@ -12,6 +12,8 @@ from config import get_element_config, is_probabilistic
 from category_charts import render_category_charts
 
 from data_loader import fetch_data
+from station_crosswalk import (apply_station_crosswalk, canonical_station_ids,
+                               resolve_station_crosswalk)
 from forecast_archive import probability_description
 from probability import forecast_probability_details
 from wind_verification import filter_observed_speed
@@ -63,7 +65,8 @@ station_ids_text = station_ids_input("aggregate", "aggregate_station_ids_input",
     "Station IDs for Aggregate Verification", default="EROWC, LIXA2, RIXA2, NKXA2")
 station_list = parse_station_ids(station_ids_text)
 
-st.caption(f"{len(station_list)} stations selected.")
+selection_crosswalk = resolve_station_crosswalk(station_list)
+st.caption(f"{len(canonical_station_ids(station_list, selection_crosswalk))} stations selected.")
 
 # ---------------------------------------------------------------------
 # Fetch and compute
@@ -88,6 +91,7 @@ if st.button("Run Aggregate Verification", type="primary", disabled=not controls
                 archive_root=archive_root,
                 refs_root=controls['refs_root'],
                 obs_time_tolerance=obs_time_tolerance,
+                include_station_aliases=True,
             )
 
             if message:
@@ -116,6 +120,9 @@ if st.button("Run Aggregate Verification", type="primary", disabled=not controls
                 downloads.issue("No observation data returned.", fatal=True)
                 downloads.stop()
 
+            crosswalk = resolve_station_crosswalk(station_list, modeldf, obdf)
+            modeldf = apply_station_crosswalk(modeldf, crosswalk, 'source_station_id')
+            obdf = apply_station_crosswalk(obdf, crosswalk, 'obs_station_id')
             merged = build_verification_pairs(
                 modeldf=modeldf,
                 obdf=obdf,

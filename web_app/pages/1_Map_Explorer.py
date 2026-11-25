@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sidebar_controls import shared_sidebar_controls
 from page_controls import PageControls
-from station_selection import show_selected_stations
+from station_selection import selected_station_ids, set_map_station_ids, show_selected_stations
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
 
 ui = PageControls("map")
@@ -17,6 +17,8 @@ from config import (
 )
 
 from data_loader import fetch_data
+from station_crosswalk import (apply_station_crosswalk, canonical_station_ids,
+                               canonical_station_metadata, resolve_station_crosswalk)
 from wind_verification import filter_observed_speed
 from archive_files import gust_observation_coverage
 from pairing import build_verification_pairs
@@ -183,8 +185,11 @@ elif zone_type == "Offshore Zone" and "offshore_zone_id" in filtered_meta.column
 filtered_meta = network_elevation_controls(filtered_meta, ui, 'map')
 candidate_stations = sorted(filtered_meta["station_id"].dropna().unique().tolist())
 
-st.caption(f"{len(candidate_stations)} candidate stations from metadata filters.")
-downloads.add(station_context_table(filtered_meta), name='Matching stations')
+candidate_crosswalk = resolve_station_crosswalk(candidate_stations, station_meta)
+site_candidates = canonical_station_ids(candidate_stations, candidate_crosswalk)
+st.caption(f"{len(site_candidates)} candidate stations from metadata filters.")
+downloads.add(station_context_table(canonical_station_metadata(filtered_meta, candidate_crosswalk)),
+              name='Matching stations')
 
 
 metric_options = get_map_metrics(model, element)
@@ -226,6 +231,7 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 archive_root=archive_root,
                 refs_root=controls['refs_root'],
                 obs_time_tolerance=obs_time_tolerance,
+                include_station_aliases=True,
             )
 
             if message:
@@ -254,6 +260,9 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 downloads.issue("No observation data returned.", fatal=True)
                 downloads.stop()
 
+            crosswalk = resolve_station_crosswalk(candidate_stations, modeldf, obdf, station_meta)
+            modeldf = apply_station_crosswalk(modeldf, crosswalk, 'source_station_id')
+            obdf = apply_station_crosswalk(obdf, crosswalk, 'obs_station_id')
             merged = build_verification_pairs(
                 modeldf=modeldf,
                 obdf=obdf,
@@ -273,9 +282,10 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 st.warning("No model/obs pairs were created.")
                 downloads.stop()
 
+            result_metadata = canonical_station_metadata(station_meta, crosswalk)
             station_metrics = compute_station_metrics(
                 merged=merged,
-                station_meta=station_meta,
+                station_meta=result_metadata,
                 threshold=threshold,
                 threshold_operator=threshold_operator,
                 element=element,
@@ -289,7 +299,11 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 downloads.stop()
 
             st.session_state['station_coverage_tables']=show_coverage_diagnostics(
-                candidate_stations,modeldf,obdf,merged,station_metrics)
+                canonical_station_ids(candidate_stations, crosswalk),modeldf,obdf,merged,station_metrics)
+            st.session_state['map_station_crosswalk'] = crosswalk
+            selected = selected_station_ids()
+            if any(station in crosswalk for station in selected):
+                set_map_station_ids(canonical_station_ids(selected, crosswalk))
 
             st.session_state['station_minimum_counts'] = dict(before=before_minimum,
                 excluded=before_minimum-len(merged))
@@ -316,6 +330,7 @@ if st.button("Build Station Metric Map", type="primary", disabled=not controls["
                 "threshold_operator": threshold_operator,
                 "obs_time_tolerance": obs_time_tolerance,
                 "minimum_observed_speed": minimum_observed_speed,
+                "candidate_stations": candidate_stations,
             }
     except Exception as exc:
         downloads.issue(str(exc),fatal=True)
@@ -350,6 +365,7 @@ if "station_metrics" in st.session_state:
             "threshold_operator": threshold_operator,
             "obs_time_tolerance": obs_time_tolerance,
             "minimum_observed_speed": minimum_observed_speed,
+            "candidate_stations": candidate_stations,
         }
 
     if result_context.get('element') == 'gust' and st.session_state.get('station_gust_coverage'):
@@ -386,7 +402,9 @@ if "station_metrics" in st.session_state:
         if limits is not None:
             show_map_legend(plotted_metrics, selected_metric, limits, scale_units(display_element, selected_metric), display_element)
             clipping_caption(plotted_metrics[selected_metric], limits)
-        show_selected_stations(station_meta)
+        show_selected_stations(canonical_station_metadata(
+            station_meta, st.session_state.get('map_station_crosswalk', {})
+        ))
     with overview_tab:
         st.caption('All-sites overview uses every matched case from the completed Map Explorer run, including stations without coordinates. '
                    'Station selections and map display filters do not change these charts. Use Aggregate Verification for selected stations.')

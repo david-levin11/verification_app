@@ -347,6 +347,14 @@ on-demand download delays.
 
 ## Matching and interpreting comparisons
 
+Map Explorer, Aggregate Verification, Storm Specific Zoom, and Model Comparison
+treat a matching NDBC-prefixed and unprefixed station ID as one physical site.
+For example, selecting either `RIXA2` or `NDBCRIXA2` searches both archive IDs.
+Metadata filters select sites, and the app can then use an alternate network's
+archive rows for those sites. The map shows one marker per site, and verifying
+the same initialization and target through both aliases counts as one case.
+
+
 - Instantaneous observations match using a configurable time tolerance, so an
   observation reported at :53 can verify the following top-of-hour forecast.
 - Temperature extrema and precipitation retain their date/window and accumulation

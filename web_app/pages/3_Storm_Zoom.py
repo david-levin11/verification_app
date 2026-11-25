@@ -15,6 +15,8 @@ from plots import plot_storm_timeseries
 from page_controls import PageControls
 from station_metadata import normalize_station_metadata, network_elevation_controls, station_context_table
 from station_selection import selected_station_ids
+from station_crosswalk import (apply_station_crosswalk, canonical_station_ids,
+                               canonical_station_metadata, resolve_station_crosswalk)
 from storm_analysis import build_storm_cases, available_intervals, interval_summary, evolution_summary, STORM_ELEMENTS
 from temperature_storm import plot_temperature_periods, temperature_snapshot_label
 from accumulation_storm import plot_accumulation_periods
@@ -132,11 +134,11 @@ if scope=='Filtered metadata stations':
             downloads.add(station_context_table(filtered),hide_index=True,use_container_width=True, name='Matching stations')
 if scope=='Map Explorer selections':
     stations=selected_station_ids()
-    if stations:st.caption(f'{len(stations):,} stations selected in Map Explorer.')
-    else:st.info('Select stations on the Map Explorer map; they will appear here automatically.')
+    if not stations:st.info('Select stations on the Map Explorer map; they will appear here automatically.')
 else:
     stations=filtered.station_id.dropna().unique().tolist() if 'station_id' in filtered else []
-st.caption(f'{len(stations):,} stations requested. Maps require metadata coordinates; station plots and scores do not.')
+candidate_crosswalk = resolve_station_crosswalk(stations, metadata)
+st.caption(f'{len(canonical_station_ids(stations, candidate_crosswalk)):,} stations requested. Maps require metadata coordinates; station plots and scores do not.')
 context=dict(model=model,element=element,obs=obs,percentile=percentile,threshold=threshold,
     operator=operator,minutes=minutes,init=init_text,start=start,end=end,stations=stations,
     archive_root=archive_root,refs_root=refs_root,metadata_path=metadata_path,compare_enabled=compare_enabled,
@@ -150,17 +152,31 @@ if st.button('Generate Storm Timeseries',type='primary',disabled=not can_run):
         if pd.isna(init):raise ValueError('Enter a valid model initialization time.')
         with st.spinner(f'Loading one {model.upper()} run for {len(stations):,} station(s)...'):
             modeldf,obdf,message=fetch_data('Storm Specific Zoom',model,obs,start,end,stations,[],init,
-                {},percentile,element=element,archive_root=archive_root,obs_time_tolerance=f'{minutes}min',refs_root=refs_root)
+                {},percentile,element=element,archive_root=archive_root,obs_time_tolerance=f'{minutes}min',
+                refs_root=refs_root,include_station_aliases=True)
             if modeldf.empty:raise ValueError(message or 'No model forecasts found for this run and event period.')
-            cases=build_storm_cases(modeldf,obdf,model,obs,element,init,percentile,
-                f'{minutes}min',threshold,operator)
-            if cases.empty:raise ValueError('No valid forecasts matched the requested initialization.')
             shared=pd.DataFrame();comparison_diagnostics={};comparison_warnings=[]
+            b_frame = None
             if compare_enabled:
                 try:
                     lookback=max(0.,(pd.Timestamp(start)-init).total_seconds()/3600)+abs(offset_hours)+reference_hours+48
                     _,b_frame,_,comparison_warnings=load_comparison_data(archive_root,model,model_b,obs,element,
-                        start,end,stations,lookback_hours=lookback,obs_time_tolerance=f'{minutes}min',refs_root=refs_root)
+                        start,end,stations,lookback_hours=lookback,obs_time_tolerance=f'{minutes}min',
+                        refs_root=refs_root,include_station_aliases=True)
+                except ValueError as exc:
+                    comparison_warnings.append(f'Comparison could not load: {exc}')
+            archive_frames = [metadata, modeldf, obdf]
+            if b_frame is not None:
+                archive_frames.append(b_frame)
+            crosswalk = resolve_station_crosswalk(stations, *archive_frames)
+            modeldf = apply_station_crosswalk(modeldf, crosswalk, 'source_station_id')
+            obdf = apply_station_crosswalk(obdf, crosswalk, 'obs_station_id')
+            cases=build_storm_cases(modeldf,obdf,model,obs,element,init,percentile,
+                f'{minutes}min',threshold,operator)
+            if cases.empty:raise ValueError('No valid forecasts matched the requested initialization.')
+            if b_frame is not None:
+                try:
+                    b_frame = apply_station_crosswalk(b_frame, crosswalk, 'source_station_id')
                     shared,comparison_diagnostics=compare_storm_runs(modeldf,b_frame,obdf,model,model_b,element,init,
                         percentile,percentile_b,offset_hours,f'{reference_hours}h',obs,f'{minutes}min')
                     if 'refs' in [model,model_b] and not shared.empty:
@@ -179,7 +195,8 @@ if st.button('Generate Storm Timeseries',type='primary',disabled=not can_run):
             generation=st.session_state.get('_storm_generation',0)+1
             st.session_state['_storm_generation']=generation
             st.session_state['storm_result']=dict(context=context.copy(),cases=cases,
-                modeldf=modeldf,obdf=obdf,metadata=metadata.copy(),warnings=[message] if message else [],
+                obdf=obdf,metadata=canonical_station_metadata(metadata, crosswalk),crosswalk=crosswalk,
+                warnings=[message] if message else [],
                 generation=generation,init=init)
             st.session_state['storm_result'].update(shared=shared,comparison_diagnostics=comparison_diagnostics,
                                                     comparison_warnings=comparison_warnings)
@@ -350,8 +367,10 @@ with detail:
     else:
         st.write('The station distribution answers the question: “How did the forecast and its uncertainty compare with what happened at this station?”'
                  if probabilistic else 'The station plot answers the question: “How did the forecast compare with what happened at this station?”')
+    first_station = saved['stations'][0]
+    first_station = result.get('crosswalk', {}).get(first_station, first_station)
     station=ui.selectbox('Station detail',station_options,
-        index=station_options.index(saved['stations'][0]) if saved['stations'][0] in station_options else 0,
+        index=station_options.index(first_station) if first_station in station_options else 0,
         key='storm_detail_station')
     report_plume=saved['element'] in ['wind','gust'] and (
         probabilistic or (comparing and is_probabilistic(saved.get('model_b'),saved['element'])))
@@ -381,7 +400,7 @@ with detail:
             st.info('No observations were loaded. The plume shows forecast information only.')
             plot_observations=pd.DataFrame({'stid':pd.Series(dtype=str),
                 'valid_time':pd.Series(dtype='datetime64[ns]'),cfg['obs_value_candidates'][0]:pd.Series(dtype=float)})
-        fig=plot_storm_timeseries(model_df=result['modeldf'],obs_df=plot_observations,target_station=station,
+        fig=plot_storm_timeseries(model_df=cases,obs_df=plot_observations,target_station=station,
             target_init_time=result['init'],plot_start=saved['start'],plot_end=saved['end'],
             model=saved['model'],element=saved['element'],percentile=saved['percentile'],
             intervals=[('5','95'),('10','90'),('25','75')] if probabilistic else None)

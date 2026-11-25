@@ -121,15 +121,17 @@ let instance;
 class Layer {constructor(props){this.props=props;}}
 class Deck {constructor(props){this.props=props;instance=this;}setProps(p){Object.assign(this.props,p);}}
 const parent={};const deck={ScatterplotLayer:Layer,TextLayer:Layer,DeckGL:Deck};
+const mapAttributes={};
+const mapElement={setAttribute:(name,value)=>{mapAttributes[name]=value;}};
 const context={console,Set,Date,Math,deck,maplibregl:{},
- document:{getElementById:()=>({addEventListener:()=>{}})},
+ document:{getElementById:id=>id==='map'?mapElement:{addEventListener:()=>{}}},
  window:{parent,deck,maplibregl:{},addEventListener:()=>{}}};
 let lastClick;parent.postMessage=message=>{if(message.type==='streamlit:setComponentValue')lastClick=message.value;};vm.createContext(context);
 vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),context);
 const records=[{station_id:'A',event_symbol:'+',longitude:-135,latitude:58,
  event_outline_color:[0,130,65,255],probability_outcome:'Observed event with non-zero probability',probability_text:'0.000001%'}];
-const render=(data,zoom)=>context.render({source:parent,data:{type:'streamlit:render',args:{
- records:data,selected_ids:['A'],metric:'forecast_probability',initial_view:{zoom},ack_event_id:null}}});
+const render=(data,zoom,selectable=true)=>context.render({source:parent,data:{type:'streamlit:render',args:{
+ records:data,selected_ids:['A'],metric:'forecast_probability',initial_view:{zoom},ack_event_id:null,selectable}}});
 const missing={station_id:'B',event_symbol:'',longitude:-135,latitude:58,
  rank_label:'No matched observation',probability_outcome:'No matched observation'};
 render([...records,missing],5);assert.equal(instance.props.layers.length,2);
@@ -145,7 +147,12 @@ render(records,9);assert.equal(instance.props.viewState.zoom,5);
 assert.deepEqual(Array.from(instance.props.layers[0].props.getLineColor(records[0])),[255,190,0,255]);
 instance.props.onClick({object:text.data[0]});
 assert.equal(lastClick.clicked_station_id,'A');
-render([{station_id:'A'}],9);assert.equal(instance.props.layers.length,1);
+assert.ok(mapAttributes['aria-label'].includes('toggle selection'));
+render([{station_id:'A'}],9,false);assert.equal(instance.props.layers.length,1);
+assert.equal(mapAttributes['aria-label'],'Station comparison map.');
+lastClick=null;
+instance.props.onClick({object:records[0]});
+assert.equal(lastClick,null);
 '''
     source=Path(__file__).parents[1]/'web_app/station_map_frontend/map.js'
     result=subprocess.run(['node','-e',script,str(source)],capture_output=True,text=True)

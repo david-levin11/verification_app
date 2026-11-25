@@ -208,7 +208,6 @@ def add_map_style_columns(df, metric, limits=None, element=None):
 
 def show_map_legend(station_metrics, selected_metric, limits=None, units='', element=None):
     """The colorbar uses the same bounds and colors as the station markers."""
-    import matplotlib.pyplot as plt
     from color_scales import colorbar, render_colorbar, temperature_boundaries
     if station_metrics.empty or selected_metric not in station_metrics:
         return
@@ -222,7 +221,6 @@ def show_map_legend(station_metrics, selected_metric, limits=None, units='', ele
                    boundaries=temperature_boundaries(element,selected_metric,limits),
                    integer_ticks=selected_metric in {'n','n_prob','zero_probability_events'})
     render_colorbar(fig)
-    plt.close(fig)
 
 
 def plot_station_metric_map(station_metrics, selected_metric, limits=None, element=None):

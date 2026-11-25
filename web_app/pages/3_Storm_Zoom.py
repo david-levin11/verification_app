@@ -4,10 +4,10 @@ downloads = DataDownloads('storm')
 from archive_paths import configured_paths
 from archive_availability import coverage, latest_dates, seed_dates, preflight
 from pathlib import Path
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
+from chart_downloads import render_chart
 from config import (MODELS, PERCENTILES, get_available_elements, get_available_obs_sources,
                     get_element_config, is_probabilistic)
 from data_loader import fetch_data
@@ -317,7 +317,7 @@ with spatial:
         st.caption(f'{len(map_data)} stations plotted. Click a station to populate Station detail.')
         render_storm_map(map_data,metric,view,result['generation'])
         fig=map_colorbar(metric,limits,map_label,unit,map_data[metric],element=saved['element'])
-        render_colorbar(fig);plt.close(fig)
+        render_colorbar(fig)
         if metric=='forecast_probability':
             st.caption('Green outline with +: event observed with non-zero probability. Red outline with !: event observed with zero probability. '
                        'Gray: other outcomes; the tooltip identifies missing observations. Gold marks the selected station. '
@@ -348,14 +348,14 @@ with evolution:
         st.write('Model comparison answers the question: “How did the two forecasts’ bias and MAE change on the same observed cases?”')
         comparison_summary=storm_comparison_summary(shared,valid_times,balanced)
         fig=plot_comparison_evolution(comparison_summary,label_a,label_b,cfg['units'])
-        st.pyplot(fig);plt.close(fig)
+        render_chart(fig, 'storm model comparison evolution')
         downloads.add(comparison_summary,hide_index=True,use_container_width=True, name='Comparison evolution')
     summary=evolution_summary(cases,balanced)
     period='forecast date' if daily else 'projection'
     st.caption(f'Each {period} uses its available stations unless the fixed-station option is enabled. Counts are shown explicitly; '
                f'interval widths and coverage use the same eligible stations within each {period}.')
     fig=plot_evolution(summary,available_intervals(cases),spread_units,date_based=daily)
-    st.pyplot(fig);plt.close(fig)
+    render_chart(fig, 'storm verification evolution')
     downloads.add(summary,hide_index=True,use_container_width=True, name='Storm evolution')
 with detail:
     if daily:
@@ -406,7 +406,7 @@ with detail:
             intervals=[('5','95'),('10','90'),('25','75')] if probabilistic else None)
     if fig is not None:
         if saved['element'] in ['rh','minrh']:fig.axes[0].set_ylim(0,100)
-        st.pyplot(fig);plt.close(fig)
+        render_chart(fig, 'storm station detail')
     if report_plume:
         st.caption('The station plume answers the question: “How did the forecast distribution compare with all observed reports during the requested period?” Small red points show every available report at its actual UTC timestamp; larger red points identify observations used for verification. Darker shading spans p25–p75, lighter shading p5–p95, and the central line is p50. Reports between forecast projections provide visual context; matching, scores, and ensemble completeness rules are unchanged.')
     if probabilistic and not (comparing and not shared.empty):

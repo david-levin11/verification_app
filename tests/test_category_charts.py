@@ -80,6 +80,10 @@ def test_map_overview_tabs_custom_defaults_and_saved_context(tmp_path):
     assert not app.exception
     assert 'All-Sites Overview' in [tab.label for tab in app.tabs]
     assert len(app.dataframe)==0
+    downloads = {button.label: button.proto.url for button in app.get('download_button')}
+    for label in ['Download category frequency (PNG)', 'Download category confusion matrix (PNG)',
+                  'Download map color scale (PNG)']:
+        assert downloads[label].endswith('.png')
     assert any('3 forecast/observation pairs across 2 stations' in c.value for c in app.caption)
     mode='map_chart_category_mode_maxt_maxt';edges='map_chart_category_edges_maxt_maxt'
     app.selectbox(key=mode).set_value('Custom').run()

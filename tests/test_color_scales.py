@@ -119,14 +119,13 @@ st.session_state['limits']=scale_controls(ui,[-.1,.2,4.],element,metric)
 @pytest.mark.parametrize('metric', ['mae', 'pod', 'far'])
 def test_sequential_markers_match_compact_stepped_legend_including_boundaries(metric):
     from maps import show_map_legend
-    import maps
     from unittest.mock import patch
     limits = (0., 1.)
     values = [-1., .01, .19, .2, .39, .4, .6, .8, 1., 2.]
     frame = pd.DataFrame({metric: values})
     styled, _, _ = add_map_style_columns(frame, metric, limits)
     captured = []
-    with patch.object(maps.st, 'pyplot', side_effect=lambda fig, **kw: captured.append((fig, kw))):
+    with patch('chart_downloads.render_chart', side_effect=lambda fig, name, **kw: captured.append((fig, kw))):
         show_map_legend(frame, metric, limits)
     fig, arguments = captured[0]
     bar = fig.axes[0]._colorbar

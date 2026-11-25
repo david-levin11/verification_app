@@ -7,7 +7,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
+from chart_downloads import render_chart
+from station_map import comparison_station_map
 from config import (MODELS, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
                     get_available_obs_sources, get_element_config, is_probabilistic)
 from comparison_loader import load_comparison_data
@@ -250,7 +251,7 @@ lead_tab,map_tab,condition_tab,prob_tab=st.tabs(['Lead times','Station differenc
 with lead_tab:
     table=grouped_scores(pairs,'lead_day',element,saved['threshold'],saved['operator'],prob_a,prob_b)
     fig=plot_group_scores(table,'lead_day',metric,label_a,label_b,'Model A forecast day')
-    st.pyplot(fig);plt.close(fig)
+    render_chart(fig, 'comparison by lead time')
     downloads.add(table[table.metric.eq(metric)][['lead_day','n','observed_events','n_prob','a','b','difference']],hide_index=True, name='Lead scores')
     st.caption('Days use Model A leads: Day 1 = 0–24 h, Day 2 = >24–48 h, through Day 7 = >144–168 h. All archived projections in the lead range are eligible; only shared station/valid targets are scored. Actual Model B leads can differ with an offset.')
 with map_tab:
@@ -263,10 +264,11 @@ with map_tab:
         deck,map_data=station_difference_map(station_table,result['metadata'],metric,label_a,label_b,minimum,limits)
         st.caption(f'Blue: {label_a} better. Orange: {label_b} better. White: similar. Bias compares distance from zero; frequency bias compares distance from one.')
         st.caption('Circle size reflects shared case counts. Marker sizes stay readable as you zoom.')
-        st.pydeck_chart(deck,use_container_width=True)
+        comparison_station_map(map_data, deck.initial_view_state, metric, label_a, label_b,
+                               'model_comparison_map')
         fig=colorbar(limits,f'Advantage for A ({scale_units(element,metric,True)})',
                      ['#b35806','#f5f5f5','#2166ac'],map_data.advantage)
-        render_colorbar(fig);plt.close(fig)
+        render_colorbar(fig)
         clipping_caption(map_data.advantage,limits)
     display_table=station_table[station_table.metric.eq(metric)]
     context=station_context_table(result['metadata'])
@@ -294,7 +296,7 @@ with condition_tab:
                 "that event within each category, rather than whether the forecast chose the same category. "
                 "POD = hits / observed events. A category with cases but zero observed events has undefined POD (N/A).")
     fig=plot_group_scores(table,'condition',metric,label_a,label_b,condition)
-    st.pyplot(fig);plt.close(fig)
+    render_chart(fig, 'comparison by condition')
     downloads.add(table[table.metric.eq(metric)],hide_index=True,use_container_width=True, name='Condition scores')
     if metric=='pod':
         st.caption('n counts all shared cases in the group; observed_events counts observations meeting the selected event threshold. More non-event cases do not make POD defined.')
@@ -309,7 +311,7 @@ with prob_tab:
                 'Brier score':summary.get('brier_score',np.nan),'Reliability error':summary.get('reliability_error',np.nan)})
         downloads.add(pd.DataFrame(ptable),hide_index=True, name='Probability scores')
         fig=plot_probability_comparison(pairs,element,saved['threshold'],saved['operator'],'A: '+model_a.upper(),'B: '+model_b.upper(),prob_a,prob_b)
-        st.pyplot(fig);plt.close(fig)
+        render_chart(fig, 'probability comparison')
         st.caption('Both probabilistic models use the intersection of valid probability cases. '+probability_description('refs' in [model_a,model_b])+' Reliability error uses 10% probability bins.')
     else:st.info('Neither selected model/element provides archived probability distributions.')
 with st.container():

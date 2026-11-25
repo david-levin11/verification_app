@@ -186,5 +186,7 @@ def colorbar(limits, label, colors, values=(), stepped=False, boundaries=None, i
 def render_colorbar(fig):
     """Center the compact legend in the same full-width container as the map."""
     import streamlit as st
+    from chart_downloads import render_chart
     with st.container(horizontal=True, horizontal_alignment='center'):
-        st.pyplot(fig, width=600)
+        with st.container(width=600):
+            render_chart(fig, 'map color scale', width=600)

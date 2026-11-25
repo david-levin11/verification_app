@@ -123,7 +123,8 @@ def render_storm_map(data, metric, view, generation):
     selection = st.session_state.get('storm_detail_station')
     event = _station_map(records=json.loads(data.to_json(orient='records', date_format='iso')),
         metric=metric, selected_ids=[selection] if selection else [], initial_view=view,
-        ack_event_id=st.session_state.get('_storm_map_ack'), default=None, key=key)
+        ack_event_id=st.session_state.get('_storm_map_ack'), screenshot_name='storm-snapshot',
+        default=None, key=key)
     if isinstance(event, dict) and event.get('event_id') and event['event_id'] != st.session_state.get('_storm_map_ack'):
         st.session_state['_storm_map_ack'] = event['event_id']
         station = event.get('clicked_station_id')

@@ -1,6 +1,7 @@
 from data_downloads import DataDownloads
 downloads = DataDownloads('aggregate')
 import streamlit as st
+from chart_downloads import render_chart
 
 from sidebar_controls import shared_sidebar_controls
 from page_controls import PageControls
@@ -315,7 +316,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
                     obs_col="obs_value",
                     threshold_operator=result_context.get("threshold_operator", threshold_operator),
                 )
-                st.pyplot(fig_rel)
+                render_chart(fig_rel, 'selected-site reliability chart')
             except Exception as e:
                 downloads.issue(f"Reliability plot: {e}")
 
@@ -330,7 +331,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
                     element=element,
                     obs_col="obs_value",
                 )
-                st.pyplot(fig_rank)
+                render_chart(fig_rank, 'selected-site rank histogram')
             except Exception as e:
                 downloads.issue(f"Rank histogram: {e}")
 else:

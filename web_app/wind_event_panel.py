@@ -1,7 +1,7 @@
 """Display the wind subset and the compass-sector verification on either page."""
 
-import matplotlib.pyplot as plt
 import streamlit as st
+from chart_downloads import render_chart
 from wind_verification import filter_wind_events
 from wind_direction_plots import sector_error_rose, sector_heatmap
 
@@ -73,13 +73,12 @@ def show_compass_agreement(context, summary, downloads):
                         horizontal=True, key=f'{prefix}_direction_heatmap_units')
         st.vega_lite_chart(sector_heatmap(matrix, mode != 'Pair counts'), width='stretch',
                            key=chart_key, on_select=select_sector_pair)
-        if options:
-            st.caption('Select a cell with a difference of two or more sectors to view its paired cases.')
+        st.caption('Use the chart menu to download a PNG or SVG.'
+                   + (' Select a cell two or more sectors apart to view its paired cases.' if options else ''))
     with rose_column:
         st.markdown('**Signed sector error**')
         fig = sector_error_rose(summary['sector_errors'])
-        st.pyplot(fig)
-        plt.close(fig)
+        render_chart(fig, 'wind sector error rose')
         st.caption('Positive means the forecast is clockwise from the observation. '
                    'The radius shows the share of valid pairs.')
 

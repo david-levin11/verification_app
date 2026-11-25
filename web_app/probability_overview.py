@@ -34,7 +34,7 @@ def probability_map_rows(metrics,metric,minimum):
 
 def render_probability_overview(cases,context,downloads):
     import streamlit as st
-    import matplotlib.pyplot as plt
+    from chart_downloads import render_chart
     from plots import plot_threshold_reliability
     from forecast_archive import probability_description
     st.subheader('Probability verification: all sites in this run')
@@ -65,7 +65,7 @@ def render_probability_overview(cases,context,downloads):
     fig=plot_threshold_reliability(None,context['threshold'],context['model'],context['obs'],
         f"All {cases.station_id.nunique():,} sites in map run",context['start_date'],context['end_date'],
         context['element'],threshold_operator=context['threshold_operator'],probability_data=cases)
-    st.pyplot(fig);plt.close(fig)
+    render_chart(fig, 'all-sites reliability chart')
     downloads.add(cases,name='Map probability cases')
     downloads.add(reliability_table(cases),name='Map reliability bins')
     downloads.add_json(summary,name='Map probability summary')

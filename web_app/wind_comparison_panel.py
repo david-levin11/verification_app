@@ -2,6 +2,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
+from chart_downloads import render_chart
+from station_map import comparison_station_map
 from wind_verification import (DIRECTION_LABELS, direction_exceedance,
                                grouped_direction_scores)
 from comparison_plots import station_difference_map
@@ -53,7 +55,7 @@ def render_direction_comparison(result, ui, label_a, label_b, downloads):
     axes[1].set(xlim=(0, 180), xlabel='Absolute angular error (°)', ylabel='Cases (%)')
     for ax in axes:
         ax.grid(alpha=.25); ax.legend()
-    fig.tight_layout(); st.pyplot(fig); plt.close(fig)
+    fig.tight_layout(); render_chart(fig, 'wind direction error comparison')
     metric = ui.selectbox('Direction metric for breakdowns', list(DIRECTION_LABELS),
         format_func=lambda m: DIRECTION_LABELS[m], key='compare_direction_display_metric')
     lead_tab, station_tab = st.tabs(['Direction by lead time', 'Direction by station'])
@@ -65,18 +67,19 @@ def render_direction_comparison(result, ui, label_a, label_b, downloads):
             ax.plot(data.lead_day, data[side], marker=marker, label=label, color=color)
         ax.set(xlabel='Model A forecast day', ylabel=DIRECTION_LABELS[metric])
         ax.grid(alpha=.25); ax.legend(); fig.tight_layout()
-        st.pyplot(fig); plt.close(fig)
+        render_chart(fig, 'wind direction by lead time')
         downloads.add(data[['lead_day', 'n', 'a', 'b', 'difference']].rename(columns={
             'lead_day':'A forecast day', 'n':'Shared cases', 'a':label_a, 'b':label_b, 'difference':'A − B'}), hide_index=True, name='Direction lead scores')
     with station_tab:
         table = grouped_direction_scores(cases, 'station_id', threshold)
         minimum = ui.number_input('Minimum direction cases per station', 1, 10000, 10, key='compare_direction_min_cases')
-        deck, _ = station_difference_map(table, result['metadata'], metric, label_a, label_b, minimum)
+        deck, map_data = station_difference_map(table, result['metadata'], metric, label_a, label_b, minimum)
         if deck is None:
             st.info('A direction map needs station coordinates and enough shared direction cases.')
         else:
             st.caption(f'Blue: {label_a} better. Orange: {label_b} better. White: similar.')
-            st.pydeck_chart(deck, use_container_width=True)
+            comparison_station_map(map_data, deck.initial_view_state, metric, label_a, label_b,
+                                   'wind_direction_comparison_map')
         downloads.add(table[table.metric.eq(metric)][['station_id', 'n', 'a', 'b', 'difference']].rename(columns={
             'station_id':'Station', 'n':'Shared cases', 'a':label_a, 'b':label_b, 'difference':'A − B'}), hide_index=True, name='Direction station scores')
     with st.container():

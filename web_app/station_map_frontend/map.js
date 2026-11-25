@@ -9,6 +9,62 @@ let sequence = 0;
 let latestEventId = null;
 const instanceId = `${Date.now()}-${Math.random()}`;
 let scrollZoomEnabled = false;
+let selectable = true;
+let screenshotName = 'station-map';
+const screenshotButton = document.getElementById('save-screenshot');
+
+async function saveScreenshot() {
+  const status = document.getElementById('screenshot-status');
+  screenshotButton.disabled = true;
+  status.textContent = '';
+  try {
+    const basemap = mapInstance?.getMapboxMap();
+    const overlay = mapInstance?.getCanvas();
+    if (!basemap?.isStyleLoaded() || !overlay?.width) {
+      throw new Error('Wait for the map to load, then try again.');
+    }
+
+    // Redraw both layers at the current camera before compositing their buffers.
+    basemap.redraw();
+    mapInstance.redraw('screenshot');
+    const image = document.createElement('canvas');
+    image.width = overlay.width;
+    image.height = overlay.height;
+    const context = image.getContext('2d');
+    context.fillStyle = 'white';
+    context.fillRect(0, 0, image.width, image.height);
+    context.drawImage(basemap.getCanvas(), 0, 0, image.width, image.height);
+    context.drawImage(overlay, 0, 0, image.width, image.height);
+
+    const attribution = document.querySelector('.maplibregl-ctrl-attrib-inner')?.textContent.trim()
+      || '© OpenStreetMap contributors © CARTO';
+    const scale = image.width / overlay.getBoundingClientRect().width;
+    context.font = `${12 * scale}px sans-serif`;
+    const textWidth = context.measureText(attribution).width;
+    context.fillStyle = '#fffffff0';
+    context.fillRect(image.width - textWidth - 12 * scale, image.height - 20 * scale,
+      textWidth + 12 * scale, 20 * scale);
+    context.fillStyle = '#222';
+    context.fillText(attribution, image.width - textWidth - 6 * scale, image.height - 6 * scale);
+
+    const png = await new Promise(resolve => image.toBlob(resolve, 'image/png'));
+    if (!png) throw new Error('The browser could not save the map image.');
+    const url = URL.createObjectURL(png);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${screenshotName}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    screenshotButton.disabled = false;
+  }
+}
+
+screenshotButton.addEventListener('click', saveScreenshot);
 
 function zoomBy(amount) {
   if (!mapInstance || !viewState) return;
@@ -57,7 +113,7 @@ function layers() {
 }
 
 function toggleStation(info) {
-  if (!info.object) return; // Clicking the background leaves the list alone.
+  if (!selectable || !info.object) return;
   const id = info.object.station_id;
   if (selected.has(id)) selected.delete(id); else selected.add(id);
   mapInstance.setProps({layers: layers()});
@@ -72,6 +128,9 @@ function toggleStation(info) {
 
 function tooltip({object}) {
   if (!object) return null;
+  if (object.tooltip_lines) {
+    return {text: object.tooltip_lines.join('\n'), style: {backgroundColor: 'white', color: 'black'}};
+  }
   const lines = [object.station_id, `${metric}: ${object.metric_value_text ?? object.metric_value ?? '—'}`];
   const times = object.forecast_date ? ['forecast_date', 'valid_time', 'obs_window_start', 'obs_window_end']
     : object.model_window_start ? ['model_window_start', 'model_window_end', 'obs_window_start', 'obs_window_end', 'obs_time_offset_minutes']
@@ -94,6 +153,11 @@ function render(event) {
     selected = new Set(args.selected_ids);
   }
   metric = args.metric;
+  selectable = args.selectable !== false;
+  screenshotName = [args.screenshot_name || 'station-map', metric].join('-')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const mapLabel = selectable ? 'Station metric map. Click a station to toggle selection.' : 'Station comparison map.';
+  document.getElementById('map').setAttribute('aria-label', mapLabel);
   try {
     if (!window.deck || !window.maplibregl) throw new Error('Map libraries could not load. Check access to unpkg.com and reload the page.');
     if (!mapInstance) {
@@ -101,11 +165,13 @@ function render(event) {
       mapInstance = new deck.DeckGL({
         container: 'map', map: maplibregl,
         mapStyle: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+        mapOptions: {preserveDrawingBuffer: true},
         viewState, controller: {scrollZoom: scrollZoomEnabled}, layers: layers(),
         onViewStateChange: ({viewState: next}) => {
           viewState = next;
           mapInstance.setProps({viewState});
         },
+        onLoad: () => { screenshotButton.disabled = false; },
         onClick: toggleStation, getTooltip: tooltip
       });
     } else {

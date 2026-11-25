@@ -57,7 +57,7 @@ def categorical_data(pairs,specification):
 
 def render_category_charts(pairs,context,ui,downloads,group_name,category_set=None):
     import streamlit as st
-    import matplotlib.pyplot as plt
+    from chart_downloads import render_chart
     from plots import plot_forecast_bias_bar_chart, plot_confusion_matrix
     specification=category_controls(ui,context['element'],category_set)
     if specification is None:
@@ -81,12 +81,12 @@ def render_category_charts(pairs,context,ui,downloads,group_name,category_set=No
         st.caption('Category frequency answers the question: within each observed category, how often was the forecast in the same, a lower, or a higher category? '
                    'Each populated bar totals 100%; n is the number of paired cases in that observed category. Empty categories have no bar.')
         fig=plot_forecast_bias_bar_chart(*args,varname=variable)
-        st.pyplot(fig);plt.close(fig)
+        render_chart(fig, 'category frequency')
     with matrix:
         st.caption('The confusion matrix answers the question: which forecast and observed category combinations occurred? '
                    'Cells show percentages of all categorized pairs; the diagonal marks matching categories. Empty categories remain on both axes.')
         fig=plot_confusion_matrix(*args,varname=variable,criteria='')
-        st.pyplot(fig);plt.close(fig)
+        render_chart(fig, 'category confusion matrix')
     downloads.add(data,name='Categorized paired cases')
     downloads.add(counts.rename(index=specification['labels'],columns=specification['labels']).reset_index(),name='Category confusion counts')
     downloads.add_json(dict(labels=specification['labels'],bins=[str(x) if not np.isfinite(x) else x for x in specification['bins']],

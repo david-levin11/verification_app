@@ -229,6 +229,9 @@ def test_compass_agreement_and_observed_event_filters():
     assert (scores['n'], scores['same'], scores['opposite'], scores['other']) == (3, 1, 1, 1)
     assert scores['angular_mae'] == pytest.approx((20 + 180 + 80) / 3)
     assert scores['matrix'].loc['NE', 'SW'] == 1
+    assert (scores['adjacent'], scores['more_than_one']) == (0, 2)
+    assert scores['sector_errors'].loc[[0, 2, 4]].tolist() == [1, 1, 1]
+    assert scores['miss_cases'].sectors_apart.tolist() == [4, 2]
     assert compass_agreement(retained.drop(columns='forecast_direction')) is None
     with pytest.raises(ValueError, match='Observed wind direction is unavailable'):
         filter_wind_events(cases.drop(columns='observed_direction'), sectors=('N',))
@@ -237,7 +240,9 @@ def test_compass_agreement_and_observed_event_filters():
 def test_overview_and_selected_site_filter_and_score_paired_wind(tmp_path):
     from streamlit.testing.v1 import AppTest
 
-    archive_fixture(tmp_path, 'wind_dir_deg')
+    forecast, _, _, _ = archive_fixture(tmp_path, 'wind_dir_deg')
+    forecast.loc[0, 'wind_dir_deg'] = 90.
+    forecast.to_parquet(tmp_path / 'ndfd' / 'wind' / '2026_06_archive.parquet', index=False)
     metadata = tmp_path / 'stations.parquet'
     pd.DataFrame(dict(station_id=['A'], latitude=[58.3], longitude=[-134.5])).to_parquet(metadata)
     app = AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'), default_timeout=20)
@@ -265,3 +270,14 @@ def test_overview_and_selected_site_filter_and_score_paired_wind(tmp_path):
         assert (scores['n'], scores['same'], scores['opposite']) == (1, 1, 0)
         assert scores['angular_mae'] == 20
         assert next(metric for metric in app.metric if metric.label == 'Same sector').value == '100.0%'
+
+        app.radio(key=f'{page}_direction_heatmap_units').set_value('Percent within observed sector').run()
+        assert not app.exception
+        app.checkbox(key=f'{page}_ui_filter_wind').set_value(False).run()
+        next(b for b in app.button if b.label == button).click().run()
+        assert not app.exception
+        assert next(metric for metric in app.metric if metric.label == 'More than one apart').value == '50.0%'
+        app.selectbox(key=f'{page}_direction_pair').set_value(('N', 'E')).run()
+        assert not app.exception
+        detail = app.dataframe[0].value
+        assert detail[['forecast_sector', 'observed_sector', 'sectors_apart']].values.tolist() == [['E', 'N', 2]]

@@ -185,8 +185,8 @@ def test_storm_page_load_snapshots_evolution_and_station_detail(tmp_path,monkeyp
     app.date_input(key='storm_Plot Start Date').set_value(date(2026,5,1))
     app.date_input(key='storm_Plot End Date').set_value(date(2026,5,2))
     app.session_state['selected_station_list']=['A','B']
-    app.radio(key='storm_station_scope').set_value('Map Explorer selections').run()
-    assert list(app.radio(key='storm_station_scope').options)==['Filtered metadata stations','Map Explorer selections']
+    app.radio(key='storm_station_scope').set_value('Verification Overview selections').run()
+    assert list(app.radio(key='storm_station_scope').options)==['Filtered metadata stations','Verification Overview selections']
     assert not any(x.label in ['Target Station','Station IDs (comma-separated)'] for x in app.text_input)
     next(b for b in app.button if b.label=='Generate Storm Timeseries').click().run(timeout=30)
     assert not app.exception and not app.error, [x.value for x in app.exception]+[x.value for x in app.error]

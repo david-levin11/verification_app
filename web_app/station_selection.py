@@ -27,7 +27,7 @@ def remove_station(station_id=None):
 def show_selected_stations(metadata):
     selected = selected_station_ids()
     st.subheader(f'Selected map stations ({len(selected)})')
-    st.caption('Changes carry over automatically to Aggregate Verification and Model Comparison. You can also enter station IDs manually on those pages.')
+    st.caption('Changes carry over automatically to Selected-Site Verification and Model Comparison. You can also enter station IDs manually on those pages.')
     if not selected:
         st.info('Click stations on the map to select them; click again to remove them.')
         return

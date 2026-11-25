@@ -4,7 +4,7 @@ Branch: model-comparison, based on refactor-multi-element.
 
 ## Thresholds
 
-Map Explorer and Aggregate Verification share an event definition control:
+Verification Overview and Selected-Site Verification share an event definition control:
 `>=`, `>`, `<=`, or `<`. RH and minimum temperature default to `<=`; other
 elements default to `>=`. Forecast categories retain their configured bins.
 
@@ -65,7 +65,7 @@ when the chosen model no longer supports its element or verification source.
 Previously calculated results retain their original settings and show the
 existing refresh notice when inputs change.
 
-Select stations directly from the generated metric map in Map Explorer. Click a
+Select stations directly from the generated metric map in Verification Overview. Click a
 station to toggle it; selected stations have a gold outline. There is no separate
 selection map. The list below the metric map supports individual removal and
 clearing. Selections survive filter changes and rebuilding metrics, including

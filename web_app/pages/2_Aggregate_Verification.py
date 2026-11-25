@@ -26,7 +26,7 @@ from plots import (
 )
 
 
-st.title("Aggregate Verification")
+st.title("Selected-Site Verification")
 
 # ---------------------------------------------------------------------
 # Shared sidebar controls
@@ -62,7 +62,7 @@ group_name = ui.sidebar.text_input(
 )
 
 station_ids_text = station_ids_input("aggregate", "aggregate_station_ids_input",
-    "Station IDs for Aggregate Verification", default="EROWC, LIXA2, RIXA2, NKXA2")
+    "Station IDs for Selected-Site Verification", default="EROWC, LIXA2, RIXA2, NKXA2")
 station_list = parse_station_ids(station_ids_text)
 
 selection_crosswalk = resolve_station_crosswalk(station_list)
@@ -72,7 +72,7 @@ st.caption(f"{len(canonical_station_ids(station_list, selection_crosswalk))} sta
 # Fetch and compute
 # ---------------------------------------------------------------------
 
-if st.button("Run Aggregate Verification", type="primary", disabled=not controls["can_run"]):
+if st.button("Run Selected-Site Verification", type="primary", disabled=not controls["can_run"]):
     try:
         with st.spinner("Fetching and processing aggregate data..."):
             modeldf, obdf, message = fetch_data(
@@ -212,7 +212,7 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
     if result_context and result_context != current_context:
         st.info(
             "The displayed aggregate verification was computed with previous settings. "
-            "Click **Run Aggregate Verification** to refresh with the current sidebar selections."
+            "Click **Run Selected-Site Verification** to refresh with the current sidebar selections."
         )
 
     # Render saved results using the settings that produced them.
@@ -337,8 +337,8 @@ if "aggregate_merged" in st.session_state and "aggregate_summary" in st.session_
                 downloads.issue(f"Rank histogram: {e}")
 else:
     st.info(
-        "Choose your settings and click **Run Aggregate Verification**. "
-        "Station selections from the Map Explorer page will appear here automatically."
+        "Choose your settings and click **Run Selected-Site Verification**. "
+        "Station selections from the Verification Overview page will appear here automatically."
     )
 
 

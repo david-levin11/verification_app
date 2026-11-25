@@ -49,7 +49,7 @@ def load_station_metadata(metadata_path):
     return normalize_station_metadata(df)
 
 
-st.title("Map Explorer")
+st.title("Verification Overview")
 
 def show_coverage_diagnostics(candidate_stations,modeldf,obdf,merged,station_metrics):
     candidate=set(map(str,candidate_stations))
@@ -380,7 +380,7 @@ if "station_metrics" in st.session_state:
             "Click **Build Station Metric Map** to refresh with the current sidebar selections."
         )
 
-    map_tab,overview_tab=st.tabs(['Station map','All-sites overview'])
+    map_tab,overview_tab=st.tabs(['Station Map','All-Sites Overview'])
     display_element = result_context.get('element', element)
     with map_tab:
         st.subheader('Station Metric Map')
@@ -406,8 +406,8 @@ if "station_metrics" in st.session_state:
             station_meta, st.session_state.get('map_station_crosswalk', {})
         ))
     with overview_tab:
-        st.caption('All-sites overview uses every matched case from the completed Map Explorer run, including stations without coordinates. '
-                   'Station selections and map display filters do not change these charts. Use Aggregate Verification for selected stations.')
+        st.caption('All-Sites Overview uses every matched case from the completed Verification Overview run, including stations without coordinates. '
+                   'Station selections and map display filters do not change these charts. Use Selected-Site Verification for selected stations.')
         chart_cases=st.session_state.get('map_chart_cases')
         if chart_cases is None or not result_context:
             st.info('Rebuild the map to generate the all-sites category charts for this run.')

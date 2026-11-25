@@ -54,7 +54,7 @@ def test_map_aggregate_and_storm_share_station_aliases(tmp_path):
     app.selectbox(key='aggregate_ui_model').set_value('nbm').run()
     app.selectbox(key='aggregate_ui_element').set_value('wind').run()
     app.text_input(key='aggregate_station_ids_input').set_value(f'{bare}, {ndbc}')
-    next(button for button in app.button if button.label == 'Run Aggregate Verification').click().run()
+    next(button for button in app.button if button.label == 'Run Selected-Site Verification').click().run()
     assert not app.exception and not app.error
     paired = app.session_state['aggregate_merged']
     assert paired.station_id.tolist() == [ndbc, ndbc]
@@ -64,7 +64,7 @@ def test_map_aggregate_and_storm_share_station_aliases(tmp_path):
     app.switch_page('pages/3_Storm_Zoom.py').run()
     app.selectbox(key='storm_Model').set_value('nbm').run()
     app.selectbox(key='storm_Element').set_value('wind').run()
-    app.radio(key='storm_station_scope').set_value('Map Explorer selections').run()
+    app.radio(key='storm_station_scope').set_value('Verification Overview selections').run()
     app.checkbox(key='storm_compare_enabled').set_value(True).run()
     app.selectbox(key='storm_model_b').set_value('ndfd').run()
     app.number_input(key='storm_offset_hours').set_value(-1.)

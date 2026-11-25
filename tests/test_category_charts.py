@@ -78,7 +78,7 @@ def test_map_overview_tabs_custom_defaults_and_saved_context(tmp_path):
         start_date='2026-05-01',end_date='2026-05-31',forecast_projection='Day 1')
     app.run()
     assert not app.exception
-    assert 'All-sites overview' in [tab.label for tab in app.tabs]
+    assert 'All-Sites Overview' in [tab.label for tab in app.tabs]
     assert len(app.dataframe)==0
     assert any('3 forecast/observation pairs across 2 stations' in c.value for c in app.caption)
     mode='map_chart_category_mode_maxt_maxt';edges='map_chart_category_edges_maxt_maxt'

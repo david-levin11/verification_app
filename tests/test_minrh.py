@@ -90,7 +90,7 @@ def test_all_pages_score_minrh_without_percentiles(tmp_path,monkeypatch):
     app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'),default_timeout=20)
     app.secrets['local']={'archive_root':str(tmp_path),'metadata_path':str(meta)}
     app.run()
-    for page,button,result in [('map','Build Station Metric Map','station_metrics'),('aggregate','Run Aggregate Verification','aggregate_summary')]:
+    for page,button,result in [('map','Build Station Metric Map','station_metrics'),('aggregate','Run Selected-Site Verification','aggregate_summary')]:
         app.switch_page('pages/1_Map_Explorer.py' if page=='map' else 'pages/2_Aggregate_Verification.py').run()
         if page=='aggregate':app.text_input(key='aggregate_station_ids_input').set_value('A,B')
         app.selectbox(key=f'{page}_ui_model').set_value('nbm').run()

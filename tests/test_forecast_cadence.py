@@ -126,7 +126,7 @@ def test_page_controls_day7_and_all_use_actual_three_hour_archives(tmp_path,page
     app.checkbox(key=f'{page}_ui_use_all_forecast_hours').set_value(False).run()
     app.selectbox(key=f'{page}_ui_forecast_projection_start').set_value('Day 7')
     app.selectbox(key=f'{page}_ui_forecast_projection_end').set_value('Day 7').run()
-    button='Build Station Metric Map' if page=='map' else 'Run Aggregate Verification'
+    button='Build Station Metric Map' if page=='map' else 'Run Selected-Site Verification'
     def count():
         assert not app.exception and not app.error,[e.value for e in app.exception]+[e.value for e in app.error]
         return int(app.session_state['station_metrics'].n.sum()) if page=='map' else app.session_state['aggregate_summary']['n']

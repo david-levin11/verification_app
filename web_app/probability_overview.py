@@ -38,9 +38,9 @@ def render_probability_overview(cases,context,downloads):
     from plots import plot_threshold_reliability
     from forecast_archive import probability_description
     st.subheader('Probability verification: all sites in this run')
-    st.caption('This overview pools all valid matched probability cases in the completed Map Explorer run, including sites without map coordinates. '
+    st.caption('This overview pools all valid matched probability cases in the completed Verification Overview run, including sites without map coordinates. '
                'Stations with more cases contribute more weight. Clicking stations or changing the map sample minimum does not change this overview. '
-               'Use Aggregate Verification to investigate selected stations.')
+               'Use Selected-Site Verification to investigate selected stations.')
     if cases.empty:
         st.info('No valid forecast probabilities with matched observations are available for this run.')
         return

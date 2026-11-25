@@ -1,7 +1,7 @@
 """Consistent controls, with independent durable settings on each page."""
 import pandas as pd
 import streamlit as st
-from page_controls import PageControls
+from page_controls import PageControls, set_page_value
 from archive_paths import configured_paths
 from archive_availability import coverage, latest_dates, seed_dates, preflight
 from forecast_archive import refs_root_control
@@ -11,7 +11,23 @@ from config import (MODELS, PERCENTILES, FORECAST_PROJECTION_GROUPS,
     is_probabilistic)
 
 
+def pending_overview_selection():
+    """Return the four Overview inputs when they differ from the last handoff."""
+    saved = st.session_state.get('_page_settings_map', {})
+    keys = ('ui_model', 'ui_element', 'ui_start_date', 'ui_end_date')
+    if all(f'map_{key}' in saved for key in keys):
+        selection = {key: saved[f'map_{key}'] for key in keys}
+        if selection != st.session_state.get('_overview_selection_applied'):
+            return selection
+    return None
+
+
 def shared_sidebar_controls(show_category_set=False, page_key='map'):
+    overview = pending_overview_selection() if page_key == 'aggregate' else None
+    if overview is not None:
+        for key in ('ui_model', 'ui_element'):
+            set_page_value(page_key, f'{page_key}_{key}', overview[key])
+
     ui = PageControls(page_key).sidebar
     archive_root = configured_paths()['archive_root']
     model = ui.selectbox('Model', MODELS, key='ui_model')
@@ -50,6 +66,11 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
     default_start,default_end=latest_dates(sources)
     seed_dates(page_key,[f'{page_key}_ui_start_date',f'{page_key}_ui_end_date'],
                [default_start,default_end],(model,element,obs,archive_root,refs_root))
+    if overview is not None:
+        # Apply dates after refreshing archive defaults so the handoff wins.
+        for key in ('ui_start_date', 'ui_end_date'):
+            set_page_value(page_key, f'{page_key}_{key}', overview[key])
+        st.session_state['_overview_selection_applied'] = overview
     d1, d2 = ui.columns(2)
     start_date = d1.date_input('Start Date', default_start, key='ui_start_date')
     end_date = d2.date_input('End Date', default_end, key='ui_end_date')

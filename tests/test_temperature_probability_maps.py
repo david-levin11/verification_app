@@ -32,7 +32,7 @@ def test_temperature_marker_and_legend_bands_use_same_five_degree_grid(element,m
     assert data.fill_color.iloc[2]!=data.fill_color.iloc[3]
     for value,marker in zip(values,data.fill_color):
         assert marker==(np.array(bar.cmap(bar.norm(value)))*255).astype(int).tolist()
-    # Map Explorer uses the same bin edges for its forecast maximum maps.
+    # Verification Overview uses the same bin edges for its forecast maximum maps.
     styled,_,_=add_map_style_columns(pd.DataFrame({'max_fcst':values}),'max_fcst',limits,element)
     assert styled.fill_color.iloc[0]==styled.fill_color.iloc[2]
     assert styled.fill_color.iloc[2]!=styled.fill_color.iloc[3]

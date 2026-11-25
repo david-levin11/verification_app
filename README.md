@@ -10,8 +10,8 @@ new forecasts or observations.
 
 | Page | Purpose |
 | --- | --- |
-| Map Explorer | Map station verification metrics, filter stations by metadata, and select stations for other pages. |
-| Aggregate Verification | Summarize performance across stations, dates, forecast leads, and event categories. |
+| Verification Overview | Score all stations that match the filters, view pooled results, and select sites on the station map. |
+| Selected-Site Verification | Verify stations selected on the map or entered by ID, with summaries by forecast lead and event category. |
 | Storm Specific Zoom | Explore a model run through spatial snapshots, storm evolution, and station details; optionally compare a second model. |
 | Model Comparison | Compare two models against the same matched observations, with reference-time offsets and deterministic or probabilistic scoring. |
 
@@ -32,8 +32,10 @@ deterministic guidance does not require percentile fields. REFS completeness is
 judged against the expected membership at each lead, including scheduled member
 departures.
 
-Each page has independent analysis controls. Map Explorer station selections
-propagate to the other analysis pages; manual station lists are also supported.
+Selected-Site Verification picks up the model, element, and date range from
+Verification Overview when those selections change. You can then adjust the
+Selected-Site settings independently. Station selections on the Overview map
+propagate to the other analysis pages. Manual station lists are also supported.
 All available archived forecast hours are eligible within the selected lead
 range, without inventing missing forecast increments.
 
@@ -63,7 +65,7 @@ Archives and administrator-configured data paths are not changed by these contro
 
 ## Map color scales
 
-Map Explorer, Model Comparison station differences, and Storm Zoom spatial
+Verification Overview, Model Comparison station differences, and Storm Zoom spatial
 snapshots offer **Standard**, **Fit to data**, and **Custom** under **Map color
 scale**. Standard uses fixed ranges by element/metric; Fit to data uses robust
 95th-percentile limits (5th–95th for forecast/observed values). Custom accepts a
@@ -181,15 +183,15 @@ and other station filters still apply. The app does not rewrite production metad
 
 ## Category charts and all-sites overview
 
-After building a station map, **Station map** and **All-sites overview** tabs
+After building a station map, **Station Map** and **All-Sites Overview** tabs
 separate the map from category-frequency and confusion-matrix graphics. The
 overview pools every matched pair in the completed run, including sites without
 coordinates. Station selections and map sample/color filters do not restrict it;
-use Aggregate Verification for a selected group. Probability verification also
+use Selected-Site Verification for a selected group. Probability verification also
 appears in the overview for probabilistic models. Rebuild a map from an older
 session to populate its category chart inputs.
 
-Map Explorer and Aggregate Verification share **Chart categories** controls.
+Verification Overview and Selected-Site Verification share **Chart categories** controls.
 Choose **Default** or **Custom**, entering strictly increasing, comma-separated
 numeric upper boundaries (1–30 values). Categories include open-ended tails;
 each boundary belongs to the bin ending at that value. Invalid entries show a
@@ -215,9 +217,9 @@ matrix cells show percentages of all categorized pairs. Stations with more pairs
 contribute more weight. Detailed categorized cases, confusion counts, and category
 definitions remain downloadable, without inline text tables.
 
-## Map Explorer probability verification
+## Verification Overview probability verification
 
-For probabilistic guidance, Map Explorer offers Brier score, binned reliability
+For probabilistic guidance, Verification Overview offers Brier score, binned reliability
 error, mean forecast probability, observed event frequency on probability cases,
 and mean probability minus observed frequency (percentage points). Positive
 probability differences mean probabilities were too high on average; errors in
@@ -232,7 +234,7 @@ undefined rate, omitted from that map. Tooltips include probability case counts,
 observed event counts, and zero-probability forecast counts. A minimum probability
 case control filters map stations only; colors retain Standard/Fit/Custom options.
 
-The all-sites probability overview reuses Aggregate Verification's reliability
+The all-sites probability overview reuses Selected-Site Verification's reliability
 plot with 10% probability bins and sample-count bars. It includes all valid cases
 in the completed map run, even stations without coordinates, and weights each
 forecast/observation case equally. Stations with more cases contribute more.
@@ -347,7 +349,7 @@ on-demand download delays.
 
 ## Matching and interpreting comparisons
 
-Map Explorer, Aggregate Verification, Storm Specific Zoom, and Model Comparison
+Verification Overview, Selected-Site Verification, Storm Specific Zoom, and Model Comparison
 treat a matching NDBC-prefixed and unprefixed station ID as one physical site.
 For example, selecting either `RIXA2` or `NDBCRIXA2` searches both archive IDs.
 Metadata filters select sites, and the app can then use an alternate network's

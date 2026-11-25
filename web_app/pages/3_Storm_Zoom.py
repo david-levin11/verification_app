@@ -103,7 +103,7 @@ try:
     metadata = read_metadata(metadata_path)
 except Exception as exc:
     downloads.add_json({'details':str(exc)},name='Station metadata error')
-    st.warning('Station metadata could not be opened. Ask the administrator to check the metadata file, or use stations selected from Map Explorer.')
+    st.warning('Station metadata could not be opened. Ask the administrator to check the metadata file, or use stations selected from Verification Overview.')
     metadata = pd.DataFrame()
 
 sources=[coverage(archive_root,name,element,refs_root) for name in [model,obs]+([model_b] if model_b else [])]
@@ -116,12 +116,12 @@ left,right = ui.columns(2)
 start = left.date_input('Plot Start Date',default_start)
 end = right.date_input('Plot End Date',default_end)
 can_run=preflight(sources,start,end)
-scope = ui.radio('Stations to load',['Filtered metadata stations','Map Explorer selections'],
+scope = ui.radio('Stations to load',['Filtered metadata stations','Verification Overview selections'],
                  key='storm_station_scope',horizontal=True)
 filtered = metadata.copy()
 if scope=='Filtered metadata stations':
     if metadata.empty:
-        st.warning('Provide station metadata to load filtered stations, or choose stations selected in Map Explorer.')
+        st.warning('Provide station metadata to load filtered stations, or choose stations selected in Verification Overview.')
     else:
         with st.expander('Station filters',expanded=True):
             cols=ui.columns(2)
@@ -132,9 +132,9 @@ if scope=='Filtered metadata stations':
                     if chosen!='All':filtered=filtered[filtered[field].astype(str).eq(chosen)]
             filtered=network_elevation_controls(filtered,ui,'storm')
             downloads.add(station_context_table(filtered),hide_index=True,use_container_width=True, name='Matching stations')
-if scope=='Map Explorer selections':
+if scope=='Verification Overview selections':
     stations=selected_station_ids()
-    if not stations:st.info('Select stations on the Map Explorer map; they will appear here automatically.')
+    if not stations:st.info('Select stations on the Verification Overview map; they will appear here automatically.')
 else:
     stations=filtered.station_id.dropna().unique().tolist() if 'station_id' in filtered else []
 candidate_crosswalk = resolve_station_crosswalk(stations, metadata)

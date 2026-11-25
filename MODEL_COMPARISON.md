@@ -24,7 +24,7 @@ Model B is not incorrectly restricted to Model A's forecast-hour list.
 ## Available forecast projections and day boundaries
 
 The app no longer uses per-model archiver schedules as verification whitelists.
-Map Explorer and Aggregate Verification filter continuous lead intervals selected
+Verification Overview and Selected-Site Verification filter continuous lead intervals selected
 by the day controls. **Use all forecast hours** applies no lead filter. Every
 archived 3-hour step (and irregular steps such as NBM's 5/11-hour leads) is eligible;
 an absent increment simply contributes no row. Storm Specific likewise loads all

@@ -153,7 +153,7 @@ def test_models_run_all_four_pages(tmp_path,monkeypatch,element,model):
     monkeypatch.setattr(storm_visuals,'_station_map',lambda **kwargs:None)
     app=AppTest.from_file(str(Path(__file__).parents[1]/'web_app/app.py'),default_timeout=20).run()
     for page,button,result in [('map','Build Station Metric Map','station_metrics'),
-                              ('aggregate','Run Aggregate Verification','aggregate_summary')]:
+                              ('aggregate','Run Selected-Site Verification','aggregate_summary')]:
         app.switch_page('pages/1_Map_Explorer.py' if page=='map' else 'pages/2_Aggregate_Verification.py').run()
         if page=='map':app.secrets.setdefault('local',{})['metadata_path']=str(meta);app.run()
         else:app.text_input(key='aggregate_station_ids_input').set_value('A,B')

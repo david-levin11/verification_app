@@ -5,7 +5,7 @@ from page_controls import PageControls
 from archive_paths import configured_paths
 from archive_availability import coverage, latest_dates, seed_dates, preflight
 from forecast_archive import refs_root_control
-from config import (MODELS, PERCENTILES, FORECAST_PROJECTION_GROUPS,
+from config import (MODELS, NDFD_EXP, EXPERIMENTAL_NATIVE_ELEMENTS, experimental_temperature, PERCENTILES, FORECAST_PROJECTION_GROUPS,
     get_available_elements, get_available_obs_sources, get_available_category_sets,
     get_element_config, get_projection_lead_bounds,
     is_probabilistic)
@@ -21,7 +21,7 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
         st.sidebar.error(f'No elements configured for {model}'); st.stop()
     element = ui.selectbox('Element', elements, key='ui_element')
     element_cfg = get_element_config(element)
-    obs = ui.selectbox('Verification Source', get_available_obs_sources(element), key='ui_obs')
+    obs = ui.selectbox('Verification Source', get_available_obs_sources(element, model), key='ui_obs')
     model_is_probabilistic = is_probabilistic(model, element)
     percentile = None
     if model_is_probabilistic:
@@ -30,7 +30,15 @@ def shared_sidebar_controls(show_category_set=False, page_key='map'):
     else:
         st.sidebar.caption('Deterministic model/element: percentile verification disabled.')
     st.sidebar.markdown('### Forecast Projection')
-    use_all = ui.checkbox('Use all forecast hours', key='ui_use_all_forecast_hours')
+    if model == NDFD_EXP:
+        st.sidebar.caption('Experimental runs arrive intermittently. Only archived targets are verified.')
+        if experimental_temperature(model, element):
+            st.sidebar.caption('Temperature dates refer to the start of the archived 12-hour window. Both bounds must match.')
+        if element in EXPERIMENTAL_NATIVE_ELEMENTS:
+            st.sidebar.caption('Dates refer to the native window endpoint. Both archived bounds must match.')
+        use_all = ui.checkbox('Use all forecast hours', value=True, key='ui_all_ndfd_exp')
+    else:
+        use_all = ui.checkbox('Use all forecast hours', key='ui_use_all_forecast_hours')
     projections = [p for p in FORECAST_PROJECTION_GROUPS if p != 'All']
     forecast_projection_start = forecast_projection_end = None
     forecast_hours = None

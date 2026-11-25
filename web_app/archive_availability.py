@@ -1,15 +1,17 @@
-"""Preflight date coverage from Parquet footers; never load full archives on startup."""
+"""Preflight date coverage from Parquet metadata and sparse experimental timestamps."""
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 import re
 import pandas as pd
+import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 import streamlit as st
 from config import (get_element_config, get_percentile_columns, is_probabilistic,
-                    get_model_pair_date_column, get_obs_filter_time_column, get_pairing_method)
+                    NDFD_EXP, OBS_SOURCES, get_obs_filter_time_column, observation_archive_element)
 from forecast_archive import refs_archive_root
-from forecast_targets import NBM_MODELS
+from forecast_targets import NBM_MODELS, forecast_target_column
 from page_controls import set_page_value
 
 
@@ -37,7 +39,7 @@ def footer(path, size, modified_ns):
     with pq.ParquetFile(path) as parquet:
         names=parquet.schema_arrow.names
         result={}
-        for col in ['valid_time','init_time','ensemble_init_time','date','end_time','window_end']:
+        for col in ['valid_time','init_time','ensemble_init_time','date','end_time','window_end','window_start']:
             if col not in names:continue
             low=[];high=[];complete=True
             for index in range(parquet.metadata.num_row_groups):
@@ -48,11 +50,33 @@ def footer(path, size, modified_ns):
         return names,result,parquet.metadata.num_rows
 
 
+@lru_cache(maxsize=256)
+def experimental_days(path, size, modified_ns, time_column):
+    """Read just the target timestamp column so gaps inside a month stay visible."""
+    with pq.ParquetFile(path) as parquet:
+        days = set()
+        for batch in parquet.iter_batches(columns=[time_column]):
+            days.update(pc.unique(pc.cast(batch.column(0), pa.date32())).to_pylist())
+    return tuple(sorted(pd.Timestamp(day) for day in days if day is not None))
+
+
+def contiguous_spans(days):
+    spans = []
+    for day in sorted(days):
+        if spans and day <= spans[-1][1] + pd.Timedelta(days=1):
+            spans[-1] = spans[-1][0], day
+        else:
+            spans.append((day, day))
+    return spans
+
+
 def coverage(root, model, element, refs_root=None):
     result=Coverage(model,element)
-    obs=model in ['obs','urma'];cfg=get_element_config(element)
-    sources=['wind'] if model=='refs' and element=='gust' else [element,'wind'] if element=='gust' else [element]
+    obs=model in OBS_SOURCES;cfg=get_element_config(element)
+    archive_element = observation_archive_element(model, element) if obs else element
+    sources=['wind'] if model=='refs' and element=='gust' else [element,'wind'] if element=='gust' else [archive_element]
     by_month={}
+    sparse_days=set()
     for source in sources:
         folder=refs_archive_root(root,refs_root)/source if model=='refs' else Path(root)/model/source
         for path in sorted(folder.glob('*.parquet')):
@@ -71,7 +95,7 @@ def coverage(root, model, element, refs_root=None):
                     result.issues.append(f'{path.name} does not contain {cfg["label"].lower()} values'+
                                          (f' (contains {", ".join(fields)})' if fields else '')+'.')
                     continue
-                timecol=get_obs_filter_time_column(element) if obs else get_model_pair_date_column(element) if get_pairing_method(element)=='date' else 'valid_time'
+                timecol = get_obs_filter_time_column(element, model) if obs else forecast_target_column(model, element)
                 if timecol not in names:
                     result.issues.append(f'{path.name} is missing its verification dates.');continue
                 if timecol in stats:
@@ -83,6 +107,14 @@ def coverage(root, model, element, refs_root=None):
                     period=pd.Period(month.replace('_','-'),freq='M')
                     low,high=period.start_time,period.end_time
                     result.unknown=True
+                if model == NDFD_EXP:
+                    if 'init_time' not in names or 'initialization_offset_hours' not in names:
+                        result.issues.append(f'{path.name} needs the experimental NDFD initialization repair.')
+                        continue
+                    days = experimental_days(str(path), stat.st_size, stat.st_mtime_ns, timecol)
+                    if not days:
+                        continue
+                    sparse_days.update(days)
                 by_month[month]=(low.normalize(),high.normalize())
                 init=stats.get('ensemble_init_time' if model=='refs' else 'init_time')
                 if init:
@@ -92,7 +124,9 @@ def coverage(root, model, element, refs_root=None):
             except Exception:
                 result.issues.append(f'{path.name} could not be checked. Ask the archive administrator to check this file.')
                 # Unreadable files cannot establish usable date coverage.
-    result.spans=sorted(by_month.values())
+    result.spans = contiguous_spans(sparse_days) if model == NDFD_EXP else sorted(by_month.values())
+    if model == NDFD_EXP:
+        result.unknown = False
     return result
 
 

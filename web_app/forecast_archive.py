@@ -3,7 +3,7 @@ from pathlib import Path
 from archive_paths import configured_paths
 import pandas as pd
 import pyarrow.parquet as pq
-from config import get_percentile_columns
+from config import NDFD_EXP, get_percentile_columns
 
 REFS_VARIABLES = {'wind':'wind_speed_kt', 'gust':'wind_gust_kt', 'rh':'rh', 'precip6hr':'precip_6h'}
 ENSEMBLE_COLUMNS = ['_forecast_model','ensemble_init_time','ensemble_forecast_hour',
@@ -27,7 +27,19 @@ def register_forecast_archive(connection, files, model, element):
     connection.from_parquet(files, union_by_name=True,filename=interval_model).create_view('raw_forecast_archive', replace=True)
     columns=connection.table('raw_forecast_archive').columns
     source='SELECT * FROM raw_forecast_archive'
-    if model=='refs':
+    if model == NDFD_EXP:
+        required = {'init_time', 'forecast_hour', 'initialization_offset_hours'}
+        if element == 'precip6hr':
+            required.update({'window_start', 'window_end'})
+        if missing := required.difference(columns):
+            raise ValueError(f"Experimental NDFD lacks {', '.join(sorted(missing))}. Check the importer and initialization repair.")
+        invalid = connection.sql('''SELECT 1 FROM raw_forecast_archive
+                                    WHERE initialization_offset_hours IS DISTINCT FROM 72 LIMIT 1''').fetchone()
+        if invalid:
+            raise ValueError('Experimental NDFD contains rows that need the 72-hour initialization repair.')
+        if element == 'precip6hr':
+            source += " WHERE window_end = valid_time AND window_end - window_start = INTERVAL '6 hours'"
+    elif model=='refs':
         required=['ensemble_init_time','ensemble_forecast_hour','value_column','n_expected','n_available','complete']
         missing=[c for c in required if c not in columns]
         if missing:raise ValueError(f'REFS archive lacks {", ".join(missing)}')

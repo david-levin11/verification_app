@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-from config import (MODELS, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
+from config import (MODELS, NDFD_EXP, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
                     get_available_obs_sources, get_element_config, is_probabilistic)
 from comparison_loader import load_comparison_data
 from forecast_archive import refs_root_control, probability_description
@@ -22,6 +22,7 @@ from color_scales import render_colorbar, scale_controls, scale_units, clipping_
 from comparison_plots import (plot_group_scores, plot_probability_comparison,
                               station_difference_map)
 
+from archive_files import forecast_archive_lookback
 from archive_availability import coverage, latest_dates, seed_dates, preflight
 from page_controls import PageControls
 from station_selection import station_ids_input, parse_station_ids, sync_map_selection
@@ -38,12 +39,15 @@ a_col,b_col=ui.columns(2)
 model_a=a_col.selectbox('Model A (reference)',models,index=models.index('ndfd'),key='compare_model_a')
 model_b=b_col.selectbox('Model B',models,index=models.index('nbm'),key='compare_model_b')
 refs_root=refs_root_control(ui.sidebar,archive_root,'refs' in [model_a,model_b])
-common=[e for e in get_available_elements(model_a) if e in get_available_elements(model_b)]
+shared_elements = [e for e in get_available_elements(model_a) if e in get_available_elements(model_b)]
+common = [e for e in shared_elements if get_available_obs_sources(e, model_a, model_b)]
+if common != shared_elements:
+    st.caption('Experimental MaxT and MinT are omitted here because the models use different temperature windows.')
 if not common:
     st.warning('These models have no configured elements in common.');downloads.stop()
 element=ui.sidebar.selectbox('Shared element',common,key='compare_element')
 cfg=get_element_config(element)
-obs=ui.sidebar.selectbox('Verification Source',get_available_obs_sources(element),key=f'compare_obs_{element}')
+obs=ui.sidebar.selectbox('Verification Source',get_available_obs_sources(element, model_a, model_b),key=f'compare_obs_{element}')
 prob_a,prob_b=is_probabilistic(model_a,element),is_probabilistic(model_b,element)
 percentile_a=(a_col.selectbox('Model A point percentile',PERCENTILES,index=PERCENTILES.index('50'),key=f'compare_pct_a_{element}') if prob_a else None)
 percentile_b=(b_col.selectbox('Model B point percentile',PERCENTILES,index=PERCENTILES.index('50'),key=f'compare_pct_b_{element}') if prob_b else None)
@@ -60,9 +64,13 @@ d1,d2=ui.sidebar.columns(2)
 start=d1.date_input('Start Date',default_start,key='compare_start')
 end=d2.date_input('End Date',default_end,key='compare_end')
 can_run=preflight(sources,start,end,st.sidebar)
+all_experimental_leads = model_a == NDFD_EXP and ui.sidebar.checkbox(
+    'Use all experimental Model A leads', value=True, key='compare_all_ndfd_exp'
+)
 l1,l2=ui.sidebar.columns(2)
 lead_min=l1.number_input('A minimum lead (h)',0,240,0,step=3,key='compare_lead_min')
-lead_max=l2.number_input('A maximum lead (h)',0,240,168,step=3,key='compare_lead_max')
+lead_max = (float('inf') if all_experimental_leads else
+            l2.number_input('A maximum lead (h)', 0, 240, 168, step=3, key='compare_lead_max'))
 threshold=ui.sidebar.selectbox(f'Event threshold ({cfg["units"]})',cfg['thresholds'],
     index=cfg['thresholds'].index(cfg['default_threshold']),key=f'compare_threshold_{element}')
 operators=['>=','>','<=','<']
@@ -153,7 +161,9 @@ if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=no
         if lead_min>lead_max:raise ValueError('Minimum lead must not exceed maximum lead')
         if not stations:raise ValueError('Select at least one station')
         # B may be older and daily target labels may differ from endpoints.
-        horizon=lead_max+abs(offset)+ref_tolerance+48
+        horizon = (forecast_archive_lookback(archive_root, model_a, element, start, end, refs_root)
+                   if all_experimental_leads else lead_max)
+        horizon += abs(offset) + ref_tolerance + 48
         with st.spinner('Loading forecasts and matching common verification cases...'):
             a,b,o,warnings=load_comparison_data(archive_root,model_a,model_b,obs,element,start,end,stations,
                 horizon,f'{obs_minutes}min',refs_root=refs_root)

@@ -176,6 +176,33 @@ Google Drive for desktop can expose a local filesystem path on Windows. Keep
 Drive running and allow files to synchronize; offline availability can reduce
 on-demand download delays.
 
+## Experimental NDFD
+
+Select `ndfd_exp` to read existing `model/ndfd_exp/<element>/YYYY_MM_archive.parquet`
+files. Use the same archive root as operational NDFD and NBM. The app uses the
+stored initialization and requires the importer's 72-hour initialization
+marker. If an older export needs repair, use the archiver's repair instructions.
+Forecast files are partitioned by initialization month. The app can read older
+files to capture targets across month boundaries.
+
+Coverage shows gaps between archived experimental targets, including gaps
+inside a month. A date range with partial coverage uses the pairs available.
+All experimental lead hours are selected by default when verifying a single
+model or using experimental NDFD as Model A.
+
+| Product | Observation archive | Supported comparison |
+| --- | --- | --- |
+| Wind, gust, RH, six-hour precipitation | `obs` | Operational NDFD or compatible NBM products |
+| 12-hour MinRH | `obs_12hr` | Operational 12-hour MinRH on the same bounds |
+| Derived 12-hour MaxT and MinT | `obs_12hr` | Single-model verification with exact window bounds |
+| Native MaxT, MinT, and MinRH | `obs_exp` | Overview and site verification with exact native window bounds |
+
+MaxT dates refer to the 12Z start of the 12Z–00Z UTC window. MinT dates refer
+to the 00Z start of the 00Z–12Z UTC window. Both products require observations
+with adequate archived coverage and matching start and end times. Operational
+temperature extrema use different periods. Native experimental extrema use their archived
+endpoints as verification dates, including partial periods with adequate observed coverage.
+
 ## Matching and interpreting comparisons
 
 - Instantaneous observations match using a configurable time tolerance, so an

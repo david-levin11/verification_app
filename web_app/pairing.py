@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import pandas as pd
 from minrh import prepare_minrh
+from experimental_windows import prepare_experimental_extrema
 from forecast_archive import ENSEMBLE_COLUMNS
 
 from config import (
+    EXPERIMENTAL_NATIVE_ELEMENTS, experimental_temperature, validate_observation_source,
     get_element_config,
     get_percentile_columns,
     is_probabilistic,
@@ -246,6 +248,15 @@ def build_verification_pairs(
     if obdf is None or obdf.empty:
         return pd.DataFrame()
 
+    validate_observation_source(element, obs, model)
+    exact_temperature = experimental_temperature(model, element)
+    experimental_extrema = exact_temperature or element in EXPERIMENTAL_NATIVE_ELEMENTS
+    exact_windows = experimental_extrema or (element == 'minrh' and obs == 'obs_12hr')
+    if experimental_extrema:
+        modeldf = prepare_experimental_extrema(modeldf, element)
+        obdf = prepare_experimental_extrema(obdf, element, observation=True)
+        if modeldf.empty or obdf.empty:
+            return pd.DataFrame()
     if element=='minrh':
         modeldf=prepare_minrh(modeldf,model)[0]
         obdf=prepare_minrh(obdf)[0]
@@ -308,7 +319,14 @@ def build_verification_pairs(
     if element=='minrh':
         optional_obs_cols.extend(c for c in ['coverage_ok','n_obs','max_gap_minutes','first_report','last_report','rh_sensor'] if c in obdf)
     accum_hours = get_element_config(element).get("accum_hours")
-    if accum_hours is not None:
+    if experimental_extrema:
+        modeldf["model_window_start"] = modeldf["window_start"]
+        modeldf["model_window_end"] = modeldf["window_end"]
+        obdf["obs_window_start"] = obdf["window_start"]
+        obdf["obs_window_end"] = obdf["window_end"]
+        optional_model_cols.extend(["model_window_start", "model_window_end"])
+        optional_obs_cols.extend(["obs_window_start", "obs_window_end", "coverage_ok"])
+    elif accum_hours is not None:
         start_col = _first_existing_column(obdf, ["start_time", "window_start"])
         end_col = _first_existing_column(obdf, ["end_time", "window_end"])
         if start_col is None or end_col is None:
@@ -326,7 +344,7 @@ def build_verification_pairs(
 
 
     # Preserve extra columns needed for date-based pairing.
-    if pairing_method == "date":
+    if pairing_method == "date" and not exact_temperature:
         model_pair_col = get_model_pair_date_column(element)
         obs_pair_col = get_obs_pair_date_column(element)
 
@@ -374,7 +392,17 @@ def build_verification_pairs(
     if modeldf.empty or obdf.empty:
         return pd.DataFrame()
 
-    if pairing_method == "date":
+    if exact_windows:
+        obs_keys = ["station_id", "obs_window_start", "obs_window_end"]
+        merged = modeldf.merge(
+            obdf.drop(columns="valid_time").drop_duplicates(obs_keys, keep="last"),
+            left_on=["station_id", "model_window_start", "model_window_end"],
+            right_on=obs_keys,
+            how="inner", validate="many_to_one", suffixes=("_model", "_obs"),
+        )
+        if exact_temperature:
+            merged["pair_date"] = merged.model_window_start.dt.date
+    elif pairing_method == "date":
         model_pair_col = get_model_pair_date_column(element)
         obs_pair_col = get_obs_pair_date_column(element)
 

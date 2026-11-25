@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
-from config import (MODELS, PERCENTILES, get_available_elements, get_available_obs_sources,
+from config import (MODELS, experimental_temperature, PERCENTILES, get_available_elements, get_available_obs_sources,
                     get_element_config, is_probabilistic)
 from data_loader import fetch_data
 from plots import plot_storm_timeseries
@@ -55,15 +55,19 @@ element = ui.sidebar.selectbox('Element', available_elements)
 cfg = get_element_config(element).copy()
 daily = element in ['maxt','mint']
 if daily:cfg['units']='°F'
-obs = ui.sidebar.selectbox('Verification Source', get_available_obs_sources(element))
 probabilistic = is_probabilistic(model, element)
-compare_enabled = ui.sidebar.checkbox('Compare another model',key='storm_compare_enabled')
+models_b = [candidate for candidate in MODELS if element in get_available_elements(candidate)
+            and get_available_obs_sources(element, model, candidate)]
+if experimental_temperature(model, element):
+    st.sidebar.caption('These 12-hour temperature extrema can be verified against obs_12hr.')
+compare_enabled = ui.sidebar.checkbox('Compare another model', key='storm_compare_enabled',
+                                     disabled=experimental_temperature(model, element))
+compare_enabled = compare_enabled and not experimental_temperature(model, element)
 percentile = (ui.sidebar.selectbox('Verification Percentile', PERCENTILES,
               index=PERCENTILES.index('50' if compare_enabled else cfg['default_percentile']), key=f'storm_percentile_{element}')
               if probabilistic else None)
 model_b=None;percentile_b=None;offset_hours=0.;reference_hours=1.
 if compare_enabled:
-    models_b=[m for m in MODELS if element in get_available_elements(m)]
     default_b='ndfd' if model!='ndfd' and 'ndfd' in models_b else 'nbmqmd' if 'nbmqmd' in models_b else models_b[0]
     model_b=ui.sidebar.selectbox('Comparison model (B)',models_b,index=models_b.index(default_b),key='storm_model_b')
     if is_probabilistic(model_b,element):
@@ -72,6 +76,9 @@ if compare_enabled:
     offset_hours=ui.sidebar.number_input('B initialization offset (hours)',value=0.,step=1.,key='storm_offset_hours')
     reference_hours=ui.sidebar.number_input('Reference-time tolerance (hours)',min_value=0.,value=1.,step=.25,key='storm_reference_hours')
     st.sidebar.caption('B initialization = A initialization + offset. A negative offset uses an earlier B run. One nearest available B run is selected within tolerance. Scores use shared targets and the same matched observation.')
+obs = ui.sidebar.selectbox('Verification Source', get_available_obs_sources(
+    element, *([model, model_b] if model_b else [model])
+))
 refs_root=refs_root_control(ui.sidebar,archive_root,'refs' in [model,model_b])
 threshold = ui.sidebar.number_input(f'Event threshold ({cfg["units"]})', value=float(cfg['default_threshold']),
                                     key=f'storm_threshold_{element}')
@@ -80,7 +87,9 @@ operator = ui.sidebar.selectbox('Event direction', operators,
     index=operators.index(cfg.get('threshold_operator','>=')), key=f'storm_operator_{element}')
 if daily:
     minutes=0
-    st.sidebar.caption('Daily temperature observations match the forecast date. Reporting-time tolerance does not apply; the observed measurement windows appear in the results.')
+    st.sidebar.caption('Both archived 12-hour temperature window bounds must match.'
+                       if experimental_temperature(model, element) else
+                       'Daily temperature observations match the forecast date. Reporting-time tolerance does not apply; the observed measurement windows appear in the results.')
 else:
     minutes = ui.sidebar.number_input('Observation tolerance (minutes)',0,180,60,step=5,key='storm_obs_minutes')
     if cfg.get('window_statistic')=='minimum':
@@ -376,7 +385,9 @@ with detail:
                    'Darker shading spans p25–p75; lighter shading spans p5–p95; the central line is p50. Red points are matched observations. Lines connect archived forecast points for display; verification uses the original cases.')
     point=saved['percentile']
     st.caption((f'Point error uses p{point}; the median-error map always uses p50. ' if probabilistic else '')+
-               ('Temperatures are compared by the configured forecast date. The window strip, when available, shows actual observed measurement periods; no forecast window is inferred from an archive timestamp.'
+               ('Experimental temperatures are matched by both archived 12-hour window bounds.'
+                if experimental_temperature(saved['model'], saved['element']) else
+                'Temperatures are compared by the configured forecast date. The window strip, when available, shows actual observed measurement periods; no forecast window is inferred from an archive timestamp.'
                 if daily else 'Each horizontal segment shows a minimum RH over its 18Z–06Z UTC window, not instantaneous RH. Sparse observations and shortened NDFD periods are excluded.'
                 if saved['element']=='minrh' else 'Markers show six-hour totals at forecast valid times and matched observation report times, not a running cumulative total. Overlapping periods are not independent verification cases.'
                 if saved['element']=='precip6hr' else 'Each horizontal segment represents a separate accumulation total over its window; it is not a running cumulative total. Overlapping windows are not independent verification cases.'

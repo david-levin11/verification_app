@@ -16,6 +16,7 @@ MODELS = [
     "nbmqmd_exp",
     "hrrr",
     "ndfd",
+    "ndfd_exp",
     "urma",
     "rrfs",
     "refs",
@@ -24,7 +25,15 @@ MODELS = [
 OBS_SOURCES = [
     "obs",
     "urma",
+    "obs_12hr",
+    "obs_exp",
 ]
+
+NDFD_EXP = "ndfd_exp"
+TEMPERATURE_EXTREMA = {"maxt", "mint"}
+EXPERIMENTAL_NATIVE_ELEMENTS = {
+    "maxt_native": "maxt", "mint_native": "mint", "minrh_native": "minrh",
+}
 
 ELEMENTS = [
     "wind",
@@ -96,6 +105,7 @@ AVAILABLE_ELEMENTS_BY_MODEL = {
         "snow6hr",
         "rh",
     ],
+    NDFD_EXP: ["wind", "gust", "precip6hr", "rh", "minrh", "maxt", "mint", *EXPERIMENTAL_NATIVE_ELEMENTS],
     "ndfd": [
         "wind",
         "gust",
@@ -448,8 +458,42 @@ ELEMENT_CONFIG = {
     },
 }
 
-def get_available_obs_sources(element: str) -> list[str]:
-    return ELEMENT_CONFIG[element].get("available_obs_sources", ["obs"])
+# Native products may contain multiple periods ending at the same time.
+for native, base in EXPERIMENTAL_NATIVE_ELEMENTS.items():
+    ELEMENT_CONFIG[native] = {
+        **ELEMENT_CONFIG[base],
+        "label": f"Native Experimental {ELEMENT_CONFIG[base]['label']}",
+        "pairing_method": "window",
+        "obs_filter_time_column": "window_end",
+        "accum_hours": None,
+    }
+
+
+def observation_archive_element(obs, element):
+    return EXPERIMENTAL_NATIVE_ELEMENTS.get(element, element) if obs == "obs_exp" else element
+
+
+def get_available_obs_sources(element: str, *models: str) -> list[str]:
+    if element in EXPERIMENTAL_NATIVE_ELEMENTS:
+        return ["obs_exp"] if not models or models == (NDFD_EXP,) else []
+    if NDFD_EXP in models:
+        if element in TEMPERATURE_EXTREMA:
+            # Operational temperature archives represent different extrema periods.
+            return ["obs_12hr"] if all(model == NDFD_EXP for model in models) else []
+        if element == "minrh":
+            return ["obs_12hr"]
+    sources = ELEMENT_CONFIG[element].get("available_obs_sources", ["obs"])
+    return [*sources, "obs_12hr"] if element == "minrh" else sources
+
+
+def experimental_temperature(model, element):
+    return model == NDFD_EXP and element in TEMPERATURE_EXTREMA
+
+
+def validate_observation_source(element, obs, *models):
+    experimental = NDFD_EXP in models or element in EXPERIMENTAL_NATIVE_ELEMENTS or obs in {"obs_12hr", "obs_exp"}
+    if experimental and obs not in get_available_obs_sources(element, *models):
+        raise ValueError("The selected forecasts and observation archive do not share the same verification window.")
 
 def get_pairing_method(element: str) -> str:
     return ELEMENT_CONFIG[element].get("pairing_method", "time")
@@ -470,13 +514,15 @@ def get_obs_time_column(element: str) -> str:
     """
     return ELEMENT_CONFIG[element].get("obs_time_column", "valid_time")
 
-def get_obs_filter_time_column(element: str) -> str:
+def get_obs_filter_time_column(element: str, obs: str = "obs") -> str:
     """
     Return the observation archive time column used in the DuckDB WHERE clause.
 
     Defaults to obs_time_column. This allows daily extrema to filter by date
     while still using window_end as the standardized valid_time.
     """
+    if obs == "obs_12hr" and element in TEMPERATURE_EXTREMA:
+        return "window_start"
     cfg = ELEMENT_CONFIG[element]
     return cfg.get("obs_filter_time_column", cfg.get("obs_time_column", "valid_time"))
 

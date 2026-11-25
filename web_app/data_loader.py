@@ -2,7 +2,8 @@ import duckdb
 import pandas as pd
 from minrh import prepare_minrh
 from pathlib import Path
-from config import get_obs_time_column, get_obs_filter_time_column, get_pairing_method
+from config import (OBS_SOURCES, get_obs_time_column, get_obs_filter_time_column,
+                    get_pairing_method, validate_observation_source)
 from forecast_targets import forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage, forecast_archive_lookback
 from datetime import date, datetime
@@ -15,7 +16,7 @@ LOCAL_ARCHIVE_ROOT = PROJECT_ROOT / "model"
 
 def generate_monthly_paths(root, model, element, start_date, end_date):
     files, missing, _ = resolve_archive_paths(root, model, element, start_date, end_date,
-                                              observation=model in ['obs', 'urma'])
+                                              observation=model in OBS_SOURCES)
     return files, missing
 
 def fetch_data(
@@ -56,6 +57,7 @@ def fetch_data(
         "Database error", or "Observation Database error" as fatal.
     """
 
+    validate_observation_source(element, obs, model)
     query_start = pd.Timestamp(start_date)
     query_end = pd.Timestamp(end_date)
     # Sidebar date selections include the entire end date.
@@ -119,8 +121,9 @@ def fetch_data(
             f"Missing: {missing_modelfiles[:5]}"
         )
 
+    obs_read_end = obs_query_end + pd.Timedelta(days=1) if obs == 'obs_12hr' and element == 'maxt' else obs_query_end
     obfiles, missing_obfiles, source_warnings = resolve_archive_paths(
-        archive_root, obs, element, obs_query_start, obs_query_end, observation=True)
+        archive_root, obs, element, obs_query_start, obs_read_end, observation=True)
     warnings.extend(source_warnings)
 
     if not obfiles:
@@ -255,7 +258,7 @@ def fetch_data(
     # Optional: if you add get_obs_filter_time_column() to config.py,
     # use it here. Otherwise default to obs_time_col.
     try:
-        obs_filter_time_col = get_obs_filter_time_column(element)
+        obs_filter_time_col = get_obs_filter_time_column(element, obs)
     except NameError:
         obs_filter_time_col = obs_time_col
 

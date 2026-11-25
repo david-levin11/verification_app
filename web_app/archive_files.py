@@ -4,7 +4,8 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
-from config import get_element_config, get_percentile_columns, is_probabilistic
+from config import (get_element_config, get_percentile_columns, is_probabilistic,
+                    observation_archive_element)
 from forecast_archive import refs_archive_root
 
 
@@ -41,8 +42,11 @@ def forecast_archive_lookback(root,model,element,start,end,refs_root=None):
             except ValueError:continue
             if month_start>pd.Timestamp(end):continue
             earliest=month_start if earliest is None else min(earliest,month_start)
-            stat=path.stat()
-            lead=_maximum_file_lead(str(path),stat.st_size,stat.st_mtime_ns)
+            try:
+                stat=path.stat()
+                lead=_maximum_file_lead(str(path),stat.st_size,stat.st_mtime_ns)
+            except (OSError, ValueError):
+                lead=None
             if lead is None:unknown=True
             else:maximum=max(maximum,lead)
     if unknown and earliest is not None:
@@ -71,9 +75,10 @@ def resolve_archive_paths(root, model, element, start, end, observation=False,re
         gust_columns = list(get_percentile_columns(element).values())
     else:
         gust_columns = cfg.get('model_value_candidates', [])
+    archive_element = observation_archive_element(model, element) if observation else element
     for month in pd.period_range(pd.Timestamp(start).normalize(), pd.Timestamp(end).normalize(), freq='M'):
         found = None
-        for source_element in ([element, 'wind'] if element == 'gust' else [element]):
+        for source_element in ([element, 'wind'] if element == 'gust' else [archive_element]):
             folder = Path(root) / model / source_element
             names = [f'{month.year}_{month.month:02d}_archive.parquet',
                      f'{month.year}_{month.month:02d}_{model}_{source_element}_archive.parquet']
@@ -95,7 +100,7 @@ def resolve_archive_paths(root, model, element, start, end, observation=False,re
         if found:
             files.append(found)
         else:
-            missing.append(str(Path(root)/model/element/f'{month.year}_{month.month:02d}_archive.parquet'))
+            missing.append(str(Path(root)/model/archive_element/f'{month.year}_{month.month:02d}_archive.parquet'))
     if fallback:
         warnings.append(f'{model.upper()} gust: using gust columns from the wind archive ({len(fallback)} monthly file(s)).')
     return files, missing, warnings

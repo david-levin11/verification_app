@@ -3,10 +3,10 @@ from datetime import date, datetime
 import duckdb
 import pandas as pd
 from minrh import prepare_minrh
-from forecast_targets import forecast_target_sql
+from forecast_targets import forecast_target_column, forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage
 from forecast_archive import register_forecast_archive, archive_diagnostics
-from config import (get_model_pair_date_column, get_obs_filter_time_column,
+from config import (OBS_SOURCES, validate_observation_source, get_obs_filter_time_column,
                     get_obs_time_column, get_pairing_method)
 
 
@@ -21,7 +21,7 @@ def date_bounds(start, end):
 
 def archive_paths(root, model, element, start, end):
     files, missing, _ = resolve_archive_paths(root, model, element, start, end,
-                                              observation=model in ['obs', 'urma'])
+                                              observation=model in OBS_SOURCES)
     return files, missing
 
 
@@ -32,6 +32,7 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
     Load observations once. Older source months are necessary when a target in
     the first days of a month is forecast by a run from the previous month.
     """
+    validate_observation_source(element, obs, model_a, model_b)
     if not stations:
         raise ValueError('Select at least one station')
     start, end = date_bounds(start, end)
@@ -47,7 +48,8 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
         else:
             lo, hi = start, end
             read_start = start - pd.Timedelta(hours=lookback_hours)
-        read_end = hi + (pd.Timedelta(days=1) if not observation and element == "maxt" else pd.Timedelta(0))
+        next_month_endpoint = element == "maxt" and (not observation or model == "obs_12hr")
+        read_end = hi + (pd.Timedelta(days=1) if next_month_endpoint else pd.Timedelta(0))
         files, missing, source_warnings = resolve_archive_paths(
             root, model, element, read_start, read_end, observation=observation,refs_root=refs_root)
         warnings.extend(source_warnings)
@@ -65,8 +67,8 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
                 source='read_parquet(?, union_by_name=true)';params=[files]
             schema = connection.execute(f'SELECT * FROM {source} LIMIT 0',params).df()
             station_column = 'station_id' if 'station_id' in schema else 'stid'
-            time_column = (get_obs_filter_time_column(element) if observation else
-                           get_model_pair_date_column(element) if get_pairing_method(element) == 'date' else 'valid_time')
+            time_column = (get_obs_filter_time_column(element, model) if observation else
+                           forecast_target_column(model, element))
             if station_column not in schema or time_column not in schema:
                 raise ValueError(f'{model.upper()} archive lacks station ID or {time_column}')
             time_expression = f'"{time_column}"' if observation else forecast_target_sql(model, element)

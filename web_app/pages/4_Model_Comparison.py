@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import streamlit as st
+from feedback_form import show_feedback
 import matplotlib.pyplot as plt
 from config import (MODELS, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
                     get_available_obs_sources, get_element_config, is_probabilistic)
@@ -40,6 +41,7 @@ model_b=b_col.selectbox('Model B',models,index=models.index('nbm'),key='compare_
 refs_root=refs_root_control(ui.sidebar,archive_root,'refs' in [model_a,model_b])
 common=[e for e in get_available_elements(model_a) if e in get_available_elements(model_b)]
 if not common:
+    show_feedback("Model Comparison", dict(model_a=model_a, model_b=model_b))
     st.warning('These models have no configured elements in common.');downloads.stop()
 element=ui.sidebar.selectbox('Shared element',common,key='compare_element')
 cfg=get_element_config(element)
@@ -147,6 +149,8 @@ context=dict(model_a=model_a,model_b=model_b,element=element,obs=obs,percentile_
     archive_root=archive_root,refs_root=refs_root,use_dir=use_dir,dir_min=dir_min,dir_max=dir_max,
     speed_minimum=speed_minimum,verify_direction=verify_direction,
     direction_min_speed=direction_min_speed,direction_error_threshold=direction_error_threshold)
+
+show_feedback("Model Comparison", context)
 
 if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=not can_run):
     try:

@@ -49,3 +49,30 @@ Deploy `main` or a tested release tag. For updates, record the running commit/ta
 stop the app, update code/dependencies, then restart and repeat the smoke test.
 Use the recorded tag for rollback; do not modify the production archive to roll
 back the viewer. Keep the experimental `community-cloud-test` branch separate.
+
+## Private feedback queue
+
+**Send feedback** appears in the sidebar on every app page. Reports go to a
+SQLite database on the Streamlit server. Reporters can optionally include
+their contact details and preview which verification settings will accompany
+the report. The app creates no browser-facing page for reviewing submissions.
+
+The default database is
+`$XDG_STATE_HOME/verification-app/feedback.sqlite3` or
+`~/.local/state/verification-app/feedback.sqlite3` under the Streamlit account
+when `XDG_STATE_HOME` is unset. To use a dedicated persistent directory, set
+`VERIFICATION_FEEDBACK_DB` in the Streamlit service's environment to an absolute
+path such as `/var/lib/verification-app/feedback.sqlite3`. Use a directory
+outside the repository and any reverse-proxy document root, writable by the
+Streamlit account. The database is created on the first successful submission
+and uses owner-only permissions on Linux.
+
+On the server, use the Streamlit account or an authorized administrator to
+review and resolve submissions. From the repository root, use the same
+environment setting as the service or pass its database path explicitly.
+
+```sh
+python -m web_app.feedback_queue --database /var/lib/verification-app/feedback.sqlite3 list
+python -m web_app.feedback_queue --database /var/lib/verification-app/feedback.sqlite3 resolve FEEDBACK_ID
+python -m web_app.feedback_queue --database /var/lib/verification-app/feedback.sqlite3 list --status all
+```

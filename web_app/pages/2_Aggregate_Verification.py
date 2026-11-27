@@ -1,6 +1,7 @@
 from data_downloads import DataDownloads
 downloads = DataDownloads('aggregate')
 import streamlit as st
+from feedback_form import show_feedback
 
 from sidebar_controls import shared_sidebar_controls
 from page_controls import PageControls
@@ -32,6 +33,7 @@ st.title("Aggregate Verification")
 # ---------------------------------------------------------------------
 
 controls = shared_sidebar_controls(show_category_set=True, page_key="aggregate")
+show_feedback("Aggregate Verification", controls)
 
 archive_root = controls["archive_root"]
 model = controls["model"]

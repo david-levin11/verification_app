@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
+from feedback_form import show_feedback
 from config import (MODELS, PERCENTILES, get_available_elements, get_available_obs_sources,
                     get_element_config, is_probabilistic)
 from data_loader import fetch_data
@@ -140,6 +141,8 @@ context=dict(model=model,element=element,obs=obs,percentile=percentile,threshold
     operator=operator,minutes=minutes,init=init_text,start=start,end=end,stations=stations,
     archive_root=archive_root,refs_root=refs_root,metadata_path=metadata_path,compare_enabled=compare_enabled,
     model_b=model_b,percentile_b=percentile_b,offset_hours=offset_hours,reference_hours=reference_hours)
+
+show_feedback("Storm Specific Zoom", context)
 
 if st.button('Generate Storm Timeseries',type='primary',disabled=not can_run):
     try:

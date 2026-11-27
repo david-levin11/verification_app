@@ -2,6 +2,7 @@ from data_downloads import DataDownloads
 downloads = DataDownloads('map')
 from archive_paths import configured_paths
 import streamlit as st
+from feedback_form import show_feedback
 import pandas as pd
 from pathlib import Path
 
@@ -63,6 +64,7 @@ def show_coverage_diagnostics(candidate_stations,modeldf,obdf,merged,station_met
 # ---------------------------------------------------------------------
 
 controls = shared_sidebar_controls(show_category_set=False, page_key="map")
+show_feedback("Map Explorer", controls)
 
 archive_root = controls["archive_root"]
 model = controls["model"]

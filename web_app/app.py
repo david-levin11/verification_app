@@ -1,4 +1,5 @@
 import streamlit as st
+from feedback_form import show_feedback
 
 
 st.set_page_config(
@@ -9,6 +10,7 @@ st.set_page_config(
 
 
 st.title("Alaska Point Verification Dashboard")
+show_feedback("Home")
 
 st.markdown(
     """

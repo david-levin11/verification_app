@@ -193,14 +193,22 @@ model or using experimental NDFD as Model A.
 | Product | Observation archive | Supported comparison |
 | --- | --- | --- |
 | Wind, gust, RH, six-hour precipitation | `obs` | Operational NDFD or compatible NBM products |
-| 12-hour MinRH | `obs_12hr` | Operational 12-hour MinRH on the same bounds |
-| Derived 12-hour MaxT and MinT | `obs_12hr` | Single-model verification with exact window bounds |
+| 12-hour MinRH | `obs_12hr` | Operational MinRH using matching windows or date alignment |
+| Derived 12-hour MaxT and MinT | `obs_12hr` | Exact windows for single-model verification, or date alignment in Model Comparison |
 | Native MaxT, MinT, and MinRH | `obs_exp` | Overview and site verification with exact native window bounds |
 
 MaxT dates refer to the 12Z start of the 12Z–00Z UTC window. MinT dates refer
 to the 00Z start of the 00Z–12Z UTC window. Both products require observations
-with adequate archived coverage and matching start and end times. Operational
-temperature extrema use different periods. Native experimental extrema use their archived
+with adequate archived coverage and matching start and end times. Model Comparison offers **Align by verification date** for MaxT, MinT, and
+MinRH. Use it to compare experimental and operational NDFD or NBM against
+the same observation from `obs`, `obs_exp`, or `obs_12hr`. Forecast
+initialization offset and reference tolerance still apply. Forecast and
+observation windows may differ, and paired downloads keep their archived
+bounds where available. For alternate MaxT observations, the verification
+date is the window start date. For alternate MinT and MinRH observations,
+it is the endpoint date. If `obs_exp` has multiple covered windows for one
+date and station, the nominal native window takes priority, followed by the
+longest available window and latest endpoint. Native experimental extrema use their archived
 endpoints as verification dates, including partial periods with adequate observed coverage.
 
 ## Matching and interpreting comparisons

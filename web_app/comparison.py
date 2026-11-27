@@ -7,8 +7,9 @@ from metrics import compute_summary_metrics
 from probability import forecast_probabilities, probability_scores
 from forecast_targets import forecast_target_time
 from minrh import prepare_minrh
-from config import NDFD_EXP, experimental_temperature, validate_observation_source
+from config import NDFD_EXP, experimental_temperature, validate_comparison_observations
 from experimental_windows import prepare_experimental_extrema
+from comparison_observations import attach_date_aligned_observations
 
 POINT_METRICS = ['bias', 'mae', 'rmse', 'pod', 'far', 'csi', 'frequency_bias']
 PROB_METRICS = ['brier_score', 'reliability_error']
@@ -23,8 +24,8 @@ def utc_naive(values):
     return pd.to_datetime(values, utc=True, errors='coerce').dt.tz_convert(None).astype('datetime64[ns]')
 
 
-def prepare_forecasts(frame, model, element, percentile=None):
-    result = prepare_minrh(frame,model)[0] if element=='minrh' else frame.copy()
+def prepare_forecasts(frame, model, element, percentile=None, *, align_by_date=False):
+    result = prepare_minrh(frame, model)[0] if element == 'minrh' and not align_by_date else frame.copy()
     if experimental_temperature(model, element):
         result = prepare_experimental_extrema(result, element)
     if 'station_id' not in result and 'stid' in result:
@@ -59,9 +60,11 @@ def prepare_forecasts(frame, model, element, percentile=None):
         if direction_col in result:
             result['forecast_direction'] = pd.to_numeric(result[direction_col], errors='coerce')
             break
-    result['target_time'] = forecast_target_time(result, model, element)
+    result['target_time'] = forecast_target_time(result, model, element, align_by_date=align_by_date)
     result = result.dropna(subset=['init_time','valid_time','target_time','model_value'])
     result = result[np.isfinite(result.model_value) & result.forecast_hour.ge(0)]
+    if element == 'minrh' and align_by_date:
+        result = result[result.model_value.between(0, 100)]
     return result
 
 
@@ -73,15 +76,15 @@ def lead_group(hours):
 def match_forecasts(model_a_frame, model_b_frame, model_a, model_b, element,
                     percentile_a=None, percentile_b=None, offset_hours=0,
                     reference_tolerance='0h', lead_min=0, lead_max=168,
-                    matching='reference', cutoff=None):
+                    matching='reference', cutoff=None, align_by_date=False):
     """B reference target = A reference + signed offset (negative is earlier).
 
     In reference mode every distinct A reference/target is a case. In cutoff
     mode choose one latest A reference per station/target at or before cutoff,
     and one latest B at/before cutoff+offset. No publication times are assumed.
     """
-    a = prepare_forecasts(model_a_frame, model_a, element, percentile_a)
-    b = prepare_forecasts(model_b_frame, model_b, element, percentile_b)
+    a = prepare_forecasts(model_a_frame, model_a, element, percentile_a, align_by_date=align_by_date)
+    b = prepare_forecasts(model_b_frame, model_b, element, percentile_b, align_by_date=align_by_date)
     diagnostics = {'a_loaded':len(model_a_frame), 'b_loaded':len(model_b_frame),
                    'a_invalid':len(model_a_frame)-len(a), 'b_invalid':len(model_b_frame)-len(b)}
     if a.empty or b.empty:
@@ -169,12 +172,15 @@ def attach_shared_observations(matched, observations, model_a, element,
 
 def comparison_cases(a, b, observations, model_a, model_b, element,
                      percentile_a=None, percentile_b=None, obs_source='obs',
-                     obs_time_tolerance='1h', **matching_options):
-    validate_observation_source(element, obs_source, model_a, model_b)
+                     obs_time_tolerance='1h', *, align_by_date=False, **matching_options):
+    validate_comparison_observations(element, obs_source, model_a, model_b, align_by_date=align_by_date)
     matched, diagnostics = match_forecasts(a,b,model_a,model_b,element,
-        percentile_a,percentile_b,**matching_options)
-    pairs = attach_shared_observations(matched,observations,model_a,element,
-                                      percentile_a,obs_source,obs_time_tolerance)
+        percentile_a, percentile_b, align_by_date=align_by_date, **matching_options)
+    if align_by_date:
+        pairs = attach_date_aligned_observations(matched, observations, element, obs_source)
+    else:
+        pairs = attach_shared_observations(matched, observations, model_a, element,
+                                          percentile_a, obs_source, obs_time_tolerance)
     diagnostics.update(observation_rows=len(observations), matched_cases=len(pairs),
                        missing_observations=len(matched)-len(pairs))
     return pairs, diagnostics

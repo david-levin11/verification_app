@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-from config import (MODELS, NDFD_EXP, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
-                    get_available_obs_sources, get_element_config, is_probabilistic)
+from config import (MODELS, NDFD_EXP, DAILY_EXTREMA, PERCENTILES, CATEGORY_CONFIG, get_available_elements,
+                    comparison_observation_sources, get_element_config, is_probabilistic)
 from comparison_loader import load_comparison_data
 from forecast_archive import refs_root_control, probability_description
 from probability import forecast_probability_details
@@ -39,15 +39,26 @@ a_col,b_col=ui.columns(2)
 model_a=a_col.selectbox('Model A (reference)',models,index=models.index('ndfd'),key='compare_model_a')
 model_b=b_col.selectbox('Model B',models,index=models.index('nbm'),key='compare_model_b')
 refs_root=refs_root_control(ui.sidebar,archive_root,'refs' in [model_a,model_b])
-shared_elements = [e for e in get_available_elements(model_a) if e in get_available_elements(model_b)]
-common = [e for e in shared_elements if get_available_obs_sources(e, model_a, model_b)]
-if common != shared_elements:
-    st.caption('Experimental MaxT and MinT are omitted here because the models use different temperature windows.')
+common = [e for e in get_available_elements(model_a) if e in get_available_elements(model_b)
+          and (e in DAILY_EXTREMA or comparison_observation_sources(e, model_a, model_b))]
 if not common:
     st.warning('These models have no configured elements in common.');downloads.stop()
-element=ui.sidebar.selectbox('Shared element',common,key='compare_element')
-cfg=get_element_config(element)
-obs=ui.sidebar.selectbox('Verification Source',get_available_obs_sources(element, model_a, model_b),key=f'compare_obs_{element}')
+element = ui.sidebar.selectbox('Shared element', common, key='compare_element')
+cfg = get_element_config(element)
+standard_sources = comparison_observation_sources(element, model_a, model_b)
+align_by_date = False
+if element in DAILY_EXTREMA:
+    modes = ['Standard archive matching', 'Align by verification date'] if standard_sources else [
+        'Align by verification date'
+    ]
+    mode = ui.sidebar.selectbox('Period matching', modes, key=f'compare_period_mode_{element}')
+    align_by_date = mode == 'Align by verification date'
+    if align_by_date:
+        st.sidebar.warning('Both forecasts use the same observation for each UTC verification date. '
+                           'The forecast and observed periods may differ. Timing tolerance does not apply.')
+obs = ui.sidebar.selectbox('Verification Source',
+    comparison_observation_sources(element, model_a, model_b, align_by_date=align_by_date),
+    key=f'compare_obs_{element}')
 prob_a,prob_b=is_probabilistic(model_a,element),is_probabilistic(model_b,element)
 percentile_a=(a_col.selectbox('Model A point percentile',PERCENTILES,index=PERCENTILES.index('50'),key=f'compare_pct_a_{element}') if prob_a else None)
 percentile_b=(b_col.selectbox('Model B point percentile',PERCENTILES,index=PERCENTILES.index('50'),key=f'compare_pct_b_{element}') if prob_b else None)
@@ -76,8 +87,10 @@ threshold=ui.sidebar.selectbox(f'Event threshold ({cfg["units"]})',cfg['threshol
 operators=['>=','>','<=','<']
 operator=ui.sidebar.selectbox('Event definition',operators,
     index=operators.index(cfg.get('threshold_operator','>=')),key=f'compare_operator_{element}')
-obs_minutes=ui.sidebar.number_input('Observation time tolerance (minutes)',0,180,60,step=5,key='compare_obs_tolerance')
-ui.sidebar.caption('Accumulation durations must agree; the tolerance applies to window endpoints. Daily temperatures use their configured anchor date.')
+obs_minutes = 0
+if not align_by_date:
+    obs_minutes=ui.sidebar.number_input('Observation time tolerance (minutes)',0,180,60,step=5,key='compare_obs_tolerance')
+    ui.sidebar.caption('Accumulation durations must agree; the tolerance applies to window endpoints. Daily temperatures use their configured anchor date.')
 
 st.subheader('Forecast reference matching')
 use_offset=ui.checkbox('Offset Model B reference time relative to Model A',key='compare_use_offset')
@@ -148,7 +161,7 @@ if element in ['wind', 'gust']:
             min_value=0, max_value=180, value=45, step=5, key='compare_direction_threshold')
         st.caption('Compare mean/median angular error and the percentage exceeding your threshold. Direction requires archived forecast directions from both models; wind-speed percentiles alone are insufficient.')
 
-context=dict(model_a=model_a,model_b=model_b,element=element,obs=obs,percentile_a=percentile_a,
+context=dict(model_a=model_a,model_b=model_b,element=element,obs=obs,align_by_date=align_by_date,percentile_a=percentile_a,
     percentile_b=percentile_b,start=start,end=end,lead_min=lead_min,lead_max=lead_max,
     threshold=threshold,operator=operator,obs_minutes=obs_minutes,offset=offset,
     ref_tolerance=ref_tolerance,stations=stations,
@@ -166,11 +179,11 @@ if st.button('Run Model Comparison',type='primary',key='compare_run',disabled=no
         horizon += abs(offset) + ref_tolerance + 48
         with st.spinner('Loading forecasts and matching common verification cases...'):
             a,b,o,warnings=load_comparison_data(archive_root,model_a,model_b,obs,element,start,end,stations,
-                horizon,f'{obs_minutes}min',refs_root=refs_root)
+                horizon,f'{obs_minutes}min',refs_root=refs_root,align_by_date=align_by_date)
             pairs,diagnostics=comparison_cases(a,b,o,model_a,model_b,element,percentile_a,percentile_b,
                 obs_source=obs,obs_time_tolerance=f'{obs_minutes}min',offset_hours=offset,
                 reference_tolerance=f'{ref_tolerance}h',lead_min=lead_min,lead_max=lead_max,
-                matching='reference')
+                matching='reference',align_by_date=align_by_date)
             if use_dir:
                 pairs = filter_observed_sector(pairs, dir_min, dir_max)
             base_cases = pairs.reset_index(drop=True)
@@ -210,7 +223,9 @@ label_b='B: '+model_b.upper()+(f' p{saved["percentile_b"]}' if prob_b else '')
 for message in result['warnings']:downloads.issue(message)
 diag=result['diagnostics']
 st.subheader(f'{label_a} versus {label_b}: {cfg["label"]}')
-st.caption(f'B offset {saved["offset"]:+g} h; observation tolerance {saved["obs_minutes"]} min; reference tolerance ±{saved["ref_tolerance"]:g} h.')
+timing = (f'Aligned by UTC verification date using {saved["obs"]}. Periods may differ.'
+          if saved.get('align_by_date') else f'Observation tolerance {saved["obs_minutes"]} min.')
+st.caption(f'B offset {saved["offset"]:+g} h. Reference tolerance ±{saved["ref_tolerance"]:g} h. {timing}')
 c1,c2,c3,c4=ui.columns(4)
 c1.metric('Shared cases',f'{len(pairs):,}')
 c2.metric('A forecasts without B match',f'{diag.get("a_unmatched",0):,}')
@@ -314,7 +329,8 @@ with st.container():
     columns=['station_id','target_time','a_valid_time','b_valid_time','a_init_time','b_init_time','a_forecast_hour','b_forecast_hour',
         'actual_offset_hours','reference_error_hours','a_model_value','b_model_value','obs_value',
         'a_forecast_direction','b_forecast_direction','observed_direction',
-        'obs_valid_time','obs_time_offset_minutes','obs_window_start','obs_window_end']
+        'obs_valid_time','obs_time_offset_minutes','obs_window_start','obs_window_end',
+        'obs_source','period_alignment','a_window_start','a_window_end','b_window_start','b_window_end']
     columns += [side+'_'+name for side in ['a','b'] for name in ['n_available','n_expected','complete','statistics_config','forecast_probability','probability_source']]
     downloads.add(pairs[[c for c in columns if c in pairs]].head(1000),hide_index=True,use_container_width=True, name='Paired cases preview')
     downloads.file('Download all paired cases (CSV)',pairs.to_csv(index=False),

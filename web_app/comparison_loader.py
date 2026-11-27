@@ -6,7 +6,7 @@ from minrh import prepare_minrh
 from forecast_targets import forecast_target_column, forecast_target_sql
 from archive_files import resolve_archive_paths, gust_observation_coverage
 from forecast_archive import register_forecast_archive, archive_diagnostics
-from config import (OBS_SOURCES, validate_observation_source, get_obs_filter_time_column,
+from config import (OBS_SOURCES, validate_comparison_observations, get_obs_filter_time_column,
                     get_obs_time_column, get_pairing_method)
 
 
@@ -26,13 +26,13 @@ def archive_paths(root, model, element, start, end):
 
 
 def load_comparison_data(root, model_a, model_b, obs, element, start, end,
-                         stations, lookback_hours=240, obs_time_tolerance='1h',refs_root=None):
+                         stations, lookback_hours=240, obs_time_tolerance='1h', refs_root=None, *, align_by_date=False):
     """Dates select forecast targets; look back for initialization-month files.
 
     Load observations once. Older source months are necessary when a target in
     the first days of a month is forecast by a run from the previous month.
     """
-    validate_observation_source(element, obs, model_a, model_b)
+    validate_comparison_observations(element, obs, model_a, model_b, align_by_date=align_by_date)
     if not stations:
         raise ValueError('Select at least one station')
     start, end = date_bounds(start, end)
@@ -42,13 +42,13 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
     warnings = []
     def query(model, observation=False):
         if observation:
-            padding = tolerance if get_pairing_method(element) == 'time' else pd.Timedelta(0)
+            padding = tolerance if not align_by_date and get_pairing_method(element) == 'time' else pd.Timedelta(0)
             lo, hi = start - padding, end + padding
             read_start = lo
         else:
             lo, hi = start, end
             read_start = start - pd.Timedelta(hours=lookback_hours)
-        next_month_endpoint = element == "maxt" and (not observation or model == "obs_12hr")
+        next_month_endpoint = element == "maxt" and (not observation or model in {"obs_12hr", "obs_exp"})
         read_end = hi + (pd.Timedelta(days=1) if next_month_endpoint else pd.Timedelta(0))
         files, missing, source_warnings = resolve_archive_paths(
             root, model, element, read_start, read_end, observation=observation,refs_root=refs_root)
@@ -71,13 +71,13 @@ def load_comparison_data(root, model_a, model_b, obs, element, start, end,
                            forecast_target_column(model, element))
             if station_column not in schema or time_column not in schema:
                 raise ValueError(f'{model.upper()} archive lacks station ID or {time_column}')
-            time_expression = f'"{time_column}"' if observation else forecast_target_sql(model, element)
+            time_expression = f'"{time_column}"' if observation else forecast_target_sql(model, element, align_by_date=align_by_date)
             # Identifiers come from fixed config/schema; values and paths are bound parameters.
             statement = (f'SELECT * FROM {source} '
                          f'WHERE "{station_column}" IN (SELECT unnest(?)) '
                          f'AND ({time_expression}) BETWEEN ? AND ?')
             frame = connection.execute(statement, params+[stations, lo.to_pydatetime(), hi.to_pydatetime(warn=False)]).df()
-        if element=='minrh':
+        if element == 'minrh' and not align_by_date:
             frame,notes=prepare_minrh(frame,None if observation else model)
             warnings.extend(notes)
         if not observation:warnings.extend(archive_diagnostics(frame,model))

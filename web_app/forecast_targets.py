@@ -11,10 +11,10 @@ from config import experimental_temperature, get_model_pair_date_column, get_pai
 NBM_MODELS = {'nbm', 'nbm_exp', 'nbmqmd', 'nbmqmd_exp'}
 
 
-def forecast_target_time(frame, model, element):
+def forecast_target_time(frame, model, element, align_by_date=False):
     column = forecast_target_column(model, element)
     time = pd.to_datetime(frame[column], errors='coerce', utc=True).dt.tz_convert(None).astype('datetime64[ns]')
-    if get_pairing_method(element) != 'date':
+    if not align_by_date and get_pairing_method(element) != 'date':
         return time
     target = time.dt.normalize()
     if element == 'maxt' and model in NBM_MODELS:
@@ -24,9 +24,9 @@ def forecast_target_time(frame, model, element):
     return target
 
 
-def forecast_target_sql(model, element):
+def forecast_target_sql(model, element, align_by_date=False):
     """DuckDB equivalent, so date filters and Python pairing cannot diverge."""
-    if get_pairing_method(element) != 'date':
+    if not align_by_date and get_pairing_method(element) != 'date':
         return 'valid_time'
     column = forecast_target_column(model, element)
     day = f"date_trunc('day', {column})"

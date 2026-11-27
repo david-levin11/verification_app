@@ -31,6 +31,7 @@ OBS_SOURCES = [
 
 NDFD_EXP = "ndfd_exp"
 TEMPERATURE_EXTREMA = {"maxt", "mint"}
+DAILY_EXTREMA = TEMPERATURE_EXTREMA | {"minrh"}
 EXPERIMENTAL_NATIVE_ELEMENTS = {
     "maxt_native": "maxt", "mint_native": "mint", "minrh_native": "minrh",
 }
@@ -486,6 +487,22 @@ def get_available_obs_sources(element: str, *models: str) -> list[str]:
     return [*sources, "obs_12hr"] if element == "minrh" else sources
 
 
+def comparison_observation_sources(element, *models, align_by_date=False):
+    if align_by_date:
+        if element not in DAILY_EXTREMA:
+            raise ValueError("Verification-date alignment is available for MaxT, MinT, and MinRH.")
+        return ["obs", "obs_exp", "obs_12hr"]
+    return get_available_obs_sources(element, *models)
+
+
+def validate_comparison_observations(element, obs, *models, align_by_date=False):
+    if align_by_date:
+        if obs not in comparison_observation_sources(element, *models, align_by_date=True):
+            raise ValueError("Choose obs, obs_exp, or obs_12hr for verification-date alignment.")
+    else:
+        validate_observation_source(element, obs, *models)
+
+
 def experimental_temperature(model, element):
     return model == NDFD_EXP and element in TEMPERATURE_EXTREMA
 
@@ -521,8 +538,8 @@ def get_obs_filter_time_column(element: str, obs: str = "obs") -> str:
     Defaults to obs_time_column. This allows daily extrema to filter by date
     while still using window_end as the standardized valid_time.
     """
-    if obs == "obs_12hr" and element in TEMPERATURE_EXTREMA:
-        return "window_start"
+    if obs in {"obs_exp", "obs_12hr"} and element in DAILY_EXTREMA:
+        return "window_start" if element == "maxt" else "window_end"
     cfg = ELEMENT_CONFIG[element]
     return cfg.get("obs_filter_time_column", cfg.get("obs_time_column", "valid_time"))
 
